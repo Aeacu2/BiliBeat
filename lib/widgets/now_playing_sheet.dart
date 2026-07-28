@@ -27,6 +27,10 @@ class NowPlayingSheet extends StatefulWidget {
   /// handler is playing (a search result can be previewed here).
   final void Function(Track track, {bool lyricsTab}) onOpenLyricEditor;
 
+  /// Commits a drag-calibration: shifts the track's whole lyric timeline by
+  /// the given number of seconds and persists it.
+  final void Function(Track track, double deltaSeconds) onShiftLyrics;
+
   /// Set when the sheet is opened as part of "play this now". The handler has
   /// not switched track yet at that instant, so it cannot be inferred — and
   /// getting it wrong leaves the sheet stuck on one track for the whole
@@ -41,6 +45,7 @@ class NowPlayingSheet extends StatefulWidget {
     required this.durationNotifier,
     required this.lyricsNotifier,
     required this.onOpenLyricEditor,
+    required this.onShiftLyrics,
     this.followHandler = false,
   });
 
@@ -87,6 +92,7 @@ class _NowPlayingSheetState extends State<NowPlayingSheet> {
       } else if (t.id == _displayTrack.id) {
         setState(() => _displayTrack = t); // metadata edit
       }
+      _syncAutoAdvanceHold();
     }));
     _subs.add(h.playerStateStream.listen((p) {
       if (!mounted) return;
@@ -118,11 +124,27 @@ class _NowPlayingSheetState extends State<NowPlayingSheet> {
 
   DownloadTask? _liveTaskFor(String id) => DownloadManager.instance.taskFor(id);
 
+  /// Reading (or calibrating) lyrics is work the user is in the middle of, so
+  /// the queue must not move on underneath it when the track ends. Repeat-one
+  /// is exempt — repeating the same track is the point of that mode.
+  VoidCallback? _releaseAutoAdvance;
+
+  void _syncAutoAdvanceHold() {
+    final wanted = _showLyrics && _isActive;
+    if (wanted && _releaseAutoAdvance == null) {
+      _releaseAutoAdvance = widget.handler.holdAutoAdvance();
+    } else if (!wanted && _releaseAutoAdvance != null) {
+      _releaseAutoAdvance!();
+      _releaseAutoAdvance = null;
+    }
+  }
+
   @override
   void dispose() {
     for (final s in _subs) {
       s.cancel();
     }
+    _releaseAutoAdvance?.call();
     super.dispose();
   }
 
@@ -221,6 +243,16 @@ class _NowPlayingSheetState extends State<NowPlayingSheet> {
                               return SyncedLyricsView(
                                 lines: lines,
                                 positionNotifier: widget.positionNotifier,
+                                // Align against where the song actually is;
+                                // for a track that is not the one playing
+                                // there is no "now", so the anchor is 0:00.
+                                anchorSeconds: () => _isActive
+                                    ? widget.positionNotifier.value
+                                            .inMilliseconds /
+                                        1000.0
+                                    : 0.0,
+                                onCalibrate: (delta) =>
+                                    widget.onShiftLyrics(_displayTrack, delta),
                                 onSeek: (sec) => widget.handler.seek(
                                   Duration(milliseconds: (sec * 1000).toInt()),
                                 ),
@@ -275,6 +307,7 @@ class _NowPlayingSheetState extends State<NowPlayingSheet> {
                 ? () {
                     Haptics.selection();
                     setState(() => _showLyrics = !_showLyrics);
+                    _syncAutoAdvanceHold();
                   }
                 : null,
           ),

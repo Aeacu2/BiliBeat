@@ -22,11 +22,21 @@
   - 标题过长时自动横向滚动并带两端渐隐；宽度足够时保持静止。
   - **实现约束（必须保留）**：高度在 `build` 中由 `TextPainter` 同步测量得出，溢出量直接来自 `BoxConstraints`；滚动本身是 `Transform.translate`（绘制阶段），**永远不会反馈到布局**。禁止再用 post-frame `setState` 测量文本。
   - 回归测试见 `test/widget_test.dart`（高度稳定 / 不撑宽 / 兄弟组件不位移）。
-- [x] **底部播放条重设计 (Redesigned Docked MiniPlayer)**
-  - 实心渐变卡片 + 发丝描边 + 深投影替代 `BackdropFilter`（省一次 GPU 图层，规避 Android 前景擦除 Bug）。
-  - 进度条改为贴合卡片底边并随圆角裁剪；播放键为独立圆形按钮并带图标缩放切换。
-  - 手势：上滑展开全屏播放器，左右滑动切歌，点按展开。
-  - `MiniPlayer.totalHeight(context)` 为全局唯一的「底部占位高度」来源。
+- [x] **播放卡与播放页融为一体 (Docked Card ⇄ Player, One Object)**
+  - 播放卡是播放页的「折叠态」，不是另一套控件：同样的 `AppRadius.xl` 圆角与抬升表面、同样的封面圆角、同样的渐变主控圆钮（缩小版）、底边的进度发丝即播放页进度条的折叠形态。
+  - 点击播放卡 → 卡片矩形**原地长大**成整页（圆角同时展开），关闭 → 同一段动画倒放，页面折回卡片落到底部（`ExpandFromCard`）。
+  - **实现约束**：动画只动 `Clip` 与位置，页面始终以整屏尺寸布局（`OverflowBox`），否则歌词列表与进度条会在 60fps 下反复重排。动画结束后过渡组件完全让路（不留 clip / opacity 图层）。
+  - 无卡片可长大时（尚未播放、直接从搜索结果打开预览）回退为上滑转场。
+  - 仍不使用 `BackdropFilter`（省一次 GPU 图层，规避 Android 前景擦除 Bug）。
+  - 手势：上滑展开，左右滑动切歌，点按展开。`MiniPlayer.totalHeight(context)` 仍是全局唯一的「底部占位高度」来源。
+- [x] **拖拽歌词校准时间轴 (Drag-to-Calibrate Lyrics)**
+  - 播放页歌词区**长按后上下拖动**即可整体平移时间轴：中线是基准，把「此刻应该唱的那句」拖到中线上松手即可。
+  - 拖动时实时显示「延迟 / 提前 X.X 秒」，且**随播放进度动态更新**（基准是活的播放位置）；非当前播放曲目的基准是 0:00。
+  - 普通滑动仍然是滚动歌词，两者由手势竞技场区分（按住不动 → 校准；直接滑 → 滚动）。
+  - 松手即写入：偏移**烘焙进缓存的歌词行**（`DatabaseService.shiftCachedLyrics`），离开页面依然有效，无需再点 ±0.1s。
+- [x] **歌词 / 信息界面期间不自动切歌 (Auto-Advance Hold)**
+  - 停留在歌词面板或「信息 / 歌词」编辑器时，当前曲目播完**不会自动跳下一首**（单曲循环除外——重复本曲正是该模式的目的）。
+  - 以计数器实现（`holdAutoAdvance()` 返回释放回调），因此编辑器盖在歌词面板上时不会互相解除；持有期间同时裁掉原生预取队列，否则下一首会「无缝」抢跑。
 - [x] **全屏播放器主控件语义修正 (NowPlaying Primary Control = Play/Pause)**
   - 主按钮恒为播放/暂停（未下载时自动下载并播放，进度以环形显示），下载状态收敛为标题旁的小图标。
   - 控件排布：播放模式 / 上一首 / 播放 / 下一首 / 收藏；音量条支持一键静音；下滑关闭。
@@ -40,6 +50,11 @@
   - 架构上「未下载即不可播放」，因此播放页主按钮按真实状态切换：**未下载 → 下载按钮**；**下载中 → 圆环进度条**（与列表中 `TrackDownloadButton` 同一视觉）；**已下载 → 播放/暂停**。
   - 移除播放页的「已下载 ✓」指示与顶部音源行：能播放本身即代表已下载，再标注是冗余。
   - handler 自身的下载不经过 `DownloadManager`，故播放开始时会复查一次落盘状态，避免按钮卡在「下载」。
+- [x] **iOS 发布 (iOS Release, Unsigned IPA)**
+  - `tool/build_release.sh [android|ios|all]`：iOS 产出**混淆后的未签名 .ipa**（`build/ios/ipa/`），用 AltStore / Sideloadly / 自有描述文件自签安装；本项目没有 Apple 开发者账号，因此不上架、也无从签名。
+  - 不用 `flutter build ipa`：它必须指定导出方式，也就必须有签名身份，未签名根本产不出包；改为 `flutter build ios --no-codesign` 后手工打包 `Payload/Runner.app` 成 zip（.ipa 本就是这个结构）。
+  - **iOS 端已彻底移除 CocoaPods**：所用插件全部提供 `Package.swift`，项目改由 Swift Package Manager 集成，`ios/Podfile` 被**故意删除**——留着它会让构建以「CocoaPods not installed」失败，而其实一个 pod 都不需要。日后若有仅支持 Pods 的插件，用 `flutter create .` 重新生成并在此说明。
+  - 顺带完成 Flutter 要求的两项迁移：iOS 最低版本 12 → 13，以及 UIScene 生命周期（`AppDelegate` 改为在 `didInitializeImplicitFlutterEngine` 里注册插件）。后台播放所需的 `UIBackgroundModes: audio` 保持不变。
 - [x] **正式签名配置 (Release Signing)**
   - `android/app/build.gradle` 从 `android/key.properties` 读取签名信息；文件缺失时回退到 debug key 并打印警告，保证 `flutter run --release` 仍可用。
   - `tool/make_keystore.sh` 一次性生成密钥库（keytool 交互式输入密码，不进入命令行历史）。
@@ -129,6 +144,24 @@
 ## 2. Bug 跟踪清单 (Bug List)
 
 ### 已修复 Bug (Fixed Bugs)
+
+#### 🐛 Bug #44: 改完元数据，下方播放卡不刷新
+- **根因**：`Track` 的 `==` 只比较 `id`（刻意如此，列表查找依赖它）。`ValueNotifier` 赋值前先判 `_value == newValue` 相等就直接 return，于是「同一首歌、改了标题/封面」的新对象被当成相同值**静默丢弃**，迷你播放器收不到通知；播放页因为走的是 Stream 所以正常刷新——才显出只有下方卡片是旧的。
+- **修复**：`_currentTrack` 改用 `TrackNotifier`（`models/track.dart`），按**对象标识**而非 `==` 判断，任何新对象都通知。回归测试已覆盖。
+
+#### 🐛 Bug #45: 播放页封面被拉伸（同一首歌在最近播放里却正常）
+- **根因（两段联合作用，因此只有部分歌中招）**：
+  1. **CDN 有下限**：`@{w}w_{h}h_1e_1c` 只在请求尺寸**不超过原图短边**时返回方形裁切；一旦超过，B 站直接返回**原始 16:9 大图**。实测同一张 2560×1440 封面：请求 1440 → 1440×1440 方图，请求 2000 → 原样 2560×1440。所以列表缩略图（130px 级）永远拿到方图，而播放页（≈1000px 级）在**原图短边偏小的封面**上就会拿到 16:9 图——这正是「只有那一首歌」的原因。
+  2. **精确尺寸解码**：`Image.file` 同时传 `cacheWidth`/`cacheHeight` 是**不保比例**的解码，且不放大时是**逐轴**收敛的（2560×1440 配 960×960 目标 → 960×720），横向被压缩，于是画面拉伸。
+- **修复**：改用 `ResizeImage(..., policy: ResizeImagePolicy.fit)` 保持比例解码，裁切仍交给 `BoxFit.cover`（与列表一致的中心裁切）；解码框留 16:9 余量，保证横图裁成方形后依旧清晰，且永不超过原图尺寸。自选的本地封面（任意比例）同时被此修复覆盖。
+
+#### 🐛 Bug #47: 点最近播放的某首歌，放出来的却是另一首
+- **根因**：`_player.currentIndexStream` 的回调用 `_queueBaseIndex + playerIndex` 把**原生队列下标**换算成逻辑下标，但在 `_startCurrent` 期间这个换算是无效的——新曲目要先下载（可能好几秒），此间原生队列里还是**上一首**，`_queueBaseIndex` 描述的也还是上一首；而 `clear()` / `setAudioSource()` 本身就会发出下标事件。于是一个陈旧下标被换算成了逻辑列表里的**任意一首**，既改写了 `_currentIndex` 也广播了错误曲目。
+- **修复**：`_isRebuilding` 提前到下载之前置位（原来只包住队列重建那几行），并让下标回调在重建期间直接返回；只有最新一次 `_startCurrent`（token 相同）才有权清除该标志。
+
+#### 🐛 Bug #46: 歌名滚到结尾会「跳」一下
+- **根因**：`Text` 会把外层 `DefaultTextStyle` 合并进调用方给的样式，而跑马灯的 `TextPainter` 只测量了调用方样式——量的是另一套字体/字距。滚动位移用测量值、第二份副本的位置用真实布局，两者差几个像素，一圈结束时接不上，就是那一下跳动。
+- **修复**：先解析出真正生效的样式，测量与两份 `Text` 都用它，圈长与副本间距严格相等。回归测试断言等时间步位移恒定（跨接缝也不例外）。
 
 #### 🐛 Bug #23: 滚动标题把播放界面其余部分挤走 / 布局坍塌
 - **根因**：旧跑马灯在 post-frame 回调里测量文本并 `setState`，在布局完成之后改变自身尺寸，导致父 `Column` 中的兄弟组件被推挤。

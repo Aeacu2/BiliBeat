@@ -11,6 +11,7 @@ import 'services/audio_download_service.dart';
 import 'theme/app_theme.dart';
 import 'theme/haptics.dart';
 import 'widgets/ambient_background.dart';
+import 'widgets/expand_from_card.dart';
 import 'widgets/mini_player.dart';
 import 'widgets/now_playing_sheet.dart';
 import 'widgets/lyric_editor_dialog.dart';
@@ -84,7 +85,10 @@ class _MainLayoutState extends State<MainLayout> {
   /// play/pause and every track advance, and as plain `setState` state it
   /// rebuilt the whole tree — both page subtrees included — for a change that
   /// only the ambient backdrop and the docked bar care about.
-  final ValueNotifier<Track?> _currentTrack = ValueNotifier(null);
+  /// Not a `ValueNotifier<Track?>`: [Track] equality is id-only, so a
+  /// ValueNotifier would drop the metadata-edit assignment (same id, new
+  /// title/cover) and leave the docked player showing stale text.
+  final TrackNotifier _currentTrack = TrackNotifier();
   final ValueNotifier<bool> _isPlaying = ValueNotifier(false);
   final ValueNotifier<Duration> _positionNotifier =
       ValueNotifier(Duration.zero);
@@ -218,6 +222,25 @@ class _MainLayoutState extends State<MainLayout> {
   }
 
   bool _nowPlayingOpen = false;
+  final GlobalKey _miniPlayerKey = GlobalKey();
+
+  /// Where the docked card is on screen right now, or null if it is not laid
+  /// out (nothing playing yet, first frame).
+  Rect? _miniPlayerRect() {
+    final box = _miniPlayerKey.currentContext?.findRenderObject() as RenderBox?;
+    if (box == null || !box.hasSize) return null;
+    final origin = box.localToGlobal(Offset.zero);
+    // The card does not fill its slot: the widget reserves the bottom inset
+    // and a side margin, and the morph has to start on the *card*, not on the
+    // padding around it.
+    final gap = MiniPlayer.bottomGap(context);
+    return Rect.fromLTWH(
+      origin.dx + 12,
+      origin.dy,
+      box.size.width - 24,
+      box.size.height - gap,
+    );
+  }
 
   void _openNowPlaying({Track? track, bool follow = false}) {
     final focused = track ?? _currentTrack.value;
@@ -226,29 +249,44 @@ class _MainLayoutState extends State<MainLayout> {
     if (_nowPlayingOpen) return;
     _nowPlayingOpen = true;
 
+    final from = _miniPlayerRect();
+
     Navigator.of(context).push(
       PageRouteBuilder(
-        reverseTransitionDuration: const Duration(milliseconds: 250),
+        transitionDuration: const Duration(milliseconds: 420),
+        reverseTransitionDuration: const Duration(milliseconds: 340),
         pageBuilder: (context, animation, secondaryAnimation) {
-          return SlideTransition(
-            position: Tween<Offset>(
-              begin: const Offset(0, 1),
-              end: Offset.zero,
-            ).animate(CurvedAnimation(
-              parent: animation,
-              curve: Curves.easeOutCubic,
-              reverseCurve: Curves.easeInCubic,
-            )),
-            child: NowPlayingSheet(
-              handler: _audioHandler,
-              focusedTrack: focused,
-              positionNotifier: _positionNotifier,
-              durationNotifier: _durationNotifier,
-              lyricsNotifier: _lyricsNotifier,
-              onOpenLyricEditor: _openLyricEditor,
-              followHandler: follow,
-            ),
+          return NowPlayingSheet(
+            handler: _audioHandler,
+            focusedTrack: focused,
+            positionNotifier: _positionNotifier,
+            durationNotifier: _durationNotifier,
+            lyricsNotifier: _lyricsNotifier,
+            onOpenLyricEditor: _openLyricEditor,
+            onShiftLyrics: _shiftLyrics,
+            followHandler: follow,
           );
+        },
+        transitionsBuilder: (context, animation, secondaryAnimation, child) {
+          // The docked card *becomes* the page: its rectangle grows to fill
+          // the screen and its corner radius unrolls, and on the way back it
+          // folds down onto the card again. Falling back to a slide-up keeps
+          // the entry sane when there is no card to grow from (opened straight
+          // from a search result before anything is docked).
+          if (from == null) {
+            return SlideTransition(
+              position: Tween<Offset>(
+                begin: const Offset(0, 1),
+                end: Offset.zero,
+              ).animate(CurvedAnimation(
+                parent: animation,
+                curve: Curves.easeOutCubic,
+                reverseCurve: Curves.easeInCubic,
+              )),
+              child: child,
+            );
+          }
+          return ExpandFromCard(animation: animation, from: from, child: child);
         },
       ),
     ).whenComplete(() => _nowPlayingOpen = false);
@@ -258,6 +296,9 @@ class _MainLayoutState extends State<MainLayout> {
   /// sheet is actually showing, not necessarily the playing track.
   void _openLyricEditor(Track track, {bool lyricsTab = false}) {
     final isCurrent = _currentTrack.value?.id == track.id;
+    // Finishing the track while the user is editing its info or lyrics would
+    // swap the whole editor's subject out. Stay put until the sheet closes.
+    final release = _audioHandler.holdAutoAdvance();
     showDialog(
       context: context,
       builder: (context) {
@@ -284,7 +325,19 @@ class _MainLayoutState extends State<MainLayout> {
           },
         );
       },
-    );
+    ).whenComplete(release);
+  }
+
+  /// Shifts the whole lyric timeline of [track] by [delta] seconds and makes it
+  /// stick: the calibration the user just dragged out is baked into the cached
+  /// lines, exactly as the editor's ±0.1s buttons do.
+  Future<void> _shiftLyrics(Track track, double delta) async {
+    if (delta == 0) return;
+    final shifted = await DatabaseService.shiftCachedLyrics(track.id, delta);
+    if (!mounted || shifted == null) return;
+    if (_currentTrack.value?.id == track.id) {
+      _lyricsNotifier.value = shifted;
+    }
   }
 
   Widget _tabItem(int index, String label) {
@@ -474,6 +527,7 @@ class _MainLayoutState extends State<MainLayout> {
               right: 0,
               bottom: 0,
               child: ListenableBuilder(
+                key: _miniPlayerKey,
                 listenable: Listenable.merge([_currentTrack, _isPlaying]),
                 builder: (context, _) => MiniPlayer(
                 currentTrack: _currentTrack.value,

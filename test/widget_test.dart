@@ -1,3 +1,4 @@
+import 'package:flutter/gestures.dart' show kLongPressTimeout;
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -7,6 +8,7 @@ import 'package:bilibeats/services/recommendation_engine.dart';
 import 'package:bilibeats/models/playlist.dart';
 import 'package:bilibeats/models/track.dart';
 import 'package:bilibeats/widgets/marquee_text.dart';
+import 'package:bilibeats/widgets/expand_from_card.dart';
 import 'package:bilibeats/widgets/mini_player.dart';
 import 'package:bilibeats/widgets/synced_lyrics_view.dart';
 
@@ -254,6 +256,37 @@ void main() {
     });
   });
 
+  group('TrackNotifier', () {
+    Track track({String title = 't', String cover = ''}) => Track(
+        id: 'a', bvid: 'a', cid: 1, title: title, uploader: 'u',
+        coverUrl: cover, duration: 1);
+
+    test('notifies when only the metadata of the same track changes', () {
+      // Track equality is id-only, so a plain ValueNotifier swallowed this and
+      // the docked player kept rendering the pre-edit title and cover.
+      final notifier = TrackNotifier(track());
+      var notified = 0;
+      notifier.addListener(() => notified++);
+
+      notifier.value = track(title: '新标题', cover: '/covers/new.jpg');
+
+      expect(notified, 1);
+      expect(notifier.value!.title, '新标题');
+      expect(notifier.value!.coverUrl, '/covers/new.jpg');
+    });
+
+    test('ignores a re-assignment of the very same instance', () {
+      final same = track();
+      final notifier = TrackNotifier(same);
+      var notified = 0;
+      notifier.addListener(() => notified++);
+
+      notifier.value = same;
+
+      expect(notified, 0);
+    });
+  });
+
   group('MarqueeText', () {
     testWidgets('overflowing text keeps a single-line height', (tester) async {
       await tester.pumpWidget(_host('short'));
@@ -291,6 +324,43 @@ void main() {
       expect(tester.takeException(), isNull);
     });
 
+    testWidgets('scrolls at a constant velocity, with no dwell at the wrap',
+        (tester) async {
+      const title = 'a title far too long to ever fit here';
+      await tester.pumpWidget(_host(title));
+      await tester.pump(); // post-frame callback starts the controller
+
+      // One cycle is the text plus the gap; the second copy trails exactly one
+      // cycle behind, so the wrap is a modular step, not a jump back to zero.
+      final travel = tester.getSize(find.text(title).first).width + 44;
+
+      double offsetX() => tester
+          .widget<Transform>(find.descendant(
+              of: find.byType(MarqueeText), matching: find.byType(Transform)))
+          .transform
+          .getTranslation()
+          .x;
+
+      const step = Duration(milliseconds: 200);
+      final deltas = <double>[];
+      var previous = offsetX();
+      for (var i = 0; i < 150; i++) {
+        await tester.pump(step);
+        final current = offsetX();
+        var advanced = previous - current; // offsets run negative
+        if (advanced < 0) advanced += travel; // crossed the wrap
+        deltas.add(advanced);
+        previous = current;
+      }
+
+      expect(deltas.reduce((a, b) => a + b), greaterThan(travel),
+          reason: 'the sampling must actually cross the wrap point');
+      for (final d in deltas) {
+        // A dwell shows up as 0, a jump back to the start as a wrong step.
+        expect(d, closeTo(deltas.first, 0.5));
+      }
+    });
+
     testWidgets('short text is not scrolled', (tester) async {
       await tester.pumpWidget(_host('short'));
       await tester.pump(const Duration(seconds: 2));
@@ -313,6 +383,8 @@ void main() {
       ValueNotifier<Duration>? position,
       void Function(double)? onSeek,
       VoidCallback? onOpenEditor,
+      double Function()? anchorSeconds,
+      void Function(double)? onCalibrate,
     }) {
       return MaterialApp(
         home: Scaffold(
@@ -323,6 +395,8 @@ void main() {
               positionNotifier: position ?? ValueNotifier(Duration.zero),
               onSeek: onSeek,
               onOpenEditor: onOpenEditor,
+              anchorSeconds: anchorSeconds,
+              onCalibrate: onCalibrate,
             ),
           ),
         ),
@@ -370,6 +444,87 @@ void main() {
       await tester.tap(find.text('回到当前'));
       await tester.pumpAndSettle();
       expect(find.text('回到当前'), findsNothing);
+    });
+
+    testWidgets('long-press dragging the lyrics calibrates the timeline',
+        (tester) async {
+      double? calibrated;
+      final position = ValueNotifier(const Duration(seconds: 40));
+      await tester.pumpWidget(host(
+        data: lines(),
+        position: position,
+        anchorSeconds: () => 40.0,
+        onCalibrate: (d) => calibrated = d,
+      ));
+      await tester.pumpAndSettle();
+
+      final gesture =
+          await tester.startGesture(tester.getCenter(find.byType(ListView)));
+      await tester.pump(kLongPressTimeout + const Duration(milliseconds: 50));
+      // The hold takes over from the scroll: dragging now moves the timeline,
+      // not the list.
+      await gesture.moveBy(const Offset(0, 60));
+      await tester.pump();
+
+      expect(find.textContaining('延迟'), findsOneWidget,
+          reason: 'dragging the lyrics down means they were early');
+      await gesture.up();
+      await tester.pumpAndSettle();
+
+      expect(calibrated, isNotNull);
+      expect(calibrated, greaterThan(0));
+      expect(find.textContaining('松手保存'), findsNothing);
+    });
+
+    testWidgets('a plain drag still scrolls rather than calibrating',
+        (tester) async {
+      double? calibrated;
+      await tester.pumpWidget(host(
+        data: lines(),
+        anchorSeconds: () => 0.0,
+        onCalibrate: (d) => calibrated = d,
+      ));
+      await tester.pump();
+
+      await tester.drag(find.byType(ListView), const Offset(0, -200));
+      await tester.pumpAndSettle();
+
+      expect(calibrated, isNull);
+      expect(find.text('回到当前'), findsOneWidget);
+    });
+  });
+
+  group('ExpandFromCard', () {
+    testWidgets('grows the card rect to the full screen without relayout',
+        (tester) async {
+      final controller = AnimationController(
+        vsync: tester,
+        duration: const Duration(milliseconds: 300),
+      );
+      addTearDown(controller.dispose);
+
+      const from = Rect.fromLTWH(12, 700, 376, 68);
+      await tester.pumpWidget(MaterialApp(
+        home: ExpandFromCard(
+          animation: controller,
+          from: from,
+          child: const Scaffold(body: Center(child: Text('player'))),
+        ),
+      ));
+
+      // The page is laid out at full size from the very first frame — only the
+      // clip moves — so its size must not change as the morph runs.
+      final closed = tester.getSize(find.text('player'));
+      controller.value = 0.5;
+      await tester.pump();
+      expect(tester.getSize(find.text('player')), closed);
+
+      controller.value = 1.0;
+      await tester.pump();
+      expect(tester.getSize(find.text('player')), closed);
+      // Settled, the transition gets out of the way entirely.
+      expect(find.byType(ClipRRect), findsNothing);
+      expect(tester.takeException(), isNull);
     });
   });
 

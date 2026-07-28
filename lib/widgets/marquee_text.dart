@@ -82,21 +82,36 @@ class _MarqueeTextState extends State<MarqueeText>
     super.dispose();
   }
 
-  Size _measure(BuildContext context) {
+  /// The style the child [Text]s will actually be painted with.
+  ///
+  /// [Text] merges the ambient [DefaultTextStyle] into an inheriting style, so
+  /// measuring `widget.style` alone measured a *different* font from the one on
+  /// screen — the app's theme sets a family and letter spacing that the callers'
+  /// styles do not. The cycle length was therefore off by the difference, and
+  /// since the trailing copy is positioned by layout while the scroll is
+  /// positioned by the measurement, the repeat landed a few pixels away from
+  /// where the original started: a visible hitch at the wrap. Resolving the
+  /// style once here and using it for *both* keeps them exact.
+  TextStyle _effectiveStyle(BuildContext context) {
+    if (!widget.style.inherit) return widget.style;
+    return DefaultTextStyle.of(context).style.merge(widget.style);
+  }
+
+  Size _measure(BuildContext context, TextStyle style) {
     final scale = MediaQuery.textScalerOf(context).scale(1.0);
     if (_measuredText == widget.text &&
-        _measuredStyle == widget.style &&
+        _measuredStyle == style &&
         _measuredScale == scale) {
       return _measuredSize;
     }
     final painter = TextPainter(
-      text: TextSpan(text: widget.text, style: widget.style),
+      text: TextSpan(text: widget.text, style: style),
       maxLines: 1,
       textDirection: Directionality.of(context),
       textScaler: MediaQuery.textScalerOf(context),
     )..layout();
     _measuredText = widget.text;
-    _measuredStyle = widget.style;
+    _measuredStyle = style;
     _measuredScale = scale;
     _measuredSize = painter.size;
     painter.dispose();
@@ -123,7 +138,8 @@ class _MarqueeTextState extends State<MarqueeText>
 
   @override
   Widget build(BuildContext context) {
-    final textSize = _measure(context);
+    final style = _effectiveStyle(context);
+    final textSize = _measure(context, style);
     // A deterministic single-line height: the widget's size is settled before
     // the first paint and never changes.
     final lineHeight = textSize.height;
@@ -139,7 +155,7 @@ class _MarqueeTextState extends State<MarqueeText>
             widget.text,
             maxLines: 1,
             softWrap: false,
-            style: widget.style,
+            style: style,
             textAlign: widget.textAlign,
           );
         }
@@ -156,7 +172,7 @@ class _MarqueeTextState extends State<MarqueeText>
               maxLines: 1,
               softWrap: false,
               overflow: TextOverflow.clip,
-              style: widget.style,
+              style: style,
               textAlign: widget.textAlign,
             ),
           );
@@ -190,10 +206,10 @@ class _MarqueeTextState extends State<MarqueeText>
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   Text(widget.text,
-                      maxLines: 1, softWrap: false, style: widget.style),
+                      maxLines: 1, softWrap: false, style: style),
                   SizedBox(width: widget.gap),
                   Text(widget.text,
-                      maxLines: 1, softWrap: false, style: widget.style),
+                      maxLines: 1, softWrap: false, style: style),
                 ],
               ),
             ),

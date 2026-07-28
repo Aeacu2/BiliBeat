@@ -185,19 +185,36 @@ class _CachedCoverImageState extends State<CachedCoverImage> {
   @override
   Widget build(BuildContext context) {
     final dpr = MediaQuery.of(context).devicePixelRatio;
-    final cacheW = (widget.width * dpr).round();
-    final cacheH = (widget.height * dpr).round();
+    // Decode headroom: [ResizeImagePolicy.fit] fits the image *inside* the
+    // box, but `BoxFit.cover` then scales by the box's *larger* ratio. Sizing
+    // the decode box up by the widest cover we expect (16:9) keeps a landscape
+    // image sharp when it is cropped to a square. It costs nothing for the
+    // usual case: ResizeImage never upscales, so the decode is still capped at
+    // the source, and CDN thumbnails already arrive at the requested square.
+    const headroom = 16 / 9;
+    final cacheW = (widget.width * dpr * headroom).round();
+    final cacheH = (widget.height * dpr * headroom).round();
 
     late final Widget child;
     switch (_status) {
       case _CoverStatus.ready:
-        child = Image.file(
-          _file!,
+        child = Image(
+          // Not `Image.file(cacheWidth:, cacheHeight:)`: passing both forces
+          // an exact-size decode, which *stretches* anything whose aspect
+          // ratio is not the box's. Bilibili's CDN hands back a square crop so
+          // list thumbnails looked right, but a custom cover picked from disk
+          // (or any URL the CDN does not resize) was squashed into the square
+          // album art on the player page. `fit` preserves the aspect ratio and
+          // lets [BoxFit.cover] do the cropping, as it does everywhere else.
+          image: ResizeImage(
+            FileImage(_file!),
+            width: cacheW > 0 ? cacheW : null,
+            height: cacheH > 0 ? cacheH : null,
+            policy: ResizeImagePolicy.fit,
+          ),
           key: ValueKey(_file!.path),
           width: widget.width,
           height: widget.height,
-          cacheWidth: cacheW > 0 ? cacheW : null,
-          cacheHeight: cacheH > 0 ? cacheH : null,
           fit: widget.fit,
           gaplessPlayback: true,
           errorBuilder: (context, error, stackTrace) => _buildFallback(),

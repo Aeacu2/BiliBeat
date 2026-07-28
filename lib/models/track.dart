@@ -1,3 +1,5 @@
+import 'package:flutter/foundation.dart';
+
 /// One playable Bilibili audio part.
 ///
 /// Deliberately narrow: fields that were written but never read (uploaderFace,
@@ -85,6 +87,29 @@ class Track {
 
   @override
   String toString() => 'Track($id, $title)';
+}
+
+/// A holder for "the track the UI is showing" that notifies on *every*
+/// assignment of a different object.
+///
+/// A plain `ValueNotifier<Track?>` cannot be used here. [Track] compares by id
+/// (deliberately — see above), so assigning an edited copy of the same track is
+/// an assignment of an *equal* value, and `ValueNotifier` silently swallows it.
+/// That is exactly what happens after a metadata edit: the docked player kept
+/// rendering the pre-edit title, artist and cover until the track changed.
+class TrackNotifier extends ChangeNotifier implements ValueListenable<Track?> {
+  TrackNotifier([this._value]);
+
+  Track? _value;
+
+  @override
+  Track? get value => _value;
+
+  set value(Track? newValue) {
+    if (identical(_value, newValue)) return;
+    _value = newValue;
+    notifyListeners();
+  }
 }
 
 /// Callback for "play this track", optionally within a specific queue

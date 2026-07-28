@@ -47,6 +47,13 @@ class BiliBeatAudioHandler extends BaseAudioHandler with SeekHandler {
   bool _isRebuilding = false;
   String? _prefetchingId;
 
+  /// Number of open surfaces that have asked playback not to move on by itself
+  /// (the lyrics panel and the 信息/歌词 editor). A counter rather than a flag
+  /// so the editor closing over the lyrics panel does not release the panel's
+  /// hold. Repeat-one is unaffected — it repeats the same track, which is what
+  /// the user asked for in that mode.
+  int _autoAdvanceHolds = 0;
+
   /// Guards against overlapping [_startCurrent] runs when the user taps
   /// next/previous faster than a track can be prepared.
   int _startToken = 0;
@@ -86,6 +93,26 @@ class BiliBeatAudioHandler extends BaseAudioHandler with SeekHandler {
 
   BiliBeatAudioHandler() {
     _initAudioPlayerListeners();
+  }
+
+  bool get autoAdvanceHeld => _autoAdvanceHolds > 0 && _loopMode != LoopMode.one;
+
+  /// Stops the queue from moving on when the current track ends, until the
+  /// returned callback is invoked. The native queue is trimmed as well, since
+  /// a prefetched next track would otherwise start gaplessly without ever
+  /// reaching [_handleQueueCompleted].
+  VoidCallback holdAutoAdvance() {
+    _autoAdvanceHolds++;
+    if (_autoAdvanceHolds == 1) unawaited(_trimQueueAfterCurrent());
+    var released = false;
+    return () {
+      if (released) return;
+      released = true;
+      _autoAdvanceHolds--;
+      if (_autoAdvanceHolds == 0 && _loopMode != LoopMode.one) {
+        unawaited(_prefetchNext());
+      }
+    };
   }
 
   void updateCurrentTrackMetadata(Track updatedTrack) {
@@ -143,6 +170,14 @@ class BiliBeatAudioHandler extends BaseAudioHandler with SeekHandler {
     // auto-advance). Reconcile our logical index and prepare the following one.
     _player.currentIndexStream.listen((playerIndex) {
       if (playerIndex == null) return;
+      // While a start is in flight the native queue still holds the *previous*
+      // track, so `_queueBaseIndex` does not describe it: mapping an index
+      // through it would announce — and then actually play — some unrelated
+      // track. This is what made tapping a song in 最近播放 occasionally start
+      // a different one: clearing and re-setting the audio source emits index
+      // events, and the stale base index turned them into a bogus logical
+      // position.
+      if (_isRebuilding) return;
       final logical = _queueBaseIndex + playerIndex;
       // Guard against echoes from rebuilds / no-op changes.
       if (logical == _currentIndex) return;
@@ -395,18 +430,29 @@ class BiliBeatAudioHandler extends BaseAudioHandler with SeekHandler {
     final token = ++_startToken;
     _broadcastState(processingOverride: AudioProcessingState.loading);
 
+    // Set *before* the download await, not just around the queue rebuild: from
+    // here until the new source is installed, the native queue and the logical
+    // index disagree, and anything that reconciles them (index events, queue
+    // completion) has to stand down. Downloading a track can take seconds —
+    // that was a wide-open window for the old track to finish and advance the
+    // logical playlist out from under this start.
+    _isRebuilding = true;
+
     final String path;
     try {
       path = await AudioDownloadService.ensureDownloaded(active);
     } catch (e) {
       debugPrint('playTrack download failed: $e');
-      if (token == _startToken) _broadcastState();
+      if (token == _startToken) {
+        _isRebuilding = false;
+        _broadcastState();
+      }
       return;
     }
     // A newer start won the race while we were downloading — drop this one.
+    // Its own run owns `_isRebuilding` now, so leave the flag alone.
     if (token != _startToken) return;
 
-    _isRebuilding = true;
     try {
       await _queueSource.clear();
       await _queueSource.add(ja.AudioSource.file(path, tag: active));
@@ -430,9 +476,11 @@ class BiliBeatAudioHandler extends BaseAudioHandler with SeekHandler {
     } catch (e) {
       debugPrint('startCurrent error: $e');
     } finally {
-      _isRebuilding = false;
+      // Again: only the newest start may lower the flag.
+      if (token == _startToken) _isRebuilding = false;
     }
 
+    if (token != _startToken) return;
     _broadcastState();
     if (_loopMode != LoopMode.one) unawaited(_prefetchNext());
   }
@@ -442,7 +490,7 @@ class BiliBeatAudioHandler extends BaseAudioHandler with SeekHandler {
   /// queue's last child. This keeps the window gapless-ready without ever
   /// streaming bytes through Dart.
   Future<void> _prefetchNext() async {
-    if (_loopMode == LoopMode.one) return;
+    if (_loopMode == LoopMode.one || autoAdvanceHeld) return;
     if (_playlist.isEmpty || _currentIndex < 0) return;
 
     // Only the contiguous successor is prefetched: the window's player index
@@ -476,6 +524,15 @@ class BiliBeatAudioHandler extends BaseAudioHandler with SeekHandler {
   /// the following track may simply not have finished in time).
   void _handleQueueCompleted() {
     if (_isRebuilding || _playlist.isEmpty) return;
+
+    // The user is on the lyrics / info surface: end here rather than pulling
+    // the ground out from under them by loading another track.
+    if (autoAdvanceHeld) {
+      _isPlaying = false;
+      _playerStateController.add(false);
+      _broadcastState();
+      return;
+    }
 
     final next = _currentIndex + 1;
     if (next < _playlist.length) {

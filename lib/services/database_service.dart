@@ -375,6 +375,34 @@ class DatabaseService {
     await _persistLyrics();
   }
 
+  /// Moves every line of the cached lyrics for [trackId] by [delta] seconds and
+  /// persists the result, returning the new lines (null when nothing is
+  /// cached). Used by the drag-to-calibrate gesture on the lyrics page: the
+  /// correction has to survive leaving the screen, so it is baked into the
+  /// stored timeline rather than kept as a view-only offset.
+  static Future<List<LyricLine>?> shiftCachedLyrics(
+      String trackId, double delta) async {
+    await _ensureLoaded();
+    final cached = _lyricsCache[trackId];
+    if (cached == null || cached.lines.isEmpty) return null;
+
+    final shifted = cached.lines
+        .map((l) => LyricLine(
+              time: (l.time + delta).clamp(0.0, 99999.0),
+              text: l.text,
+              translation: l.translation,
+            ))
+        .toList();
+    _lyricsCache[trackId] = LyricsResult(
+      source: cached.source,
+      songTitle: cached.songTitle,
+      artistName: cached.artistName,
+      lines: shifted,
+    );
+    await _persistLyrics();
+    return shifted;
+  }
+
   static Future<LyricsResult?> getCachedLyrics(String trackId) async {
     await _ensureLoaded();
     return _lyricsCache[trackId];
