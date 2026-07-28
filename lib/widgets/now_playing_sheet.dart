@@ -186,41 +186,37 @@ class _NowPlayingSheetState extends State<NowPlayingSheet> {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      decoration: const BoxDecoration(
-        color: Colors.transparent,
-      ),
-      child: Scaffold(
-        backgroundColor: Colors.transparent,
-        resizeToAvoidBottomInset: false,
-        body: AmbientBackground(
-          coverUrl: _displayTrack.coverUrl,
-          child: SafeArea(
-            child: Column(
-              children: [
-                _topBar(),
-                Expanded(
-                  child: Center(
-                    child: _showLyrics && _isActive
-                        ? ValueListenableBuilder<List<LyricLine>>(
-                            valueListenable: widget.lyricsNotifier,
-                            builder: (context, lines, _) {
-                              return SyncedLyricsView(
-                                lines: lines,
-                                positionNotifier: widget.positionNotifier,
-                                onSeek: (sec) => widget.handler.seek(
-                                  Duration(milliseconds: (sec * 1000).toInt()),
-                                ),
-                                onOpenEditor: widget.onOpenLyricEditor,
-                              );
-                            },
-                          )
-                        : _albumArt(),
-                  ),
+    return Scaffold(
+      backgroundColor: Colors.transparent,
+      resizeToAvoidBottomInset: false,
+      body: AmbientBackground(
+        coverUrl: _displayTrack.coverUrl,
+        child: SafeArea(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              _topBar(),
+              Expanded(
+                child: Center(
+                  child: _showLyrics && _isActive
+                      ? ValueListenableBuilder<List<LyricLine>>(
+                          valueListenable: widget.lyricsNotifier,
+                          builder: (context, lines, _) {
+                            return SyncedLyricsView(
+                              lines: lines,
+                              positionNotifier: widget.positionNotifier,
+                              onSeek: (sec) => widget.handler.seek(
+                                Duration(milliseconds: (sec * 1000).toInt()),
+                              ),
+                              onOpenEditor: widget.onOpenLyricEditor,
+                            );
+                          },
+                        )
+                      : _albumArt(),
                 ),
-                _bottomPanel(),
-              ],
-            ),
+              ),
+              _bottomPanel(),
+            ],
           ),
         ),
       ),

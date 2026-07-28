@@ -211,25 +211,34 @@ class _MainLayoutState extends State<MainLayout> {
     final focused = track ?? _currentTrack;
     if (focused == null) return;
 
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      useSafeArea: false,
-      enableDrag: true,
-      backgroundColor: Colors.transparent,
-      builder: (context) {
-        return FractionallySizedBox(
-          heightFactor: 1.0,
-          child: NowPlayingSheet(
-            handler: _audioHandler,
-            focusedTrack: focused,
-            positionNotifier: _positionNotifier,
-            durationNotifier: _durationNotifier,
-            lyricsNotifier: _lyricsNotifier,
-            onOpenLyricEditor: _openLyricEditor,
-          ),
-        );
-      },
+    Navigator.of(context).push(
+      PageRouteBuilder(
+        opaque: false,
+        barrierDismissible: true,
+        barrierColor: AppColors.black55,
+        transitionDuration: const Duration(milliseconds: 300),
+        reverseTransitionDuration: const Duration(milliseconds: 250),
+        pageBuilder: (context, animation, secondaryAnimation) {
+          return SlideTransition(
+            position: Tween<Offset>(
+              begin: const Offset(0, 1),
+              end: Offset.zero,
+            ).animate(CurvedAnimation(
+              parent: animation,
+              curve: Curves.easeOutCubic,
+              reverseCurve: Curves.easeInCubic,
+            )),
+            child: NowPlayingSheet(
+              handler: _audioHandler,
+              focusedTrack: focused,
+              positionNotifier: _positionNotifier,
+              durationNotifier: _durationNotifier,
+              lyricsNotifier: _lyricsNotifier,
+              onOpenLyricEditor: _openLyricEditor,
+            ),
+          );
+        },
+      ),
     );
   }
 
