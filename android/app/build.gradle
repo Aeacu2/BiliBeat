@@ -3,6 +3,19 @@ plugins {
     id "dev.flutter.flutter-gradle-plugin"
 }
 
+// Release signing. Credentials live in android/key.properties, which is
+// gitignored and never committed — see tool/make_keystore.sh.
+//
+// When the file is absent (fresh clone, CI without secrets) the build falls
+// back to the debug key so `flutter run --release` still works, and prints a
+// warning so an unsigned-for-real build is never shipped by accident.
+def keystorePropertiesFile = rootProject.file("key.properties")
+def hasReleaseKey = keystorePropertiesFile.exists()
+def keystoreProperties = new Properties()
+if (hasReleaseKey) {
+    keystorePropertiesFile.withInputStream { keystoreProperties.load(it) }
+}
+
 android {
     namespace = "com.bilibeat.bilibeat"
     compileSdk = 36
@@ -28,11 +41,27 @@ android {
         versionName = flutter.versionName
     }
 
+    signingConfigs {
+        release {
+            if (hasReleaseKey) {
+                storeFile = file(keystoreProperties["storeFile"])
+                storePassword = keystoreProperties["storePassword"]
+                keyAlias = keystoreProperties["keyAlias"]
+                keyPassword = keystoreProperties["keyPassword"]
+            }
+        }
+    }
+
     buildTypes {
         release {
-            // TODO: Add your own signing config for the release build.
-            // Signing with the debug keys for now, so `flutter run --release` works.
-            signingConfig = signingConfigs.debug
+            signingConfig = hasReleaseKey
+                ? signingConfigs.release
+                : signingConfigs.debug
+            if (!hasReleaseKey) {
+                logger.warn("WARNING: android/key.properties not found — " +
+                        "signing this release with the DEBUG key. " +
+                        "Run tool/make_keystore.sh before publishing.")
+            }
 
             // Release optimizations: R8 minification + resource shrinking for a
             // smaller binary and faster startup.

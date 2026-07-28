@@ -6,6 +6,26 @@ A Flutter music player for Bilibili audio with synced LRC lyrics and offline cac
 
 - [Latest Release](https://github.com/Aeacu2/BiliBeat/releases/latest)
 
+## Signing
+
+Release builds are signed with the key in `android/key.properties`. Create it
+once:
+
+```bash
+tool/make_keystore.sh
+```
+
+Back up **both** `android/bilibeat-release.jks` and `android/key.properties`,
+and never commit them (both are gitignored). Losing the keystore is
+unrecoverable — a different key cannot update an existing install.
+
+Without that file the build falls back to the debug key and warns; check what
+you actually shipped with:
+
+```bash
+apksigner verify --print-certs build/app/outputs/flutter-apk/app-release.apk
+```
+
 ## Build
 
 ```bash

@@ -7,6 +7,7 @@ import '../widgets/track_options_menu.dart';
 import '../theme/app_theme.dart';
 import '../widgets/cached_cover_image.dart';
 import '../widgets/empty_state.dart';
+import '../widgets/marquee_text.dart';
 import '../widgets/mini_player.dart';
 import '../widgets/shimmer.dart';
 import '../widgets/track_download_button.dart';
@@ -86,12 +87,46 @@ class _SearchScreenState extends State<SearchScreen> {
     }
   }
 
+  /// Seed queries for 为您推荐. There is no personalisation behind this — it is
+  /// a Bilibili keyword search ordered by `totalrank` (their popularity mix).
+  /// Rotating the seed at least stops the page being identical every launch.
+  static const List<String> _recommendSeeds = [
+    '动漫原声OST',
+    '纯音乐 钢琴',
+    '古风 原创',
+    'ACG 音乐',
+    '华语 翻唱',
+    '电影 配乐',
+  ];
+
+  /// Recommendations are for listening, so long-form uploads — full concerts,
+  /// hour-long compilations, radio rips — are filtered out. Explicit searches
+  /// are not filtered: if you search for a two-hour set, you want it.
+  static const int _maxRecommendedSeconds = 6 * 60;
+
+  static List<Track> _songLength(List<Track> tracks) => tracks
+      .where((t) => t.duration > 0 && t.duration <= _maxRecommendedSeconds)
+      .toList();
+
   Future<void> _loadRecommendations() async {
     try {
-      final tracks = await BilibiliSdk.search('动漫原声OST');
+      final seeds = [..._recommendSeeds]..shuffle();
+      final picked = <Track>[];
+      final seen = <String>{};
+
+      // Filtering can gut a page of results, so fall through to further seeds
+      // until there is enough to fill the screen (bounded at three requests).
+      for (final seed in seeds.take(3)) {
+        for (final track in _songLength(await BilibiliSdk.search(seed))) {
+          if (seen.add(track.id)) picked.add(track);
+        }
+        if (!mounted) return;
+        if (picked.length >= 12) break;
+      }
+
       if (mounted) {
         setState(() {
-          _recommendedTracks = tracks;
+          _recommendedTracks = picked;
           _isLoadingRecommended = false;
         });
       }
@@ -153,7 +188,7 @@ class _SearchScreenState extends State<SearchScreen> {
           sliver: SliverList.builder(
             itemCount: _visibleTracks.length,
             itemBuilder: (context, index) =>
-                _buildTrackTile(_visibleTracks[index]),
+                _buildTrackTile(_visibleTracks[index], index),
           ),
         ),
         SliverToBoxAdapter(
@@ -341,7 +376,7 @@ class _SearchScreenState extends State<SearchScreen> {
       ];
   }
 
-  Widget _buildTrackTile(Track track) {
+  Widget _buildTrackTile(Track track, int index) {
     return Container(
       margin: const EdgeInsets.only(bottom: 10),
       child: GlassCard(
@@ -368,11 +403,25 @@ class _SearchScreenState extends State<SearchScreen> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(
-                        track.title,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(color: AppColors.textPrimary, fontSize: 15, fontWeight: FontWeight.w600),
+                      // Bilibili titles are routinely far wider than a row.
+                      // The marquee is affordable here because it only
+                      // animates when the text actually overflows, and the
+                      // RepaintBoundary keeps each ticking title from
+                      // repainting the rest of the row.
+                      RepaintBoundary(
+                        child: MarqueeText(
+                          text: track.title,
+                          style: const TextStyle(
+                            color: AppColors.textPrimary,
+                            fontSize: 15,
+                            height: 1.3,
+                            fontWeight: FontWeight.w600,
+                          ),
+                          // Stagger the starts so a screenful of rows does not
+                          // all lurch into motion on the same frame.
+                          startPause: Duration(
+                              milliseconds: 1400 + (index % 5) * 450),
+                        ),
                       ),
                       const SizedBox(height: 4),
                       Text(

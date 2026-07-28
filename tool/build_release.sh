@@ -42,6 +42,13 @@ if [ -z "$FLUTTER" ]; then
   exit 1
 fi
 
+if [ ! -f android/key.properties ]; then
+  echo "WARNING: android/key.properties not found — this build will be signed" >&2
+  echo "         with the DEBUG key and must not be published." >&2
+  echo "         Run tool/make_keystore.sh first." >&2
+  echo >&2
+fi
+
 VERSION=$(grep '^version:' pubspec.yaml | awk '{print $2}')
 SYMBOLS_DIR="symbols/$VERSION"
 mkdir -p "$SYMBOLS_DIR"

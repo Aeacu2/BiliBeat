@@ -40,6 +40,18 @@
   - 架构上「未下载即不可播放」，因此播放页主按钮按真实状态切换：**未下载 → 下载按钮**；**下载中 → 圆环进度条**（与列表中 `TrackDownloadButton` 同一视觉）；**已下载 → 播放/暂停**。
   - 移除播放页的「已下载 ✓」指示与顶部音源行：能播放本身即代表已下载，再标注是冗余。
   - handler 自身的下载不经过 `DownloadManager`，故播放开始时会复查一次落盘状态，避免按钮卡在「下载」。
+- [x] **正式签名配置 (Release Signing)**
+  - `android/app/build.gradle` 从 `android/key.properties` 读取签名信息；文件缺失时回退到 debug key 并打印警告，保证 `flutter run --release` 仍可用。
+  - `tool/make_keystore.sh` 一次性生成密钥库（keytool 交互式输入密码，不进入命令行历史）。
+  - **`*.jks` / `key.properties` 已加入 .gitignore，绝不入库。**
+  - **⚠️ 换签名 = 老用户无法覆盖安装**：Android 以签名标识应用身份。v1.0.0–v2.2.0 均为 debug key 签名，切换后已安装用户必须卸载重装（丢失已下载音频与歌单）。因此切换时机需要明确决策，且密钥库一旦丢失不可恢复。
+- [x] **推荐内容规则 (Recommendation Rules)**
+  - 推荐并非个性化算法，而是 B 站关键词搜索（`totalrank` 排序）。此前固定为单一关键词「动漫原声OST」，每次启动完全相同；现在在 6 组种子词中随机取用并去重。
+  - **推荐仅收录 ≤ 6 分钟的视频**，过滤掉整场演唱会 / 合集 / 电台录音等长视频；**搜索不做此过滤**——用户主动搜索长视频时就是想要它。
+  - 过滤可能导致单次结果过少，因此最多再取 2 组种子词补足到 12 条。
+- [x] **搜索 / 推荐列表标题滚动 (Marquee Titles in Result Rows)**
+  - B 站标题普遍超长，列表行改用 `MarqueeText`。
+  - 成本控制：仅在**确实溢出**时才启动动画；每行包 `RepaintBoundary`，滚动不会波及整行/整列表重绘；按行序错开起始延迟（1400ms + index%5 × 450ms），避免整屏同时启动。
 - [x] **代码瘦身与渲染优化 (Dead-Code Purge & Render Optimisation)**
   - **播放状态改为 Notifier**：`_currentTrack` / `_isPlaying` 此前是 `setState` 状态，每次播放/暂停、每次切歌都会重建整棵树（含两个页面子树），而真正关心它们的只有氛围背景与底部播放条。现改为 `ValueNotifier`，并把氛围背景从「内容的父节点」改为「内容的兄弟层」，切歌只重绘背景层。
   - **删除无人订阅的 `queueStream`**：每次队列变化都在做 `List.of(_playlist)` 全量拷贝，却没有任何监听者。

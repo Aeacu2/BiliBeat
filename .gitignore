@@ -47,3 +47,9 @@ app.*.map.json
 # Obfuscation symbol files: large, per-build binaries. Archive them with the
 # GitHub release instead — they are required to read crashes from that build.
 symbols/
+
+# Release signing material. Losing these orphans every install; leaking them
+# lets anyone ship an "update" to your users. Never commit.
+android/key.properties
+*.jks
+*.keystore
