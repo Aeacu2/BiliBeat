@@ -229,17 +229,9 @@ class _MainLayoutState extends State<MainLayout> {
   Rect? _miniPlayerRect() {
     final box = _miniPlayerKey.currentContext?.findRenderObject() as RenderBox?;
     if (box == null || !box.hasSize) return null;
-    final origin = box.localToGlobal(Offset.zero);
-    // The card does not fill its slot: the widget reserves the bottom inset
-    // and a side margin, and the morph has to start on the *card*, not on the
-    // padding around it.
-    final gap = MiniPlayer.bottomGap(context);
-    return Rect.fromLTWH(
-      origin.dx + 12,
-      origin.dy,
-      box.size.width - 24,
-      box.size.height - gap,
-    );
+    // The card is flush to the bottom and the sides, so its slot *is* the card
+    // — no margins to subtract.
+    return box.localToGlobal(Offset.zero) & box.size;
   }
 
   void _openNowPlaying({Track? track, bool follow = false}) {

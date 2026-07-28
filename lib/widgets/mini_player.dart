@@ -42,82 +42,73 @@ class MiniPlayer extends StatelessWidget {
     required this.onTap,
   });
 
-  /// Card height, excluding the bottom inset the parent reserves.
+  /// Height of the controls themselves, above the home-indicator inset.
   static const double contentHeight = 68.0;
 
-  /// The album art's radius, so the card looks like the page folded down.
-  static const double radius = AppRadius.xl;
+  /// The card is seated on the bottom edge of the screen, so only its top
+  /// corners are rounded: there is nothing below or beside it to round against.
+  /// The radius is still the album art's, so the card reads as the page folded
+  /// down and the morph starts from the shape it ends with.
+  static const BorderRadius cardRadius =
+      BorderRadius.vertical(top: Radius.circular(AppRadius.xl));
 
-  /// Bottom gap below the card: the home-indicator inset, or a small margin on
-  /// devices that have none.
-  static double bottomGap(BuildContext context) {
+  /// Space between the controls and the very bottom of the screen: the
+  /// home-indicator inset, or a small margin on devices without one. It is
+  /// *inside* the card now — the card itself is flush to the edge.
+  static double bottomInset(BuildContext context) {
     final inset = MediaQuery.of(context).padding.bottom;
-    return inset > 0 ? inset : 10;
+    return inset > 0 ? inset : 6;
   }
 
   /// Total space the docked player occupies — the single source of truth for
   /// every layout that has to stop above it.
   static double totalHeight(BuildContext context) =>
-      contentHeight + bottomGap(context);
+      contentHeight + bottomInset(context);
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: EdgeInsets.fromLTRB(12, 0, 12, bottomGap(context)),
-      child: SizedBox(
-        height: contentHeight,
-        child: currentTrack == null ? _emptyState() : _activePlayer(),
-      ),
-    );
-  }
-
-  /// One elevated surface, one hairline, one deep shadow — the album art's
-  /// treatment at bar scale.
-  Widget _shell({required Widget child}) {
     return DecoratedBox(
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(radius),
-        boxShadow: const [
+      // Cast upwards: a shadow below a bottom-seated bar is off-screen. This
+      // one lifts the card off the list scrolling under it.
+      decoration: const BoxDecoration(
+        borderRadius: cardRadius,
+        boxShadow: [
           BoxShadow(
             color: AppColors.black55,
-            blurRadius: 28,
-            spreadRadius: -4,
-            offset: Offset(0, 10),
+            blurRadius: 26,
+            spreadRadius: -2,
+            offset: Offset(0, -6),
           ),
         ],
       ),
       child: ClipRRect(
-        borderRadius: BorderRadius.circular(radius),
+        borderRadius: cardRadius,
         child: DecoratedBox(
-          decoration: BoxDecoration(
+          decoration: const BoxDecoration(
             color: AppColors.backgroundElevated,
-            border: Border.all(color: AppColors.hairline),
-            borderRadius: BorderRadius.circular(radius),
+            border: Border(top: BorderSide(color: AppColors.hairline)),
+            borderRadius: cardRadius,
           ),
-          child: child,
+          child: Padding(
+            padding: EdgeInsets.only(bottom: bottomInset(context)),
+            child: SizedBox(
+              height: contentHeight,
+              child: currentTrack == null ? _emptyState() : _activePlayer(),
+            ),
+          ),
         ),
       ),
     );
   }
 
   Widget _emptyState() {
-    return _shell(
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 10),
+    return const Padding(
+        padding: EdgeInsets.symmetric(horizontal: 16),
         child: Row(
           children: [
-            Container(
-              width: 48,
-              height: 48,
-              decoration: BoxDecoration(
-                color: AppColors.surfaceCard,
-                borderRadius: BorderRadius.circular(AppRadius.md),
-              ),
-              child: const Icon(Icons.music_note_rounded,
-                  color: AppColors.textFaint, size: 20),
-            ),
-            const SizedBox(width: 12),
-            const Expanded(
+            _EmptyArt(),
+            SizedBox(width: 12),
+            Expanded(
               child: Text('选一首歌开始播放',
                   style: TextStyle(
                       color: AppColors.textMuted,
@@ -127,7 +118,6 @@ class MiniPlayer extends StatelessWidget {
             ),
           ],
         ),
-      ),
     );
   }
 
@@ -151,11 +141,10 @@ class MiniPlayer extends StatelessWidget {
           onPrevious!();
         }
       },
-      child: _shell(
-        child: Stack(
+      child: Stack(
           children: [
             Padding(
-              padding: const EdgeInsets.fromLTRB(10, 0, 8, 0),
+              padding: const EdgeInsets.fromLTRB(16, 0, 8, 0),
               child: Row(
                 children: [
                   ClipRRect(
@@ -212,6 +201,9 @@ class MiniPlayer extends StatelessWidget {
                 ],
               ),
             ),
+            // Seated on the bottom of the *controls*, not of the card: below
+            // this is the home-indicator inset, and a hairline hiding under
+            // the indicator is a hairline nobody can see.
             Positioned(
               left: 0,
               right: 0,
@@ -220,7 +212,6 @@ class MiniPlayer extends StatelessWidget {
             ),
           ],
         ),
-      ),
     );
   }
 
@@ -307,6 +298,26 @@ class MiniPlayer extends StatelessWidget {
           ),
         );
       },
+    );
+  }
+}
+
+/// Placeholder artwork for the "nothing playing" state, in the same slot the
+/// cover occupies so the bar does not change shape when playback starts.
+class _EmptyArt extends StatelessWidget {
+  const _EmptyArt();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 48,
+      height: 48,
+      decoration: BoxDecoration(
+        color: AppColors.surfaceCard,
+        borderRadius: BorderRadius.circular(AppRadius.md),
+      ),
+      child: const Icon(Icons.music_note_rounded,
+          color: AppColors.textFaint, size: 20),
     );
   }
 }

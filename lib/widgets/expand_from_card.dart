@@ -1,5 +1,3 @@
-import 'dart:ui' show lerpDouble;
-
 import 'package:flutter/material.dart';
 
 import '../theme/app_theme.dart';
@@ -75,7 +73,10 @@ class _ExpandFromCardState extends State<ExpandFromCard> {
         if (t >= 1.0) return child!;
 
         final rect = Rect.lerp(widget.from, screen, t)!;
-        final radius = lerpDouble(MiniPlayer.radius, 0.0, t)!;
+        // Starts as the card's shape — top corners only, since it is seated on
+        // the bottom edge — and unrolls to the square-cornered page.
+        final radius =
+            BorderRadius.lerp(MiniPlayer.cardRadius, BorderRadius.zero, t)!;
         // The content trails the growth a little; by ~60% of the way it is
         // fully there.
         final fade = ((t - 0.1) / 0.5).clamp(0.0, 1.0);
@@ -85,7 +86,7 @@ class _ExpandFromCardState extends State<ExpandFromCard> {
             Positioned.fromRect(
               rect: rect,
               child: ClipRRect(
-                borderRadius: BorderRadius.circular(radius),
+                borderRadius: radius,
                 child: Stack(
                   fit: StackFit.expand,
                   children: [
