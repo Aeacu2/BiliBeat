@@ -205,16 +205,29 @@ class BilibiliSdk {
       debugPrint('Search URL: $searchUrl');
       debugPrint('Search cookies: $cookieStr');
 
-      final body = await _httpGet(searchUrl, cookies: cookieStr);
+      var body = await _httpGet(searchUrl, cookies: cookieStr);
+      if (body == null || body.contains('"code":-352') || body.contains('"code":412')) {
+        // Fallback: standard web search API
+        final fallbackUrl = '$_baseUrl/x/web-interface/search/type?search_type=video&keyword=${Uri.encodeComponent(query.trim())}';
+        body = await _httpGet(fallbackUrl, cookies: cookieStr);
+      }
+
       if (body != null) {
         final json = jsonDecode(body);
         debugPrint('Search response code: ${json['code']}, message: ${json['message']}');
 
-        if (json['code'] == 0 && json['data']?['result'] != null) {
-          final results = json['data']['result'] as List;
+        dynamic rawResult = json['data']?['result'];
+        List? resultsList;
+        if (rawResult is List) {
+          resultsList = rawResult;
+        } else if (rawResult is Map && rawResult['video'] is List) {
+          resultsList = rawResult['video'] as List;
+        }
+
+        if (resultsList != null) {
           final tracks = <Track>[];
 
-          for (final item in results) {
+          for (final item in resultsList) {
             final bvid = item['bvid'] as String?;
             if (bvid == null || bvid.isEmpty) continue;
 

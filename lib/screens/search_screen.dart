@@ -31,6 +31,8 @@ class _SearchScreenState extends State<SearchScreen> {
   List<Track> _recommendedTracks = [];
   bool _isLoading = false;
   bool _isLoadingRecommended = true;
+  bool _hasSearched = false;
+  String _lastQuery = '';
 
   List<String> _searchHistory = [];
 
@@ -98,6 +100,8 @@ class _SearchScreenState extends State<SearchScreen> {
     setState(() {
       _searchHistory = history;
       _isLoading = true;
+      _hasSearched = true;
+      _lastQuery = trimmed;
     });
 
     final results = await BilibiliSdk.search(trimmed);
@@ -205,7 +209,7 @@ class _SearchScreenState extends State<SearchScreen> {
             ],
           )
         // Active Search Results List
-        else if (_searchResults.isNotEmpty) ...[
+        else if (_hasSearched && _searchResults.isNotEmpty) ...[
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
@@ -216,7 +220,10 @@ class _SearchScreenState extends State<SearchScreen> {
               TextButton(
                 onPressed: () {
                   _searchController.clear();
-                  setState(() => _searchResults = []);
+                  setState(() {
+                    _searchResults = [];
+                    _hasSearched = false;
+                  });
                 },
                 child: const Text('清空搜索', style: TextStyle(color: AppColors.textFaint, fontSize: 12)),
               ),
@@ -224,6 +231,38 @@ class _SearchScreenState extends State<SearchScreen> {
           ),
           const SizedBox(height: 12),
           ..._searchResults.map((track) => _buildTrackTile(track)),
+        ]
+        // Search Completed but No Results Found
+        else if (_hasSearched && _searchResults.isEmpty) ...[
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 40),
+            child: Column(
+              children: [
+                const Icon(Icons.search_off_rounded, size: 48, color: AppColors.textMuted),
+                const SizedBox(height: 12),
+                Text(
+                  '未找到与 "$_lastQuery" 相关的搜索结果',
+                  style: const TextStyle(color: AppColors.textSecondary, fontSize: 14),
+                ),
+                const SizedBox(height: 6),
+                const Text(
+                  '提示：您可以尝试直接输入 BV 号 (如 BV1xx411c7mD) 或简化搜索关键词',
+                  style: TextStyle(color: AppColors.textFaint, fontSize: 12),
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 16),
+                OutlinedButton.icon(
+                  onPressed: () => _performSearch(_lastQuery),
+                  icon: const Icon(Icons.refresh, size: 16),
+                  label: const Text('重试搜索'),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: AppColors.accent,
+                    side: const BorderSide(color: AppColors.accent30),
+                  ),
+                ),
+              ],
+            ),
+          ),
         ]
         // Default Auto Recommendations View
         else ...[

@@ -90,6 +90,7 @@ class _CachedCoverImageState extends State<CachedCoverImage> {
 
   /// Append Bilibili CDN resize params when applicable.
   String _sizedUrl(String url, int w, int h) {
+    if (url.isEmpty) return url;
     final uri = Uri.tryParse(url);
     if (uri == null) return url;
     final host = uri.host;
@@ -99,7 +100,7 @@ class _CachedCoverImageState extends State<CachedCoverImage> {
         host.contains('bilibili.com');
     if (!isBili) return url;
     if (url.contains('@')) return url; // already parameterized
-    return '$url@${w}w_${h}h_1e_1c';
+    return '$url@${w}w_${h}h_1e_1c.webp';
   }
 
   Future<void> _loadImage() async {
@@ -162,7 +163,6 @@ class _CachedCoverImageState extends State<CachedCoverImage> {
           });
         }
       } else {
-        // Drain so the connection can be reused, then fall back to network.
         await res.drain<void>();
         if (mounted && token == _loadKey) setState(() => _isLoading = false);
       }
@@ -211,11 +211,14 @@ class _CachedCoverImageState extends State<CachedCoverImage> {
       return Container(
         width: widget.width,
         height: widget.height,
-        color: Colors.white10,
+        decoration: BoxDecoration(
+          color: const Color(0xFF1C1C22),
+          borderRadius: BorderRadius.circular(AppRadius.md),
+        ),
         child: const Center(
           child: SizedBox(
-            width: 16,
-            height: 16,
+            width: 20,
+            height: 20,
             child: CircularProgressIndicator(
               strokeWidth: 2,
               color: AppColors.accent,
@@ -227,6 +230,11 @@ class _CachedCoverImageState extends State<CachedCoverImage> {
 
     return Image.network(
       _sizedUrl(widget.url, targetCacheWidth, targetCacheHeight),
+      headers: const {
+        'Referer': 'https://www.bilibili.com/',
+        'User-Agent':
+            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36',
+      },
       width: widget.width,
       height: widget.height,
       cacheWidth: targetCacheWidth > 0 ? targetCacheWidth : null,
@@ -242,8 +250,23 @@ class _CachedCoverImageState extends State<CachedCoverImage> {
         Container(
           width: widget.width,
           height: widget.height,
-          color: Colors.white10,
-          child: const Icon(Icons.music_note, color: Colors.white70),
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              colors: [
+                AppColors.accent.withValues(alpha: 0.35),
+                const Color(0xFF1E1E24),
+              ],
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+            ),
+          ),
+          child: Center(
+            child: Icon(
+              Icons.music_note_rounded,
+              color: AppColors.accent,
+              size: (widget.width * 0.4).clamp(24.0, 80.0),
+            ),
+          ),
         );
   }
 }
