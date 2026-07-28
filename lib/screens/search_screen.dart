@@ -433,10 +433,9 @@ class _SearchScreenState extends State<SearchScreen> {
                             height: 1.3,
                             fontWeight: FontWeight.w600,
                           ),
-                          // Stagger the starts so a screenful of rows does not
-                          // all lurch into motion on the same frame.
-                          startPause: Duration(
-                              milliseconds: 1400 + (index % 5) * 450),
+                          // Desynchronise rows so a screenful of titles does
+                          // not slide in lockstep.
+                          phase: (index % 5) / 5,
                         ),
                       ),
                       const SizedBox(height: 4),

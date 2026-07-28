@@ -1,7 +1,11 @@
 import 'package:flutter/material.dart';
 
-/// A single-line text that gently scrolls when — and only when — it is too wide
-/// for the space it was given, with soft fade-outs at both edges.
+/// A single-line text that scrolls continuously when — and only when — it is
+/// too wide for the space it was given, with soft fade-outs at both edges.
+///
+/// The motion is unbroken: constant velocity, no dwell at either end, and a
+/// second copy of the text trailing exactly one cycle behind so the wrap point
+/// is invisible. Text that fits is drawn statically and costs nothing.
 ///
 /// ## Why this is written the way it is
 ///
@@ -25,18 +29,15 @@ class MarqueeText extends StatefulWidget {
   final String text;
   final TextStyle style;
 
-  /// When false the text is parked at its start position (still ellipsized if
-  /// it overflows). Typically wired to "is this track actually playing".
-  final bool scrolling;
-
   /// Scroll speed in logical pixels per second.
   final double velocity;
 
   /// Blank space between the end of the text and the start of its repeat.
   final double gap;
 
-  /// How long to dwell at the start of each cycle before scrolling.
-  final Duration startPause;
+  /// Starting offset within the cycle, 0..1. Rows in a list pass different
+  /// phases so a screenful of titles does not slide in lockstep.
+  final double phase;
 
   /// Alignment used when the text *fits* and no scrolling is needed.
   final TextAlign textAlign;
@@ -48,10 +49,9 @@ class MarqueeText extends StatefulWidget {
     super.key,
     required this.text,
     required this.style,
-    this.scrolling = true,
     this.velocity = 26,
     this.gap = 44,
-    this.startPause = const Duration(milliseconds: 1600),
+    this.phase = 0.0,
     this.textAlign = TextAlign.start,
     this.fade = true,
   });
@@ -75,7 +75,6 @@ class _MarqueeTextState extends State<MarqueeText>
 
   // Cycle geometry, recomputed in build; read by the animation callback.
   double _travel = 0.0;
-  double _pauseFraction = 0.0;
 
   @override
   void dispose() {
@@ -145,6 +144,7 @@ class _MarqueeTextState extends State<MarqueeText>
           );
         }
 
+        // Only overflowing text scrolls; text that fits is simply drawn.
         final overflows = textSize.width > maxWidth + 0.5;
         if (!overflows) {
           _scheduleSync(shouldRun: false, cycle: Duration.zero);
@@ -163,14 +163,13 @@ class _MarqueeTextState extends State<MarqueeText>
         }
 
         // One cycle scrolls the text plus the gap, so the repeat slides in
-        // seamlessly behind it.
+        // seamlessly behind it and the motion never visibly restarts.
         _travel = textSize.width + widget.gap;
-        final travelMs = (_travel / widget.velocity * 1000).round();
-        final totalMs = travelMs + widget.startPause.inMilliseconds;
-        _pauseFraction = totalMs == 0 ? 0 : widget.startPause.inMilliseconds / totalMs;
-        final cycle = Duration(milliseconds: totalMs.clamp(1, 600000));
+        final cycle = Duration(
+            milliseconds:
+                (_travel / widget.velocity * 1000).round().clamp(1, 600000));
 
-        _scheduleSync(shouldRun: widget.scrolling, cycle: cycle);
+        _scheduleSync(shouldRun: true, cycle: cycle);
 
         Widget marquee = ClipRect(
           child: OverflowBox(
@@ -179,11 +178,9 @@ class _MarqueeTextState extends State<MarqueeText>
             child: AnimatedBuilder(
               animation: _controller,
               builder: (context, child) {
-                final t = _controller.value;
-                // Dwell at the start, then scroll one full cycle.
-                final progress = t <= _pauseFraction
-                    ? 0.0
-                    : (t - _pauseFraction) / (1.0 - _pauseFraction);
+                // Continuous: constant velocity, no dwell, wrapping seamlessly
+                // because the second copy is exactly one `travel` behind.
+                final progress = (_controller.value + widget.phase) % 1.0;
                 return Transform.translate(
                   offset: Offset(-progress * _travel, 0),
                   child: child,

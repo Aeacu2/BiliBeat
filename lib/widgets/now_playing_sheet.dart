@@ -340,13 +340,12 @@ class _NowPlayingSheetState extends State<NowPlayingSheet> {
                   children: [
                     MarqueeText(
                       text: _displayTrack.title,
-                      scrolling: _isActive && _isPlaying,
                       style: AppTypography.title,
                     ),
                     const SizedBox(height: 4),
                     MarqueeText(
                       text: _displayTrack.uploader,
-                      scrolling: false,
+                      phase: 0.35,
                       style: AppTypography.bodyMedium,
                     ),
                   ],

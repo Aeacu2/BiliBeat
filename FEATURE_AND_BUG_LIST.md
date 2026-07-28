@@ -55,9 +55,10 @@
   - **清空搜索历史会同步清除其对推荐的影响**：画像每次都从零重建，不存在缓存的历史权重；清空后推荐区同时隐藏。
   - 推荐仅收录 ≤ 6 分钟的视频（过滤整场演唱会 / 合集 / 电台录音）；**搜索不做此过滤**——主动搜索长视频时就是想要它。
   - 搜索后不立即重算推荐（会额外增加数次请求），而是标记为 stale，回到推荐视图时再刷新。
-- [x] **搜索 / 推荐列表标题滚动 (Marquee Titles in Result Rows)**
-  - B 站标题普遍超长，列表行改用 `MarqueeText`。
-  - 成本控制：仅在**确实溢出**时才启动动画；每行包 `RepaintBoundary`，滚动不会波及整行/整列表重绘；按行序错开起始延迟（1400ms + index%5 × 450ms），避免整屏同时启动。
+- [x] **全局无间断滚动标题 (Continuous Marquee Everywhere)**
+  - 滚动为**匀速无限循环**：没有起止停顿，第二份文本恰好落后一个周期，接缝不可见。
+  - 覆盖范围统一：迷你播放条、全屏播放页、搜索 / 推荐、歌单详情、下载中列表。
+  - 成本控制：仅在**确实溢出**时才动；每处包 `RepaintBoundary`，滚动不波及整行/整列表重绘；用 `phase`（0..1 相位偏移）错开各行，避免整屏同步平移——注意不能用「起始停顿」错开，因为已无停顿。
 - [x] **代码瘦身与渲染优化 (Dead-Code Purge & Render Optimisation)**
   - **播放状态改为 Notifier**：`_currentTrack` / `_isPlaying` 此前是 `setState` 状态，每次播放/暂停、每次切歌都会重建整棵树（含两个页面子树），而真正关心它们的只有氛围背景与底部播放条。现改为 `ValueNotifier`，并把氛围背景从「内容的父节点」改为「内容的兄弟层」，切歌只重绘背景层。
   - **删除无人订阅的 `queueStream`**：每次队列变化都在做 `List.of(_playlist)` 全量拷贝，却没有任何监听者。
@@ -178,6 +179,18 @@
 #### 🐛 Bug #35: 歌词编辑器对话框在小屏 / 键盘弹出时溢出
 - **根因**：`height: 580` 硬编码。
 - **修复**：按 `screenHeight - viewInsets.bottom` 自适应并 clamp 到 320–620。
+
+#### 🐛 Bug #42: 编辑歌名 / 歌手 / 封面后，歌单里仍是旧信息，且重进依旧
+- **根因（数据被覆盖，不只是界面没刷新）**：播放路径每次启动都会调用 `AudioDownloadService.saveTrackMetadata(track)` 与 `DatabaseService.saveDownloadedTrack(track)`，参数是**调用方手里那个 Track 对象**——可能是编辑之前的旧副本（来自旧列表、队列快照、最近播放等）。于是刚保存的编辑被旧数据**覆盖回磁盘**，重进自然还是旧的。
+- **修复**：
+  - `saveTrackMetadata` 默认**只创建不覆盖**，仅 `updateTrackMetadata` 以 `force: true` 覆盖；
+  - `saveDownloadedTrack` 若库中已存在同 id 曲目则**原样保留**，只负责新增。
+  - 即「显示用元数据的唯一写入者是 `updateTrackMetadata`」。
+- **附带修复（界面）**：`PlaylistDetailSheet` 订阅 `libraryUpdateStream`，在其上方的播放页编辑元数据后，下方歌单会同步刷新；虚拟歌单「已下载」改为从下载库重建。
+
+#### 🐛 Bug #43: 加入收藏抛 `Cannot add to an unmodifiable list`
+- **根因**：`dart fix` 依据 `prefer_const_constructors` 把 `Playlist(id:'favorites', tracks: [])` 提升为 `const`，而 **const `[]` 是不可修改列表**，收藏插入直接抛异常。
+- **修复**：`Playlist` 构造函数**刻意不再是 const**，且内部 `List.of(tracks)` 复制为可增长列表——从根源上杜绝该提升，lint 也不会再建议加回 `const`。回归测试已覆盖。
 
 #### 🐛 Bug #37: 「歌手 - 歌名」永远无法拆分（死分支）
 - **根因**：`cleanTitle` 第 7 步先把所有 `-` 替换成空格，第 8 步才判断 `title.contains('-')`——恒为 false，歌手提取从未执行。

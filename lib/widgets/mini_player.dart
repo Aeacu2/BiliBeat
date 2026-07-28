@@ -164,7 +164,6 @@ class MiniPlayer extends StatelessWidget {
                       children: [
                         MarqueeText(
                           text: track.title,
-                          scrolling: isPlaying,
                           style: const TextStyle(
                             color: AppColors.textPrimary,
                             fontSize: 14,
@@ -175,7 +174,7 @@ class MiniPlayer extends StatelessWidget {
                         ),
                         MarqueeText(
                           text: track.uploader,
-                          scrolling: false,
+                          phase: 0.35,
                           style: const TextStyle(
                             color: AppColors.textMuted,
                             fontSize: 12,

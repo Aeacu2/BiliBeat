@@ -8,6 +8,7 @@ import '../services/database_service.dart';
 import '../services/download_manager.dart';
 import 'empty_state.dart';
 import 'glass_card.dart';
+import 'marquee_text.dart';
 import 'mini_player.dart';
 import 'track_options_menu.dart';
 import 'cached_cover_image.dart';
@@ -59,6 +60,7 @@ class PlaylistDetailSheet extends StatefulWidget {
 class _PlaylistDetailSheetState extends State<PlaylistDetailSheet> {
   late Playlist _currentPlaylist;
   StreamSubscription<void>? _dlSub;
+  StreamSubscription<void>? _libSub;
 
   /// Playback queue for this view: the playlist's tracks minus any still
   /// downloading (not yet playable).
@@ -73,6 +75,9 @@ class _PlaylistDetailSheetState extends State<PlaylistDetailSheet> {
     _currentPlaylist = widget.playlist;
     _dlIds =
         DownloadManager.instance.activeTasks.map((t) => t.track.id).toSet();
+    // Metadata can be edited from the now-playing page stacked on top of this
+    // sheet; without this the sheet kept rendering the pre-edit title.
+    _libSub = DatabaseService.libraryUpdateStream.listen((_) => _refresh());
     _dlSub = DownloadManager.instance.updates.listen((_) {
       final ids =
           DownloadManager.instance.activeTasks.map((t) => t.track.id).toSet();
@@ -86,20 +91,28 @@ class _PlaylistDetailSheetState extends State<PlaylistDetailSheet> {
   @override
   void dispose() {
     _dlSub?.cancel();
+    _libSub?.cancel();
     super.dispose();
   }
 
-  void _refresh() async {
-    final playlists = await DatabaseService.getPlaylists();
-    final updated = playlists.firstWhere(
-      (p) => p.id == _currentPlaylist.id,
-      orElse: () => _currentPlaylist,
-    );
-    if (mounted) {
-      setState(() {
-        _currentPlaylist = updated;
-      });
+  Future<void> _refresh() async {
+    // 已下载 is a virtual playlist with no database row, so it is rebuilt from
+    // the download library rather than looked up by id.
+    final Playlist updated;
+    if (_isVirtualDownloads) {
+      updated = Playlist(
+        id: _currentPlaylist.id,
+        name: _currentPlaylist.name,
+        tracks: await DatabaseService.getDownloadedTracks(),
+      );
+    } else {
+      final playlists = await DatabaseService.getPlaylists();
+      updated = playlists.firstWhere(
+        (p) => p.id == _currentPlaylist.id,
+        orElse: () => _currentPlaylist,
+      );
     }
+    if (mounted) setState(() => _currentPlaylist = updated);
     widget.onPlaylistUpdated?.call();
   }
 
@@ -279,11 +292,16 @@ class _PlaylistDetailSheetState extends State<PlaylistDetailSheet> {
                                     child: Column(
                                       crossAxisAlignment: CrossAxisAlignment.start,
                                       children: [
-                                        Text(
-                                          track.title,
-                                          maxLines: 1,
-                                          overflow: TextOverflow.ellipsis,
-                                          style: const TextStyle(color: AppColors.textPrimary, fontWeight: FontWeight.w600, fontSize: 14),
+                                        RepaintBoundary(
+                                          child: MarqueeText(
+                                            text: track.title,
+                                            phase: (index % 5) / 5,
+                                            style: const TextStyle(
+                                                color: AppColors.textPrimary,
+                                                fontWeight: FontWeight.w600,
+                                                fontSize: 14,
+                                                height: 1.3),
+                                          ),
                                         ),
                                         Text(
                                           track.uploader,

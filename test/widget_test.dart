@@ -4,6 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:bilibeats/models/lyric_line.dart';
 import 'package:bilibeats/services/lyrics_engine.dart';
 import 'package:bilibeats/services/recommendation_engine.dart';
+import 'package:bilibeats/models/playlist.dart';
 import 'package:bilibeats/models/track.dart';
 import 'package:bilibeats/widgets/marquee_text.dart';
 import 'package:bilibeats/widgets/mini_player.dart';
@@ -13,7 +14,7 @@ const _style = TextStyle(fontSize: 14, height: 1.25);
 
 /// Mirrors how the mini player and the now-playing panel use the marquee: a
 /// width-constrained Column whose siblings must not be pushed around.
-Widget _host(String text, {double width = 160, bool scrolling = true}) {
+Widget _host(String text, {double width = 160}) {
   return MaterialApp(
     home: Scaffold(
       body: Center(
@@ -23,7 +24,7 @@ Widget _host(String text, {double width = 160, bool scrolling = true}) {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              MarqueeText(text: text, style: _style, scrolling: scrolling),
+              MarqueeText(text: text, style: _style),
               const Text('sibling'),
             ],
           ),
@@ -34,6 +35,72 @@ Widget _host(String text, {double width = 160, bool scrolling = true}) {
 }
 
 void main() {
+  group('Playlist', () {
+    test('tracks stay mutable even when constructed with a const literal', () {
+      // A const constructor let `tracks: []` be promoted to an unmodifiable
+      // const list, so adding to 收藏 threw at runtime.
+      final pl = Playlist(id: 'favorites', name: '收藏', tracks: const []);
+      expect(
+        () => pl.tracks.add(Track(
+            id: 'a', bvid: 'a', cid: 1, title: 't', uploader: 'u',
+            coverUrl: '', duration: 1)),
+        returnsNormally,
+      );
+      expect(pl.tracks, hasLength(1));
+    });
+
+    test('does not alias the list it was given', () {
+      final source = <Track>[];
+      final pl = Playlist(id: 'p', name: 'n', tracks: source);
+      pl.tracks.add(Track(
+          id: 'a', bvid: 'a', cid: 1, title: 't', uploader: 'u',
+          coverUrl: '', duration: 1));
+      expect(source, isEmpty);
+    });
+  });
+
+  group('Track', () {
+    test('copyWith preserves identity and only changes what is passed', () {
+      final original = Track(
+          id: 'BV1_2', bvid: 'BV1', cid: 2, title: '旧标题',
+          uploader: '旧UP', coverUrl: 'c', duration: 100);
+      final edited = original.copyWith(title: '新标题', uploader: '新UP');
+
+      expect(edited.id, original.id);
+      expect(edited.bvid, original.bvid);
+      expect(edited.cid, original.cid);
+      expect(edited.coverUrl, 'c');
+      expect(edited.duration, 100);
+      expect(edited.title, '新标题');
+      // Identity is the id, so an edited track still matches in list lookups.
+      expect(edited, equals(original));
+      expect([original].indexOf(edited), 0);
+    });
+
+    test('survives a round trip through fromMap/toMap', () {
+      final t = Track(
+          id: 'BV1_2', bvid: 'BV1', cid: 2, title: '标题',
+          uploader: 'UP', coverUrl: 'http://x', duration: 42);
+      final back = Track.fromMap(t.toMap());
+      expect(back.title, t.title);
+      expect(back.uploader, t.uploader);
+      expect(back.coverUrl, t.coverUrl);
+      expect(back.duration, t.duration);
+    });
+
+    test('tolerates files written by older versions', () {
+      final back = Track.fromMap({
+        'id': 'BV1_2', 'bvid': 'BV1', 'cid': 2, 'title': 't',
+        'uploader': 'u', 'coverUrl': '', 'duration': 5,
+        // Fields removed in 2.2.0 — must not break loading.
+        'uploaderFace': 'x', 'quality': 'hi', 'isDownloaded': 1,
+        'localFilePath': '/tmp/a', 'addedAt': 123,
+      });
+      expect(back.id, 'BV1_2');
+      expect(back.title, 't');
+    });
+  });
+
   group('TasteProfile', () {
     Track t(String id, String title, String uploader, {int duration = 200}) =>
         Track(

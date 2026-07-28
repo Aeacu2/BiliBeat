@@ -87,16 +87,20 @@ class AudioDownloadService {
 
   /// Saves track metadata JSON next to the audio file (used for rediscovery).
   ///
-  /// Skips the write when the on-disk copy already matches: this runs on every
-  /// playback start, and rewriting an identical file each time is pure I/O.
-  static Future<void> saveTrackMetadata(Track track) async {
+  /// Playback calls this on every start, with whatever `Track` object the
+  /// caller happens to be holding — which may predate an edit the user made in
+  /// 信息与歌词. Writing that unconditionally silently reverted the edit on
+  /// disk, so by default this only *creates* the file. Deliberate edits pass
+  /// [force] to overwrite.
+  static Future<void> saveTrackMetadata(Track track,
+      {bool force = false}) async {
     try {
       final dir = await _dir();
       final metaFile = File(_metaPath(dir, _key(track)));
+      if (!force && await metaFile.exists()) return;
       final encoded = jsonEncode(track.toMap());
-      if (await metaFile.exists()) {
-        final existing = await metaFile.readAsString();
-        if (existing == encoded) return;
+      if (await metaFile.exists() && await metaFile.readAsString() == encoded) {
+        return;
       }
       await metaFile.writeAsString(encoded);
     } catch (e) {

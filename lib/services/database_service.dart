@@ -32,7 +32,7 @@ class DatabaseService {
   static const int _maxLyricsCacheEntries = 200;
 
   static final List<Playlist> _playlists = [
-    const Playlist(id: 'favorites', name: '收藏', tracks: [])
+    Playlist(id: 'favorites', name: '收藏', tracks: [])
   ];
 
   static Future<void> _ensureLoaded() => _loadFuture ??= _load();
@@ -106,7 +106,7 @@ class DatabaseService {
           _playlists.add(Playlist.fromMap(map, tracks: tracks));
         }
         if (!_playlists.any((p) => p.id == 'favorites')) {
-          _playlists.insert(0, const Playlist(id: 'favorites', name: '收藏', tracks: []));
+          _playlists.insert(0, Playlist(id: 'favorites', name: '收藏', tracks: []));
         }
       }
       // Load Search History
@@ -216,7 +216,8 @@ class DatabaseService {
       await _persistDownloaded();
     }
 
-    await AudioDownloadService.saveTrackMetadata(updated);
+    // Deliberate edit: this one does overwrite the on-disk copy.
+    await AudioDownloadService.saveTrackMetadata(updated, force: true);
 
     for (final pl in _playlists) {
       final idx = pl.tracks.indexWhere((t) => t.id == updated.id);
@@ -331,21 +332,15 @@ class DatabaseService {
     return List<Track>.from(_recentlyPlayed);
   }
 
+  /// Registers [track] as available offline.
+  ///
+  /// If the library already knows this track, it is left exactly as it is.
+  /// Playback calls this on every start with a possibly stale copy, and
+  /// overwriting here reverted any title/artist/cover the user had edited —
+  /// [updateTrackMetadata] is the only thing allowed to change that.
   static Future<void> saveDownloadedTrack(Track track) async {
     await _ensureLoaded();
-    final existing = _downloadedTracks.indexWhere((t) => t.id == track.id);
-    // Playback calls this on every start; skip the rewrite + notify when
-    // nothing actually changed.
-    if (existing == 0) {
-      final head = _downloadedTracks[0];
-      if (head.title == track.title &&
-          head.uploader == track.uploader &&
-          head.coverUrl == track.coverUrl &&
-          head.duration == track.duration) {
-        return;
-      }
-    }
-    if (existing != -1) _downloadedTracks.removeAt(existing);
+    if (_downloadedTracks.any((t) => t.id == track.id)) return;
     _downloadedTracks.insert(0, track);
     await _persistDownloaded();
     _libraryUpdateController.add(null);

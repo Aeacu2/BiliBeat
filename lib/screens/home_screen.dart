@@ -11,6 +11,7 @@ import '../theme/app_theme.dart';
 import '../theme/haptics.dart';
 import '../widgets/cached_cover_image.dart';
 import '../widgets/empty_state.dart';
+import '../widgets/marquee_text.dart';
 import '../widgets/mini_player.dart';
 import '../widgets/track_download_button.dart';
 
@@ -271,8 +272,11 @@ class _HomeScreenState extends State<HomeScreen> {
           const SizedBox(height: 24),
           const Text('下载中', style: AppTypography.title),
           const SizedBox(height: 12),
-          ..._downloadingTasks.map(
-            (task) => Container(
+          ..._downloadingTasks.indexed.map(
+            (entry) {
+              final index = entry.$1;
+              final task = entry.$2;
+              return Container(
               margin: const EdgeInsets.only(bottom: 8),
               child: GlassCard(
                 padding: const EdgeInsets.all(10),
@@ -291,14 +295,16 @@ class _HomeScreenState extends State<HomeScreen> {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text(
-                            task.track.title,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(
-                                color: AppColors.textPrimary,
-                                fontWeight: FontWeight.w600,
-                                fontSize: 14),
+                          RepaintBoundary(
+                            child: MarqueeText(
+                              text: task.track.title,
+                              phase: (index % 5) / 5,
+                              style: const TextStyle(
+                                  color: AppColors.textPrimary,
+                                  fontWeight: FontWeight.w600,
+                                  fontSize: 14,
+                                  height: 1.3),
+                            ),
                           ),
                           const SizedBox(height: 2),
                           Text(
@@ -315,7 +321,8 @@ class _HomeScreenState extends State<HomeScreen> {
                   ],
                 ),
               ),
-            ),
+              );
+            },
           ),
         ],
 
