@@ -28,7 +28,13 @@ class BiliBeatAudioHandler extends BaseAudioHandler with SeekHandler {
       // ignore: deprecated_member_use
       ja.ConcatenatingAudioSource(children: []);
 
+  /// The playlist in the order it is currently played (shuffled or not).
   final List<Track> _playlist = [];
+
+  /// The playlist in its natural order, kept so turning shuffle off restores
+  /// exactly what the user had before.
+  final List<Track> _naturalOrder = [];
+
   int _currentIndex = -1;
 
   /// Logical playlist index of `_queueSource` child 0. Player index `i`
@@ -40,6 +46,10 @@ class BiliBeatAudioHandler extends BaseAudioHandler with SeekHandler {
   bool _isShuffle = false;
   bool _isRebuilding = false;
   String? _prefetchingId;
+
+  /// Guards against overlapping [_startCurrent] runs when the user taps
+  /// next/previous faster than a track can be prepared.
+  int _startToken = 0;
 
   final StreamController<Track?> _currentTrackController =
       StreamController<Track?>.broadcast();
@@ -55,8 +65,12 @@ class BiliBeatAudioHandler extends BaseAudioHandler with SeekHandler {
       StreamController<bool>.broadcast();
   final StreamController<LoopMode> _loopModeController =
       StreamController<LoopMode>.broadcast();
+  final StreamController<double> _volumeController =
+      StreamController<double>.broadcast();
 
-  Duration _position = Duration.zero;
+  /// True while the current track is being fetched/prepared.
+  final ValueNotifier<bool> isPreparing = ValueNotifier(false);
+
   Duration _duration = Duration.zero;
 
   Stream<Track?> get currentTrackStream => _currentTrackController.stream;
@@ -66,6 +80,7 @@ class BiliBeatAudioHandler extends BaseAudioHandler with SeekHandler {
   Stream<Duration> get durationStream => _durationController.stream;
   Stream<bool> get shuffleStream => _shuffleController.stream;
   Stream<LoopMode> get loopModeStream => _loopModeController.stream;
+  Stream<double> get volumeStream => _volumeController.stream;
 
   Track? get currentTrack =>
       (_currentIndex >= 0 && _currentIndex < _playlist.length)
@@ -74,31 +89,38 @@ class BiliBeatAudioHandler extends BaseAudioHandler with SeekHandler {
   bool get isPlaying => _isPlaying;
   LoopMode get loopMode => _loopMode;
   bool get isShuffle => _isShuffle;
+  List<Track> get playlist => List.unmodifiable(_playlist);
 
   BiliBeatAudioHandler() {
     _initAudioPlayerListeners();
   }
 
   void updateCurrentTrackMetadata(Track updatedTrack) {
-    if (_currentIndex >= 0 && _currentIndex < _playlist.length) {
-      _playlist[_currentIndex] = updatedTrack;
-      _currentTrackController.add(updatedTrack);
-      mediaItem.add(MediaItem(
-        id: updatedTrack.id,
-        album: 'BiliBeat',
-        title: updatedTrack.title,
-        artist: updatedTrack.uploader,
-        artUri: Uri.tryParse(updatedTrack.coverUrl),
-        duration: Duration(seconds: updatedTrack.duration),
-      ));
+    var changed = false;
+    for (final list in [_playlist, _naturalOrder]) {
+      final idx = list.indexWhere((t) => t.id == updatedTrack.id);
+      if (idx != -1) {
+        list[idx] = updatedTrack;
+        changed = true;
+      }
     }
+    if (!changed) return;
+    if (currentTrack?.id == updatedTrack.id) {
+      _currentTrackController.add(updatedTrack);
+      _updateMediaItem(updatedTrack);
+    }
+    _queueController.add(List.of(_playlist));
   }
 
   /// Current playback volume (0.0 – 1.0).
   double get volume => _player.volume;
 
   /// Sets playback volume (0.0 – 1.0).
-  Future<void> setVolume(double volume) => _player.setVolume(volume.clamp(0.0, 1.0));
+  Future<void> setVolume(double volume) async {
+    final v = volume.clamp(0.0, 1.0);
+    await _player.setVolume(v);
+    _volumeController.add(v);
+  }
 
   void _initAudioPlayerListeners() {
     // Position is forwarded to the UI only. We deliberately do NOT broadcast
@@ -106,12 +128,11 @@ class BiliBeatAudioHandler extends BaseAudioHandler with SeekHandler {
     // tick causes notification/MediaSession churn. The system UI interpolates
     // the notification position from the last state + speed.
     _player.positionStream.listen((pos) {
-      _position = pos;
       _positionController.add(pos);
     });
 
     _player.durationStream.listen((dur) {
-      if (dur != null) {
+      if (dur != null && dur > Duration.zero) {
         _duration = dur;
         _durationController.add(dur);
         _broadcastState();
@@ -158,14 +179,19 @@ class BiliBeatAudioHandler extends BaseAudioHandler with SeekHandler {
 
   Future<void> playTrack(Track track, {List<Track>? newQueue}) async {
     if (newQueue != null && newQueue.isNotEmpty) {
+      _naturalOrder
+        ..clear()
+        ..addAll(newQueue);
       _playlist
         ..clear()
         ..addAll(newQueue);
-      _queueController.add(_playlist);
+      if (_isShuffle) _applyShuffleOrder(pinned: track);
+      _queueController.add(List.of(_playlist));
     }
     if (!_playlist.any((t) => t.id == track.id)) {
       _playlist.insert(0, track);
-      _queueController.add(_playlist);
+      _naturalOrder.insert(0, track);
+      _queueController.add(List.of(_playlist));
     }
 
     var index = _playlist.indexWhere((t) => t.id == track.id);
@@ -176,9 +202,10 @@ class BiliBeatAudioHandler extends BaseAudioHandler with SeekHandler {
     final active = _playlist[index];
     _currentTrackController.add(active);
     _updateMediaItem(active);
-    await DatabaseService.addRecentlyPlayed(active);
     _duration = Duration(seconds: active.duration > 0 ? active.duration : 180);
     _durationController.add(_duration);
+    _positionController.add(Duration.zero);
+    unawaited(DatabaseService.addRecentlyPlayed(active));
 
     await _startCurrent(autoplay: true);
   }
@@ -205,33 +232,41 @@ class BiliBeatAudioHandler extends BaseAudioHandler with SeekHandler {
   }
 
   @override
+  Future<void> stop() async {
+    await _player.stop();
+    _isPlaying = false;
+    _playerStateController.add(false);
+    _broadcastState();
+    await super.stop();
+  }
+
+  @override
   Future<void> seek(Duration position) async {
-    _position = position;
     await _player.seek(position);
-    _positionController.add(_position);
+    _positionController.add(position);
+    _broadcastState();
   }
 
   @override
   Future<void> skipToNext() async {
     if (_playlist.isEmpty) return;
 
-    if (_loopMode == LoopMode.one && currentTrack != null) {
-      await seek(Duration.zero);
-      await play();
-      return;
-    }
-
-    // Gapless: the next file is already queued in the native player.
-    if (_player.hasNext) {
+    // An explicit "next" always advances, even in repeat-one — matching every
+    // mainstream player. Repeat-one only governs *automatic* advance.
+    if (_player.hasNext && _loopMode != LoopMode.one) {
+      // Gapless: the next file is already queued in the native player.
       await _player.seekToNext();
       return;
     }
 
     final next = _currentIndex + 1;
     if (next < _playlist.length) {
-      await playTrack(_playlist[next]);
-    } else if (_loopMode == LoopMode.all) {
-      await playTrack(_playlist[0]);
+      await _playAtIndex(next);
+    } else if (_loopMode != LoopMode.off) {
+      await _playAtIndex(0);
+    } else {
+      await seek(Duration.zero);
+      await pause();
     }
   }
 
@@ -245,66 +280,123 @@ class BiliBeatAudioHandler extends BaseAudioHandler with SeekHandler {
       return;
     }
 
-    if (_player.hasPrevious) {
-      await _player.seekToPrevious();
-      return;
-    }
-
     final prev = _currentIndex - 1;
     if (prev >= 0) {
-      await playTrack(_playlist[prev]);
-    } else if (_loopMode == LoopMode.all) {
-      await playTrack(_playlist[_playlist.length - 1]);
+      await _playAtIndex(prev);
+    } else if (_loopMode != LoopMode.off) {
+      await _playAtIndex(_playlist.length - 1);
     } else {
       await seek(Duration.zero);
     }
   }
 
-  /// Cycle the single play-mode control: 随机 -> 列表循环 -> 单曲循环 -> 随机.
-  void cyclePlayMode() {
-    if (_isShuffle) {
-      // 随机 -> 列表循环
-      _isShuffle = false;
-      _loopMode = LoopMode.all;
-    } else if (_loopMode != LoopMode.one) {
-      // 列表循环 -> 单曲循环
-      _loopMode = LoopMode.one;
-    } else {
-      // 单曲循环 -> 随机
-      _isShuffle = true;
-      _loopMode = LoopMode.all;
-      if (_playlist.isNotEmpty) {
-        final current = currentTrack;
-        // Build a shuffled copy with the current track pinned to index 0.
-        final others = _playlist.where((t) => t.id != current?.id).toList()
-          ..shuffle();
-        _playlist
-          ..clear()
-          ..addAll([if (current != null) current, ...others]);
-        _currentIndex = 0;
-        _queueController.add(_playlist);
-        _startCurrent(autoplay: _isPlaying);
-      }
+  @override
+  Future<void> skipToQueueItem(int index) async {
+    if (index < 0 || index >= _playlist.length) return;
+    await _playAtIndex(index);
+  }
+
+  /// Switch to a logical index and start it, reusing the native queue when the
+  /// target is already the prefetched next item (so the transition is gapless).
+  Future<void> _playAtIndex(int index) async {
+    if (index < 0 || index >= _playlist.length) return;
+    final playerIndex = index - _queueBaseIndex;
+    if (playerIndex >= 0 && playerIndex < _queueSource.length) {
+      _currentIndex = index;
+      await _player.seek(Duration.zero, index: playerIndex);
+      if (!_isPlaying) await _player.play();
+      return;
     }
-    _shuffleController.add(_isShuffle);
+    _currentIndex = index;
+    final active = _playlist[index];
+    _currentTrackController.add(active);
+    _updateMediaItem(active);
+    _positionController.add(Duration.zero);
+    unawaited(DatabaseService.addRecentlyPlayed(active));
+    await _startCurrent(autoplay: true);
+  }
+
+  /// Cycle the single play-mode control: 列表循环 -> 单曲循环 -> 随机 -> 列表循环.
+  Future<void> cyclePlayMode() async {
+    if (_isShuffle) {
+      await setShuffle(false);
+      await setLoopMode(LoopMode.all);
+    } else if (_loopMode != LoopMode.one) {
+      await setLoopMode(LoopMode.one);
+    } else {
+      await setLoopMode(LoopMode.all);
+      await setShuffle(true);
+    }
+  }
+
+  Future<void> setLoopMode(LoopMode mode) async {
+    if (_loopMode == mode) return;
+    _loopMode = mode;
     _loopModeController.add(_loopMode);
-    _applyLoopMode();
+    // just_audio's LoopMode.one repeats the *current* item of the queue, so no
+    // rebuild is needed — the playing track keeps its position.
+    await _player.setLoopMode(
+      mode == LoopMode.one ? ja.LoopMode.one : ja.LoopMode.off,
+    );
+    if (mode == LoopMode.one) {
+      // Nothing beyond the current item should auto-play.
+      await _trimQueueAfterCurrent();
+    } else {
+      unawaited(_prefetchNext());
+    }
+    _broadcastState();
+  }
+
+  Future<void> setShuffle(bool on) async {
+    if (_isShuffle == on) return;
+    _isShuffle = on;
+    _shuffleController.add(_isShuffle);
+    if (_playlist.isEmpty) return;
+
+    final current = currentTrack;
+    if (on) {
+      _applyShuffleOrder(pinned: current);
+    } else {
+      _playlist
+        ..clear()
+        ..addAll(_naturalOrder);
+    }
+    _currentIndex = current == null
+        ? -1
+        : _playlist.indexWhere((t) => t.id == current.id);
+    if (_currentIndex < 0) _currentIndex = 0;
+
+    // Re-anchor the native window on the still-playing item and re-prefetch,
+    // without ever touching playback of the current track.
+    final playerIndex = _player.currentIndex ?? 0;
+    _queueBaseIndex = _currentIndex - playerIndex;
+    await _trimQueueAfterCurrent();
+    _queueController.add(List.of(_playlist));
+    unawaited(_prefetchNext());
+  }
+
+  /// Reorders [_playlist] randomly, keeping [pinned] where it is so the
+  /// currently-playing track is never yanked out from under playback.
+  void _applyShuffleOrder({Track? pinned}) {
+    final others =
+        _naturalOrder.where((t) => t.id != pinned?.id).toList()..shuffle();
+    _playlist
+      ..clear()
+      ..addAll([if (pinned != null) pinned, ...others]);
   }
 
   // ---------------------------------------------------------------------------
   // Internals
   // ---------------------------------------------------------------------------
 
-  Future<void> _applyLoopMode() async {
-    await _player.setLoopMode(
-      _loopMode == LoopMode.one ? ja.LoopMode.one : ja.LoopMode.off,
-    );
-    if (_loopMode == LoopMode.one) {
-      // Reduce the window to the lone current track so it loops by itself.
-      await _startCurrent(autoplay: _isPlaying);
-    } else {
-      _prefetchNext();
+  /// Drops every queued item after the one the player is currently on, so the
+  /// prefetch window can be rebuilt without interrupting playback.
+  Future<void> _trimQueueAfterCurrent() async {
+    final playerIndex = _player.currentIndex ?? 0;
+    if (_queueSource.length > playerIndex + 1) {
+      await _queueSource.removeRange(playerIndex + 1, _queueSource.length);
     }
+    _prefetchingId = null;
   }
 
   /// Download (if needed) the current track and load it as a single-item native
@@ -313,6 +405,8 @@ class BiliBeatAudioHandler extends BaseAudioHandler with SeekHandler {
     final active = currentTrack;
     if (active == null) return;
 
+    final token = ++_startToken;
+    isPreparing.value = true;
     _broadcastState(processingOverride: AudioProcessingState.loading);
 
     final String path;
@@ -320,9 +414,14 @@ class BiliBeatAudioHandler extends BaseAudioHandler with SeekHandler {
       path = await AudioDownloadService.ensureDownloaded(active);
     } catch (e) {
       debugPrint('playTrack download failed: $e');
-      _broadcastState();
+      if (token == _startToken) {
+        isPreparing.value = false;
+        _broadcastState();
+      }
       return;
     }
+    // A newer start won the race while we were downloading — drop this one.
+    if (token != _startToken) return;
 
     _isRebuilding = true;
     try {
@@ -340,7 +439,7 @@ class BiliBeatAudioHandler extends BaseAudioHandler with SeekHandler {
         initialPosition: Duration.zero,
       );
 
-      if (autoplay) {
+      if (autoplay && token == _startToken) {
         await _player.play();
         _isPlaying = true;
         _playerStateController.add(true);
@@ -349,10 +448,11 @@ class BiliBeatAudioHandler extends BaseAudioHandler with SeekHandler {
       debugPrint('startCurrent error: $e');
     } finally {
       _isRebuilding = false;
+      if (token == _startToken) isPreparing.value = false;
     }
 
     _broadcastState();
-    if (_loopMode != LoopMode.one) _prefetchNext();
+    if (_loopMode != LoopMode.one) unawaited(_prefetchNext());
   }
 
   /// Background-download the next logical track and append it to the native
@@ -363,6 +463,9 @@ class BiliBeatAudioHandler extends BaseAudioHandler with SeekHandler {
     if (_loopMode == LoopMode.one) return;
     if (_playlist.isEmpty || _currentIndex < 0) return;
 
+    // Only the contiguous successor is prefetched: the window's player index
+    // must stay a simple offset from the logical index. Wrapping past the end
+    // is handled by [_handleQueueCompleted] instead.
     final nextIndex = _currentIndex + 1;
     if (nextIndex >= _playlist.length) return;
 
@@ -370,14 +473,14 @@ class BiliBeatAudioHandler extends BaseAudioHandler with SeekHandler {
     if (_prefetchingId == next.id) return;
 
     final lastLogicalInQueue = _queueBaseIndex + (_queueSource.length - 1);
-    if (nextIndex != lastLogicalInQueue + 1) return;
+    if (_currentIndex != lastLogicalInQueue) return;
 
     _prefetchingId = next.id;
     try {
       final path = await AudioDownloadService.ensureDownloaded(next);
       // Re-validate the slot: the user may have navigated while downloading.
-      final expectedSlot = _queueBaseIndex + _queueSource.length;
-      if (expectedSlot == nextIndex && _currentIndex == nextIndex - 1) {
+      if (_currentIndex == lastLogicalInQueue &&
+          _queueBaseIndex + _queueSource.length - 1 == _currentIndex) {
         await _queueSource.add(ja.AudioSource.file(path, tag: next));
       }
     } catch (e) {
@@ -387,23 +490,23 @@ class BiliBeatAudioHandler extends BaseAudioHandler with SeekHandler {
     }
   }
 
-  /// The native queue ran out. Handle loop-all wrap-around and end-of-playlist.
+  /// The native queue ran out. Advance the logical playlist (the prefetch of
+  /// the following track may simply not have finished in time).
   void _handleQueueCompleted() {
     if (_isRebuilding || _playlist.isEmpty) return;
 
-    if (_loopMode == LoopMode.all) {
-      playTrack(_playlist[0]);
+    final next = _currentIndex + 1;
+    if (next < _playlist.length) {
+      _playAtIndex(next);
       return;
     }
-
-    if (_currentIndex < _playlist.length - 1) {
-      // Safety net (e.g. an earlier prefetch failed): keep going.
-      playTrack(_playlist[_currentIndex + 1]);
-    } else {
-      _isPlaying = false;
-      _playerStateController.add(false);
-      _broadcastState();
+    if (_loopMode == LoopMode.all) {
+      _playAtIndex(0);
+      return;
     }
+    _isPlaying = false;
+    _playerStateController.add(false);
+    _broadcastState();
   }
 
   void _broadcastState({AudioProcessingState? processingOverride}) {
@@ -433,19 +536,40 @@ class BiliBeatAudioHandler extends BaseAudioHandler with SeekHandler {
       updatePosition: _player.position,
       bufferedPosition: _player.bufferedPosition,
       speed: _player.speed,
-      queueIndex: _currentIndex,
+      repeatMode: _loopMode == LoopMode.one
+          ? AudioServiceRepeatMode.one
+          : (_loopMode == LoopMode.all
+              ? AudioServiceRepeatMode.all
+              : AudioServiceRepeatMode.none),
+      shuffleMode: _isShuffle
+          ? AudioServiceShuffleMode.all
+          : AudioServiceShuffleMode.none,
+      queueIndex: _currentIndex >= 0 ? _currentIndex : null,
     ));
   }
 
   void _updateMediaItem(Track track) {
     final item = MediaItem(
       id: track.id,
-      album: 'Bilibili Music',
+      album: 'BiliBeat',
       title: track.title,
       artist: track.uploader,
       duration: Duration(seconds: track.duration > 0 ? track.duration : 180),
-      artUri: Uri.tryParse(track.coverUrl),
+      artUri: track.coverUrl.isEmpty ? null : Uri.tryParse(track.coverUrl),
     );
     mediaItem.add(item);
+  }
+
+  Future<void> disposePlayer() async {
+    isPreparing.dispose();
+    await _player.dispose();
+    await _currentTrackController.close();
+    await _queueController.close();
+    await _playerStateController.close();
+    await _positionController.close();
+    await _durationController.close();
+    await _shuffleController.close();
+    await _loopModeController.close();
+    await _volumeController.close();
   }
 }

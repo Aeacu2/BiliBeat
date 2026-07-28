@@ -22,8 +22,15 @@ import 'package:audio_service/audio_service.dart';
 
 BiliBeatAudioHandler? _audioHandlerInstance;
 
-BiliBeatAudioHandler get audioHandlerInstance =>
-    _audioHandlerInstance ??= BiliBeatAudioHandler();
+/// The one handler registered with `audio_service`. Reading this before
+/// [main] has initialised it is a programming error — lazily constructing a
+/// second handler here would silently detach playback from the OS media
+/// session, so we fail loudly instead.
+BiliBeatAudioHandler get audioHandlerInstance {
+  final handler = _audioHandlerInstance;
+  assert(handler != null, 'audioHandlerInstance read before AudioService.init');
+  return handler!;
+}
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -133,9 +140,13 @@ class _MainLayoutState extends State<MainLayout> {
         if (isCacheValid) {
           _lyricsNotifier.value = cached!.lines;
         } else {
+          _lyricsNotifier.value = const [];
           final freshLyrics = await LyricsEngine.autoFetchLyrics(track.title);
           if (_currentTrack?.id != track.id) return;
-          _lyricsNotifier.value = freshLyrics.lines;
+          // A "not found" result carries placeholder lines; showing an empty
+          // list instead lets the lyrics view offer its search/paste action.
+          _lyricsNotifier.value =
+              freshLyrics.source == 'none' ? const [] : freshLyrics.lines;
           await DatabaseService.cacheLyrics(track.id, freshLyrics);
         }
       }
@@ -157,6 +168,9 @@ class _MainLayoutState extends State<MainLayout> {
       _durationNotifier.value = dur;
     }));
 
+    // The handler writes history itself when it auto-advances, so the rail has
+    // to follow the store rather than the UI actions that happen to reach it.
+    _subs.add(DatabaseService.historyUpdateStream.listen((_) => _loadHistory()));
   }
 
   Future<void> _loadHistory() async {
@@ -182,17 +196,15 @@ class _MainLayoutState extends State<MainLayout> {
     });
     final q = await _resolveQueue(queue);
     _audioHandler.playTrack(track, newQueue: q.isNotEmpty ? q : null);
-    _loadHistory();
   }
 
   void _onPlayTrackAndExpand(Track track, {List<Track>? queue}) async {
     setState(() {
       _currentTrack = track;
     });
-    _openNowPlaying(track: track);
+    _openNowPlaying(track: track, follow: true);
     final q = await _resolveQueue(queue);
     _audioHandler.playTrack(track, newQueue: q.isNotEmpty ? q : null);
-    _loadHistory();
   }
 
   /// Search tap: preview an undownloaded track in the player sheet without
@@ -200,16 +212,22 @@ class _MainLayoutState extends State<MainLayout> {
   /// it's already local.
   void _onSearchSelectTrack(Track track, {List<Track>? queue}) async {
     final downloaded = await AudioDownloadService.isDownloaded(track);
+    if (!mounted) return;
     if (downloaded) {
-      _onPlayTrackAndExpand(track); // search always loops the downloaded library
+      _onPlayTrackAndExpand(track, queue: queue);
     } else {
       _openNowPlaying(track: track);
     }
   }
 
-  void _openNowPlaying({Track? track}) {
+  bool _nowPlayingOpen = false;
+
+  void _openNowPlaying({Track? track, bool follow = false}) {
     final focused = track ?? _currentTrack;
     if (focused == null) return;
+    // A double tap used to stack two identical full-screen routes.
+    if (_nowPlayingOpen) return;
+    _nowPlayingOpen = true;
 
     Navigator.of(context).push(
       PageRouteBuilder(
@@ -233,37 +251,40 @@ class _MainLayoutState extends State<MainLayout> {
               durationNotifier: _durationNotifier,
               lyricsNotifier: _lyricsNotifier,
               onOpenLyricEditor: _openLyricEditor,
+              followHandler: follow,
             ),
           );
         },
       ),
-    );
+    ).whenComplete(() => _nowPlayingOpen = false);
   }
 
-  void _openLyricEditor() {
-    if (_currentTrack == null) return;
+  /// Opens the info/lyrics editor for [track] — which is whatever the player
+  /// sheet is actually showing, not necessarily the playing track.
+  void _openLyricEditor(Track track) {
+    final isCurrent = _currentTrack?.id == track.id;
     showDialog(
       context: context,
       builder: (context) {
         return LyricEditorDialog(
-          songTitle: _currentTrack!.title,
-          artistName: _currentTrack!.uploader,
-          coverUrl: _currentTrack!.coverUrl,
+          songTitle: track.title,
+          artistName: track.uploader,
+          coverUrl: track.coverUrl,
           positionNotifier: _positionNotifier,
-          currentLines: _lyricsNotifier.value,
+          currentLines: isCurrent ? _lyricsNotifier.value : const [],
           onApplyLyrics: (result) async {
-            _lyricsNotifier.value = result.lines;
-            await DatabaseService.cacheLyrics(_currentTrack!.id, result);
+            if (isCurrent) _lyricsNotifier.value = result.lines;
+            await DatabaseService.cacheLyrics(track.id, result);
           },
           onUpdateMetadata: (newTitle, newArtist, newCoverUrl) async {
-            final updated = _currentTrack!.copyWith(
+            final updated = track.copyWith(
               title: newTitle,
               uploader: newArtist,
               coverUrl: newCoverUrl,
             );
-            setState(() {
-              _currentTrack = updated;
-            });
+            if (isCurrent && mounted) {
+              setState(() => _currentTrack = updated);
+            }
             await DatabaseService.updateTrackMetadata(updated);
             _audioHandler.updateCurrentTrackMetadata(updated);
           },
@@ -316,8 +337,7 @@ class _MainLayoutState extends State<MainLayout> {
 
   @override
   Widget build(BuildContext context) {
-    final bottomInset = MediaQuery.of(context).padding.bottom;
-    final dockedHeight = 64.0 + bottomInset;
+    final dockedHeight = MiniPlayer.totalHeight(context);
 
     return Scaffold(
       body: AmbientBackground(
@@ -407,25 +427,40 @@ class _MainLayoutState extends State<MainLayout> {
                 right: 0,
                 top: 0,
                 bottom: dockedHeight,
-                child: Stack(
-                  children: [
-                    Positioned.fill(
-                      child: GestureDetector(
-                        onTap: () => setState(() => _activePlaylistSheet = null),
-                        child: Container(color: Colors.black45),
-                      ),
+                child: TweenAnimationBuilder<double>(
+                  key: ValueKey(_activePlaylistSheet!.id),
+                  tween: Tween(begin: 0.0, end: 1.0),
+                  duration: const Duration(milliseconds: 280),
+                  curve: Curves.easeOutCubic,
+                  builder: (context, t, child) => Opacity(
+                    opacity: t,
+                    child: Transform.translate(
+                      offset: Offset(0, (1 - t) * 40),
+                      child: child,
                     ),
-                    Align(
-                      alignment: Alignment.bottomCenter,
-                      child: PlaylistDetailSheet(
-                        playlist: _activePlaylistSheet!,
-                        onSelectTrack: _onPlayTrackAndExpand,
-                        onPlayOnly: _onPlayTrackOnly,
-                        onPlaylistUpdated: () {},
-                        onClose: () => setState(() => _activePlaylistSheet = null),
+                  ),
+                  child: Stack(
+                    children: [
+                      Positioned.fill(
+                        child: GestureDetector(
+                          onTap: () =>
+                              setState(() => _activePlaylistSheet = null),
+                          child: const ColoredBox(color: AppColors.black45),
+                        ),
                       ),
-                    ),
-                  ],
+                      Align(
+                        alignment: Alignment.bottomCenter,
+                        child: PlaylistDetailSheet(
+                          playlist: _activePlaylistSheet!,
+                          onSelectTrack: _onPlayTrackAndExpand,
+                          onPlayOnly: _onPlayTrackOnly,
+                          onPlaylistUpdated: _loadHistory,
+                          onClose: () =>
+                              setState(() => _activePlaylistSheet = null),
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
               ),
 
@@ -447,6 +482,7 @@ class _MainLayoutState extends State<MainLayout> {
                   }
                 },
                 onNext: () => _audioHandler.skipToNext(),
+                onPrevious: () => _audioHandler.skipToPrevious(),
                 onTap: () => _openNowPlaying(),
               ),
             ),

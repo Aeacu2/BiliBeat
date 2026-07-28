@@ -6,7 +6,9 @@ import '../models/playlist.dart';
 import '../models/track.dart';
 import '../services/database_service.dart';
 import '../services/download_manager.dart';
+import 'empty_state.dart';
 import 'glass_card.dart';
+import 'mini_player.dart';
 import 'track_options_menu.dart';
 import 'cached_cover_image.dart';
 import 'track_download_button.dart';
@@ -104,8 +106,7 @@ class _PlaylistDetailSheetState extends State<PlaylistDetailSheet> {
   @override
   Widget build(BuildContext context) {
     final isFav = _currentPlaylist.id == 'favorites';
-    final bottomInset = MediaQuery.of(context).padding.bottom;
-    final dockedPlayerHeight = 64.0 + bottomInset;
+    final dockedPlayerHeight = MiniPlayer.totalHeight(context);
 
     return Container(
       margin: widget.onClose != null ? EdgeInsets.zero : EdgeInsets.only(bottom: dockedPlayerHeight),
@@ -205,10 +206,15 @@ class _PlaylistDetailSheetState extends State<PlaylistDetailSheet> {
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
               child: ElevatedButton.icon(
-                onPressed: () {
-                  widget.onSelectTrack(_currentPlaylist.tracks.first,
-                      queue: _playableQueue);
-                },
+                // Starting on a track that is still downloading would be
+                // dropped from the queue immediately — start on the first
+                // playable one instead.
+                onPressed: _playableQueue.isEmpty
+                    ? null
+                    : () {
+                        final queue = _playableQueue;
+                        widget.onSelectTrack(queue.first, queue: queue);
+                      },
                 icon: const Icon(Icons.play_arrow_rounded, size: 24),
                 label: const Text('播放全部并展开', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
                 style: ElevatedButton.styleFrom(
@@ -226,10 +232,10 @@ class _PlaylistDetailSheetState extends State<PlaylistDetailSheet> {
           Expanded(
             child: _currentPlaylist.tracks.isEmpty
                 ? const Center(
-                    child: Text(
-                      '歌单暂无曲目\n在搜索或推荐页面点击歌曲旁边的加号(+)按钮添加吧！',
-                      textAlign: TextAlign.center,
-                      style: TextStyle(color: AppColors.textFaint, fontSize: 14),
+                    child: EmptyState(
+                      icon: Icons.library_music_rounded,
+                      title: '歌单暂无曲目',
+                      subtitle: '在搜索或推荐页点击歌曲右侧的 + 添加',
                     ),
                   )
                 : ListView.builder(
@@ -239,7 +245,13 @@ class _PlaylistDetailSheetState extends State<PlaylistDetailSheet> {
                       final track = _currentPlaylist.tracks[index];
                       final isDownloading =
                           DownloadManager.instance.isDownloading(track.id);
-                      return Container(
+                      return Dismissible(
+                        key: ValueKey(track.id),
+                        direction: DismissDirection.endToStart,
+                        background: _removeBackground(),
+                        confirmDismiss: (_) => _confirmRemove(track),
+                        onDismissed: (_) => _removeTrack(track),
+                        child: Container(
                         margin: const EdgeInsets.only(bottom: 8),
                         child: GlassCard(
                           borderRadius: 12,
@@ -247,6 +259,9 @@ class _PlaylistDetailSheetState extends State<PlaylistDetailSheet> {
                           child: InkWell(
                             borderRadius: BorderRadius.circular(12),
                             onTap: isDownloading ? null : () => widget.onSelectTrack(track, queue: _playableQueue),
+                            onLongPress: () => TrackOptionsMenu.show(
+                                context, track,
+                                onTrackChanged: _refresh),
                             child: Padding(
                               padding: const EdgeInsets.all(8),
                               child: Row(
@@ -305,6 +320,7 @@ class _PlaylistDetailSheetState extends State<PlaylistDetailSheet> {
                             ),
                           ),
                         ),
+                        ),
                       );
                     },
                   ),
@@ -312,5 +328,63 @@ class _PlaylistDetailSheetState extends State<PlaylistDetailSheet> {
         ],
       ),
     );
+  }
+
+  /// The red "remove" affordance revealed by swiping a row left.
+  Widget _removeBackground() {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      alignment: Alignment.centerRight,
+      padding: const EdgeInsets.only(right: 20),
+      decoration: BoxDecoration(
+        color: AppColors.danger.withValues(alpha: 0.18),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Icon(
+        _isVirtualDownloads
+            ? Icons.delete_outline_rounded
+            : Icons.playlist_remove_rounded,
+        color: AppColors.danger,
+      ),
+    );
+  }
+
+  bool get _isVirtualDownloads => _currentPlaylist.id == 'downloaded';
+
+  Future<bool> _confirmRemove(Track track) async {
+    // Removing from a playlist is trivially reversible; deleting the audio
+    // itself is not, so only that path asks.
+    if (!_isVirtualDownloads) return true;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppColors.backgroundElevated,
+        title: const Text('删除本地音频',
+            style: TextStyle(color: AppColors.textPrimary)),
+        content: Text('「${track.title}」的离线音频将被删除，可随时重新下载。',
+            style: const TextStyle(color: AppColors.textSecondary)),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('取消')),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('删除', style: TextStyle(color: AppColors.danger)),
+          ),
+        ],
+      ),
+    );
+    return confirmed ?? false;
+  }
+
+  Future<void> _removeTrack(Track track) async {
+    setState(() => _currentPlaylist.tracks.removeWhere((t) => t.id == track.id));
+    if (_isVirtualDownloads) {
+      await DatabaseService.removeDownloadedTrack(track);
+    } else {
+      await DatabaseService.removeTrackFromPlaylist(
+          _currentPlaylist.id, track.id);
+    }
+    widget.onPlaylistUpdated?.call();
   }
 }

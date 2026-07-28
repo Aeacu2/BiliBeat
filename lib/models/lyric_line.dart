@@ -40,4 +40,27 @@ class LyricsResult {
     required this.lines,
     this.rawLrc,
   });
+
+  Map<String, dynamic> toMap() {
+    return {
+      'source': source,
+      'songTitle': songTitle,
+      'artistName': artistName,
+      'lines': lines.map((l) => l.toMap()).toList(),
+      'rawLrc': rawLrc,
+    };
+  }
+
+  factory LyricsResult.fromMap(Map<String, dynamic> map) {
+    final rawLines = map['lines'] as List? ?? const [];
+    return LyricsResult(
+      source: map['source'] as String? ?? 'none',
+      songTitle: map['songTitle'] as String?,
+      artistName: map['artistName'] as String?,
+      lines: rawLines
+          .map((l) => LyricLine.fromMap(Map<String, dynamic>.from(l as Map)))
+          .toList(),
+      rawLrc: map['rawLrc'] as String?,
+    );
+  }
 }

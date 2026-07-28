@@ -22,7 +22,16 @@ class NowPlayingSheet extends StatefulWidget {
   final ValueNotifier<Duration> positionNotifier;
   final ValueNotifier<Duration> durationNotifier;
   final ValueNotifier<List<LyricLine>> lyricsNotifier;
-  final VoidCallback onOpenLyricEditor;
+
+  /// Receives the track actually on screen — which is not always the one the
+  /// handler is playing (a search result can be previewed here).
+  final void Function(Track track) onOpenLyricEditor;
+
+  /// Set when the sheet is opened as part of "play this now". The handler has
+  /// not switched track yet at that instant, so it cannot be inferred — and
+  /// getting it wrong leaves the sheet stuck on one track for the whole
+  /// session, never following the queue.
+  final bool followHandler;
 
   const NowPlayingSheet({
     super.key,
@@ -32,6 +41,7 @@ class NowPlayingSheet extends StatefulWidget {
     required this.durationNotifier,
     required this.lyricsNotifier,
     required this.onOpenLyricEditor,
+    this.followHandler = false,
   });
 
   @override
@@ -51,9 +61,7 @@ class _NowPlayingSheetState extends State<NowPlayingSheet> {
   bool _isFavorite = false;
   bool _isDownloaded = false;
   DownloadTask? _downloadTask;
-  bool _modePressed = false;
   double? _dragValue;
-  double? _dragVolumeValue;
 
   bool get _isActive => widget.handler.currentTrack?.id == _displayTrack.id;
 
@@ -62,24 +70,22 @@ class _NowPlayingSheetState extends State<NowPlayingSheet> {
     super.initState();
     final h = widget.handler;
     _displayTrack = widget.focusedTrack;
-    _followHandler = (h.currentTrack?.id == _displayTrack.id);
+    _followHandler =
+        widget.followHandler || (h.currentTrack?.id == _displayTrack.id);
     _isPlaying = h.isPlaying;
     _isShuffle = h.isShuffle;
     _loopMode = h.loopMode;
     _volume = h.volume;
-    final initialTask = DownloadManager.instance.taskFor(_displayTrack.id);
-    _downloadTask = (initialTask != null && initialTask.status == DownloadStatus.downloading)
-        ? initialTask
-        : null;
-    _refreshDownloaded();
-    _refreshFavorite();
+    _downloadTask = _liveTaskFor(_displayTrack.id);
+    _refreshTrackState();
 
     _subs.add(h.currentTrackStream.listen((t) {
       if (t == null || !mounted) return;
-      if (_followHandler) {
+      if (_followHandler && t.id != _displayTrack.id) {
         setState(() => _displayTrack = t);
-        _refreshDownloaded();
-        _refreshFavorite();
+        _refreshTrackState();
+      } else if (t.id == _displayTrack.id) {
+        setState(() => _displayTrack = t); // metadata edit
       }
     }));
     _subs.add(h.playerStateStream.listen((p) {
@@ -91,17 +97,25 @@ class _NowPlayingSheetState extends State<NowPlayingSheet> {
     _subs.add(h.loopModeStream.listen((m) {
       if (mounted) setState(() => _loopMode = m);
     }));
+    _subs.add(h.volumeStream.listen((v) {
+      if (mounted) setState(() => _volume = v);
+    }));
     _subs.add(DownloadManager.instance.updates.listen((_) {
       if (!mounted) return;
-      final task = DownloadManager.instance.taskFor(_displayTrack.id);
-      setState(() {
-        _downloadTask =
-            (task != null && task.status == DownloadStatus.downloading)
-                ? task
-                : null;
-      });
-      _refreshDownloaded();
+      final task = _liveTaskFor(_displayTrack.id);
+      final finished = _downloadTask != null && task == null;
+      setState(() => _downloadTask = task);
+      // Only stat the filesystem when a download actually finished, not on
+      // every progress tick (they arrive every 64 KiB).
+      if (finished) _refreshDownloaded();
     }));
+  }
+
+  DownloadTask? _liveTaskFor(String id) {
+    final task = DownloadManager.instance.taskFor(id);
+    return (task != null && task.status == DownloadStatus.downloading)
+        ? task
+        : null;
   }
 
   @override
@@ -112,31 +126,32 @@ class _NowPlayingSheetState extends State<NowPlayingSheet> {
     super.dispose();
   }
 
-  Future<void> _refreshDownloaded() async {
-    if (DownloadManager.instance.isDownloading(_displayTrack.id)) {
-      if (mounted) setState(() => _isDownloaded = false);
-      return;
-    }
-    final downloaded = await AudioDownloadService.isDownloaded(_displayTrack);
-    if (mounted) setState(() => _isDownloaded = downloaded);
+  /// One combined refresh so switching tracks costs a single rebuild.
+  Future<void> _refreshTrackState() async {
+    final track = _displayTrack;
+    final results = await Future.wait([
+      AudioDownloadService.isDownloaded(track),
+      DatabaseService.isFavorite(track.id),
+    ]);
+    if (!mounted || _displayTrack.id != track.id) return;
+    setState(() {
+      _isDownloaded = results[0] && !DownloadManager.instance.isDownloading(track.id);
+      _isFavorite = results[1];
+    });
   }
 
-  Future<void> _refreshFavorite() async {
-    final fav = await DatabaseService.isFavorite(_displayTrack.id);
-    if (mounted) setState(() => _isFavorite = fav);
+  Future<void> _refreshDownloaded() async {
+    final track = _displayTrack;
+    final downloaded = await AudioDownloadService.isDownloaded(track);
+    if (!mounted || _displayTrack.id != track.id) return;
+    setState(() => _isDownloaded = downloaded);
   }
 
   void _startDownload() {
     Haptics.light();
     DownloadManager.instance.startDownload(_displayTrack);
-    final task = DownloadManager.instance.taskFor(_displayTrack.id);
     if (mounted) {
-      setState(() {
-        _downloadTask =
-            (task != null && task.status == DownloadStatus.downloading)
-                ? task
-                : null;
-      });
+      setState(() => _downloadTask = _liveTaskFor(_displayTrack.id));
     }
   }
 
@@ -166,47 +181,61 @@ class _NowPlayingSheetState extends State<NowPlayingSheet> {
     Haptics.light();
     final nowFav = await DatabaseService.toggleFavorite(_displayTrack);
     if (mounted) setState(() => _isFavorite = nowFav);
-    if (nowFav && !_isDownloaded) {
-      _startDownload();
-    }
+    if (nowFav && !_isDownloaded) _startDownload();
   }
 
   static String _formatDuration(Duration d) {
+    final hours = d.inHours;
     final minutes = d.inMinutes.remainder(60).toString().padLeft(2, '0');
     final seconds = d.inSeconds.remainder(60).toString().padLeft(2, '0');
-    return '$minutes:$seconds';
+    return hours > 0 ? '$hours:$minutes:$seconds' : '$minutes:$seconds';
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: AppColors.background,
-      body: SafeArea(
-        child: Column(
-          children: [
-            _topBar(),
-            Expanded(
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
-                child: _showLyrics && _isActive
-                    ? ValueListenableBuilder<List<LyricLine>>(
-                        valueListenable: widget.lyricsNotifier,
-                        builder: (context, lines, _) {
-                          return SyncedLyricsView(
-                            lines: lines,
-                            positionNotifier: widget.positionNotifier,
-                            onSeek: (sec) => widget.handler.seek(
-                              Duration(milliseconds: (sec * 1000).toInt()),
-                            ),
-                            onOpenEditor: widget.onOpenLyricEditor,
-                          );
-                        },
-                      )
-                    : _albumArt(),
+      body: GestureDetector(
+        // Swipe down anywhere on the chrome to dismiss, like the system sheets.
+        onVerticalDragEnd: (details) {
+          if ((details.primaryVelocity ?? 0) > 320) {
+            Haptics.selection();
+            Navigator.of(context).maybePop();
+          }
+        },
+        child: SafeArea(
+          child: Column(
+            children: [
+              _topBar(),
+              Expanded(
+                child: Padding(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
+                  child: AnimatedSwitcher(
+                    duration: const Duration(milliseconds: 260),
+                    child: _showLyrics && _isActive
+                        ? ValueListenableBuilder<List<LyricLine>>(
+                            key: const ValueKey('lyrics'),
+                            valueListenable: widget.lyricsNotifier,
+                            builder: (context, lines, _) {
+                              return SyncedLyricsView(
+                                lines: lines,
+                                positionNotifier: widget.positionNotifier,
+                                onSeek: (sec) => widget.handler.seek(
+                                  Duration(milliseconds: (sec * 1000).toInt()),
+                                ),
+                                onOpenEditor: () =>
+                                    widget.onOpenLyricEditor(_displayTrack),
+                              );
+                            },
+                          )
+                        : _albumArt(),
+                  ),
+                ),
               ),
-            ),
-            _bottomPanel(),
-          ],
+              _bottomPanel(),
+            ],
+          ),
         ),
       ),
     );
@@ -214,32 +243,44 @@ class _NowPlayingSheetState extends State<NowPlayingSheet> {
 
   Widget _topBar() {
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+      padding: const EdgeInsets.fromLTRB(8, 4, 8, 0),
       child: Row(
         children: [
           IconButton(
-            icon: const Icon(Icons.keyboard_arrow_down,
-                color: AppColors.textSecondary, size: 28),
-            onPressed: () => Navigator.pop(context),
+            icon: const Icon(Icons.keyboard_arrow_down_rounded,
+                color: AppColors.textSecondary, size: 30),
+            tooltip: '收起',
+            onPressed: () => Navigator.of(context).maybePop(),
           ),
-          const Spacer(),
-          Container(
-            width: 36,
-            height: 4,
-            decoration: BoxDecoration(
-              color: AppColors.hairlineStrong,
-              borderRadius: BorderRadius.circular(AppRadius.pill),
+          Expanded(
+            child: Column(
+              children: [
+                Text(
+                  _isActive ? '正在播放' : '预览',
+                  style: AppTypography.overline.copyWith(
+                    color: _isActive ? AppColors.accent : AppColors.textFaint,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  _isDownloaded ? '本地音源' : 'Bilibili',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                      color: AppColors.textFaint, fontSize: 11),
+                ),
+              ],
             ),
           ),
-          const Spacer(),
           IconButton(
             icon: Icon(
-              _showLyrics ? Icons.lyrics : Icons.lyrics_outlined,
+              _showLyrics ? Icons.lyrics_rounded : Icons.lyrics_outlined,
               color: _showLyrics && _isActive
                   ? AppColors.accent
-                  : AppColors.textSecondary,
+                  : (_isActive ? AppColors.textSecondary : AppColors.textFaint),
               size: 22,
             ),
+            tooltip: '歌词',
             onPressed: _isActive
                 ? () {
                     Haptics.selection();
@@ -254,12 +295,15 @@ class _NowPlayingSheetState extends State<NowPlayingSheet> {
 
   Widget _albumArt() {
     return LayoutBuilder(
+      key: const ValueKey('art'),
       builder: (context, constraints) {
         final maxHeight = constraints.maxHeight;
-        final size = maxHeight > 0 ? (maxHeight * 0.78).clamp(160.0, 320.0) : 240.0;
+        final size = maxHeight > 0
+            ? (maxHeight * 0.82).clamp(160.0, constraints.maxWidth)
+            : 240.0;
         return Center(
           child: AnimatedScale(
-            scale: (_isActive && _isPlaying) ? 1.0 : 0.92,
+            scale: (_isActive && _isPlaying) ? 1.0 : 0.9,
             duration: const Duration(milliseconds: 450),
             curve: Curves.easeOutCubic,
             child: Container(
@@ -270,8 +314,9 @@ class _NowPlayingSheetState extends State<NowPlayingSheet> {
                 boxShadow: const [
                   BoxShadow(
                     color: AppColors.black55,
-                    blurRadius: 32,
-                    offset: Offset(0, 16),
+                    blurRadius: 44,
+                    spreadRadius: -6,
+                    offset: Offset(0, 20),
                   ),
                 ],
               ),
@@ -291,8 +336,8 @@ class _NowPlayingSheetState extends State<NowPlayingSheet> {
   }
 
   Widget _bottomPanel() {
-    return Container(
-      padding: const EdgeInsets.fromLTRB(24, 4, 24, 16),
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(24, 8, 24, 12),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
@@ -308,31 +353,61 @@ class _NowPlayingSheetState extends State<NowPlayingSheet> {
                       scrolling: _isActive && _isPlaying,
                       style: AppTypography.title,
                     ),
-                    const SizedBox(height: 3),
+                    const SizedBox(height: 4),
                     MarqueeText(
                       text: _displayTrack.uploader,
-                      scrolling: _isActive && _isPlaying,
+                      scrolling: false,
                       style: AppTypography.bodyMedium,
                     ),
                   ],
                 ),
               ),
+              const SizedBox(width: 8),
+              _downloadChip(),
               IconButton(
-                icon: const Icon(Icons.edit_note,
+                icon: const Icon(Icons.edit_note_rounded,
                     color: AppColors.textSecondary, size: 24),
                 tooltip: '信息与歌词',
-                onPressed: widget.onOpenLyricEditor,
+                onPressed: () => widget.onOpenLyricEditor(_displayTrack),
               ),
             ],
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: 10),
           _seekBar(),
-          const SizedBox(height: 8),
+          const SizedBox(height: 4),
           _transportControls(),
-          const SizedBox(height: 12),
+          const SizedBox(height: 8),
           _volumeBar(),
         ],
       ),
+    );
+  }
+
+  /// Compact download affordance: ring while fetching, check once local.
+  Widget _downloadChip() {
+    if (_downloadTask != null) {
+      // Progress itself is drawn around the play button; here we only say
+      // "this is being fetched" so the two do not compete for attention.
+      return const SizedBox(
+        width: 40,
+        height: 40,
+        child: Icon(Icons.downloading_rounded,
+            color: AppColors.accent, size: 22),
+      );
+    }
+    if (_isDownloaded) {
+      return const SizedBox(
+        width: 40,
+        height: 40,
+        child: Icon(Icons.offline_pin_rounded,
+            color: AppColors.success, size: 22),
+      );
+    }
+    return IconButton(
+      icon: const Icon(Icons.download_rounded,
+          color: AppColors.textSecondary, size: 22),
+      tooltip: '下载到本地',
+      onPressed: _startDownload,
     );
   }
 
@@ -342,78 +417,65 @@ class _NowPlayingSheetState extends State<NowPlayingSheet> {
       fontSize: 12,
       fontFeatures: [FontFeature.tabularFigures()],
     );
-    return ValueListenableBuilder<Duration>(
-      valueListenable: widget.durationNotifier,
-      builder: (context, duration, _) {
-        return ValueListenableBuilder<Duration>(
-          valueListenable: widget.positionNotifier,
-          builder: (context, position, _) {
-            final double maxSec = _isActive
-                ? (duration.inSeconds.toDouble() > 0
-                    ? duration.inSeconds.toDouble()
-                    : (_displayTrack.duration > 0
-                        ? _displayTrack.duration.toDouble()
-                        : 1.0))
-                : (_displayTrack.duration > 0
-                    ? _displayTrack.duration.toDouble()
-                    : 1.0);
-            final double posSec = _isActive
-                ? (_dragValue ??
-                        position.inSeconds.toDouble().clamp(0.0, maxSec))
-                    .clamp(0.0, maxSec)
-                : 0.0;
-            final remaining = (Duration(seconds: maxSec.round()) -
-                        Duration(seconds: posSec.round())) <
-                    Duration.zero
-                ? Duration.zero
-                : (Duration(seconds: maxSec.round()) -
-                    Duration(seconds: posSec.round()));
-            return Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                SliderTheme(
-                  data: SliderTheme.of(context).copyWith(
-                    trackHeight: 4,
-                    thumbShape: const RoundSliderThumbShape(
-                        enabledThumbRadius: 6),
-                    overlayShape: const RoundSliderOverlayShape(
-                        overlayRadius: 14),
-                  ),
-                  child: Slider(
-                    value: posSec,
-                    max: maxSec,
-                    label: _dragValue != null
-                        ? _formatDuration(Duration(seconds: posSec.round()))
-                        : null,
-                    onChanged: (v) {
-                      setState(() => _dragValue = v);
-                    },
-                    onChangeStart: (v) =>
-                        setState(() => _dragValue = v),
-                    onChangeEnd: (v) {
-                      Haptics.light();
-                      if (_isActive) {
-                        widget.handler
-                            .seek(Duration(seconds: v.toInt()));
-                      }
-                      setState(() => _dragValue = null);
-                    },
-                  ),
-                ),
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 4),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Text(_formatDuration(Duration(seconds: posSec.round())),
-                          style: timeStyle),
-                      Text('-${_formatDuration(remaining)}', style: timeStyle),
-                    ],
-                  ),
-                ),
-              ],
-            );
-          },
+    return AnimatedBuilder(
+      animation:
+          Listenable.merge([widget.durationNotifier, widget.positionNotifier]),
+      builder: (context, _) {
+        final fallback =
+            _displayTrack.duration > 0 ? _displayTrack.duration.toDouble() : 1.0;
+        final streamed = widget.durationNotifier.value.inSeconds.toDouble();
+        final double maxSec =
+            _isActive && streamed > 0 ? streamed : fallback;
+        final double posSec = _isActive
+            ? (_dragValue ??
+                    widget.positionNotifier.value.inSeconds.toDouble())
+                .clamp(0.0, maxSec)
+            : 0.0;
+        var remaining = Duration(seconds: (maxSec - posSec).round());
+        if (remaining < Duration.zero) remaining = Duration.zero;
+
+        return Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            SliderTheme(
+              data: SliderTheme.of(context).copyWith(
+                trackHeight: 4,
+                thumbShape:
+                    const RoundSliderThumbShape(enabledThumbRadius: 6),
+                overlayShape:
+                    const RoundSliderOverlayShape(overlayRadius: 14),
+                disabledActiveTrackColor: AppColors.hairlineStrong,
+                disabledInactiveTrackColor: AppColors.hairline,
+                disabledThumbColor: AppColors.textFaint,
+              ),
+              child: Slider(
+                value: posSec,
+                max: maxSec,
+                label: _formatDuration(Duration(seconds: posSec.round())),
+                // Seeking a track that is not the one playing is meaningless.
+                onChanged: _isActive
+                    ? (v) => setState(() => _dragValue = v)
+                    : null,
+                onChangeStart: (v) => setState(() => _dragValue = v),
+                onChangeEnd: (v) {
+                  Haptics.light();
+                  widget.handler.seek(Duration(seconds: v.toInt()));
+                  setState(() => _dragValue = null);
+                },
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 6),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text(_formatDuration(Duration(seconds: posSec.round())),
+                      style: timeStyle),
+                  Text('-${_formatDuration(remaining)}', style: timeStyle),
+                ],
+              ),
+            ),
+          ],
         );
       },
     );
@@ -423,136 +485,158 @@ class _NowPlayingSheetState extends State<NowPlayingSheet> {
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
-        _favoriteButton(),
-        IconButton(
-          icon: const Icon(Icons.skip_previous,
-              color: AppColors.textPrimary, size: 38),
-          onPressed: _isActive ? _prev : null,
-        ),
-        _centerButton(),
-        IconButton(
-          icon: const Icon(Icons.skip_next,
-              color: AppColors.textPrimary, size: 38),
-          onPressed: _isActive ? _next : null,
-        ),
         _modeButton(),
+        _skipButton(Icons.skip_previous_rounded, _isActive ? _prev : null),
+        _playButton(),
+        _skipButton(Icons.skip_next_rounded, _isActive ? _next : null),
+        _favoriteButton(),
       ],
+    );
+  }
+
+  Widget _skipButton(IconData icon, VoidCallback? onPressed) {
+    return IconButton(
+      icon: Icon(icon,
+          color: onPressed == null
+              ? AppColors.textFaint
+              : AppColors.textPrimary,
+          size: 40),
+      onPressed: onPressed,
     );
   }
 
   Widget _favoriteButton() {
     return SizedBox(
-      width: 44,
+      width: 48,
       child: IconButton(
         icon: Icon(
-          _isFavorite ? Icons.favorite : Icons.favorite_border,
+          _isFavorite ? Icons.favorite_rounded : Icons.favorite_border_rounded,
           color: _isFavorite ? AppColors.accent : AppColors.textMuted,
           size: 26,
         ),
+        tooltip: _isFavorite ? '取消收藏' : '收藏',
         onPressed: _handleFavorite,
       ),
     );
   }
 
-  Widget _centerButton() {
-    final task = _downloadTask;
-    if (task != null) {
-      return SizedBox(
-        width: 76,
-        height: 76,
-        child: Center(
-          child: ProgressRing(
-            fraction: task.fraction,
-            size: 56,
-            strokeWidth: 3.5,
-            child: const Icon(Icons.arrow_downward,
-                color: AppColors.textPrimary, size: 22),
-          ),
-        ),
-      );
-    }
-    if (!_isDownloaded) {
-      return _circleButton(
-        child: const Icon(Icons.download_rounded,
-            color: AppColors.textPrimary, size: 34),
-        onTap: _startDownload,
-      );
-    }
+  /// The primary control is always play/pause. Tapping an undownloaded track
+  /// fetches it and starts playing — the download is an implementation detail,
+  /// surfaced as a ring around the button rather than as a separate mode.
+  Widget _playButton() {
     final playing = _isActive && _isPlaying;
-    return _circleButton(
-      child: Icon(
-        playing ? Icons.pause : Icons.play_arrow,
-        color: AppColors.textPrimary,
-        size: 42,
-      ),
-      onTap: _playOrPause,
-    );
-  }
-
-  Widget _circleButton({required Widget child, required VoidCallback onTap}) {
-    return Container(
-      width: 76,
-      height: 76,
-      decoration: BoxDecoration(
-        shape: BoxShape.circle,
-        color: AppColors.surfaceHighlight,
-        border: Border.all(color: AppColors.hairlineStrong),
-      ),
-      child: IconButton(
-        icon: child,
-        onPressed: onTap,
-      ),
+    return ValueListenableBuilder<bool>(
+      valueListenable: widget.handler.isPreparing,
+      builder: (context, preparing, _) {
+        final busy = (preparing && _isActive) || _downloadTask != null;
+        return SizedBox(
+          width: 76,
+          height: 76,
+          child: Stack(
+            alignment: Alignment.center,
+            children: [
+              if (busy)
+                SizedBox(
+                  width: 76,
+                  height: 76,
+                  child: _downloadTask != null
+                      ? ProgressRing(
+                          fraction: _downloadTask!.fraction,
+                          size: 76,
+                          strokeWidth: 2.5,
+                          trackColor: AppColors.hairline,
+                        )
+                      : const CircularProgressIndicator(
+                          strokeWidth: 2.5,
+                          color: AppColors.accent,
+                          backgroundColor: AppColors.hairline,
+                        ),
+                ),
+              Container(
+                width: 68,
+                height: 68,
+                decoration: const BoxDecoration(
+                  shape: BoxShape.circle,
+                  gradient: AppColors.primaryGradient,
+                  boxShadow: [
+                    BoxShadow(
+                      color: AppColors.accent30,
+                      blurRadius: 22,
+                      offset: Offset(0, 6),
+                    ),
+                  ],
+                ),
+                child: IconButton(
+                  onPressed: _playOrPause,
+                  tooltip: playing ? '暂停' : '播放',
+                  icon: AnimatedSwitcher(
+                    duration: const Duration(milliseconds: 180),
+                    transitionBuilder: (child, animation) =>
+                        ScaleTransition(scale: animation, child: child),
+                    child: Icon(
+                      playing
+                          ? Icons.pause_rounded
+                          : Icons.play_arrow_rounded,
+                      key: ValueKey<bool>(playing),
+                      color: Colors.white,
+                      size: 40,
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        );
+      },
     );
   }
 
   Widget _modeButton() {
     final IconData icon = _isShuffle
-        ? Icons.shuffle
-        : (_loopMode == LoopMode.one ? Icons.repeat_one : Icons.repeat);
+        ? Icons.shuffle_rounded
+        : (_loopMode == LoopMode.one
+            ? Icons.repeat_one_rounded
+            : Icons.repeat_rounded);
+    final label = _isShuffle
+        ? '随机播放'
+        : (_loopMode == LoopMode.one ? '单曲循环' : '列表循环');
+    // Shuffle and repeat-one are both "not the default", so both light up.
+    final active = _isShuffle || _loopMode == LoopMode.one;
     return SizedBox(
-      width: 44,
-      child: GestureDetector(
-        behavior: HitTestBehavior.opaque,
-        onTapDown: (_) {
-          if (mounted) setState(() => _modePressed = true);
-        },
-        onTapUp: (_) {
-          if (!mounted) return;
-          setState(() => _modePressed = false);
+      width: 48,
+      child: IconButton(
+        icon: Icon(icon,
+            color: active ? AppColors.accent : AppColors.textMuted, size: 24),
+        tooltip: label,
+        onPressed: () {
           Haptics.medium();
           widget.handler.cyclePlayMode();
         },
-        onTapCancel: () {
-          if (mounted) setState(() => _modePressed = false);
-        },
-        child: Center(
-          child: AnimatedContainer(
-            duration: const Duration(milliseconds: 120),
-            padding: const EdgeInsets.all(6),
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              color:
-                  _modePressed ? AppColors.surfaceHighlight : Colors.transparent,
-            ),
-            child: Icon(
-              icon,
-              color: _modePressed ? AppColors.accent : AppColors.textMuted,
-              size: 24,
-            ),
-          ),
-        ),
       ),
     );
   }
 
   Widget _volumeBar() {
-    final displayVolume = _dragVolumeValue ?? _volume;
+    final IconData icon;
+    if (_volume <= 0.01) {
+      icon = Icons.volume_off_rounded;
+    } else if (_volume < 0.5) {
+      icon = Icons.volume_down_rounded;
+    } else {
+      icon = Icons.volume_up_rounded;
+    }
     return Row(
       children: [
-        Icon(
-          displayVolume <= 0.01 ? Icons.volume_off : Icons.volume_mute,
-          color: AppColors.textFaint,
-          size: 18,
+        IconButton(
+          icon: Icon(icon, color: AppColors.textFaint, size: 18),
+          visualDensity: VisualDensity.compact,
+          tooltip: _volume <= 0.01 ? '取消静音' : '静音',
+          onPressed: () {
+            Haptics.selection();
+            final next = _volume <= 0.01 ? 1.0 : 0.0;
+            setState(() => _volume = next);
+            widget.handler.setVolume(next);
+          },
         ),
         Expanded(
           child: SliderTheme(
@@ -562,21 +646,15 @@ class _NowPlayingSheetState extends State<NowPlayingSheet> {
               overlayShape: const RoundSliderOverlayShape(overlayRadius: 12),
             ),
             child: Slider(
-              value: displayVolume,
+              value: _volume,
               onChanged: (v) {
-                setState(() => _dragVolumeValue = v);
+                setState(() => _volume = v);
                 widget.handler.setVolume(v);
-              },
-              onChangeEnd: (v) {
-                setState(() {
-                  _volume = v;
-                  _dragVolumeValue = null;
-                });
               },
             ),
           ),
         ),
-        const Icon(Icons.volume_up, color: AppColors.textFaint, size: 18),
+        const SizedBox(width: 8),
       ],
     );
   }

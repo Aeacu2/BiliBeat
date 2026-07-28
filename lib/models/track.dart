@@ -96,6 +96,18 @@ class Track {
       addedAt: addedAt ?? this.addedAt,
     );
   }
+
+  /// Identity is the track id (`bvid_cid`), which uniquely names one playable
+  /// part. Two `Track` objects for the same part — one from search, one
+  /// rehydrated from disk — must compare equal so list lookups behave.
+  @override
+  bool operator ==(Object other) => other is Track && other.id == id;
+
+  @override
+  int get hashCode => id.hashCode;
+
+  @override
+  String toString() => 'Track($id, $title)';
 }
 
 /// Callback for "play this track", optionally within a specific queue

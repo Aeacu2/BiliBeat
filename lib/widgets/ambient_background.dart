@@ -6,6 +6,7 @@ import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 
 import '../theme/app_theme.dart';
+import 'cached_cover_image.dart';
 
 /// Full-screen ambient backdrop whose glow is derived from the current cover
 /// art's dominant color — the signature "Apple Music" look. Falls back to the
@@ -95,12 +96,13 @@ class _AmbientBackgroundState extends State<AmbientBackground> {
   /// regions so vivid artwork dominates over neutral areas.
   static Future<Color> _extractDominantColor(String url) async {
     final Uint8List bytes;
-    if (url.startsWith('/') || url.startsWith('file://')) {
-      final path =
-          url.startsWith('file://') ? url.substring('file://'.length) : url;
-      bytes = await File(path).readAsBytes();
+    if (CachedCoverImage.isLocalPath(url)) {
+      bytes = await File(CachedCoverImage.localPathOf(url)).readAsBytes();
     } else {
-      final req = await _client.getUrl(Uri.parse(url));
+      // Ask the CDN for a thumbnail: we only ever decode 24×24, so pulling the
+      // full-resolution cover would waste the bytes entirely.
+      final req = await _client
+          .getUrl(Uri.parse(CachedCoverImage.sizedUrl(url, 64, 64)));
       req.headers.set('Referer', 'https://www.bilibili.com/');
       req.headers.set('User-Agent', _userAgent);
       final res = await req.close();

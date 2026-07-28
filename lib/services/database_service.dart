@@ -15,10 +15,21 @@ class DatabaseService {
   static final List<Track> _downloadedTracks = [];
   static final Map<String, LyricsResult> _lyricsCache = {};
   static final List<String> _searchHistory = [];
-  static final StreamController<void> _downloadUpdateController = StreamController<void>.broadcast();
+  static final StreamController<void> _libraryUpdateController = StreamController<void>.broadcast();
+  static final StreamController<void> _historyUpdateController = StreamController<void>.broadcast();
   static Future<void>? _loadFuture;
 
-  static Stream<void> get downloadUpdateStream => _downloadUpdateController.stream;
+  /// Emitted when the library changes: downloads, playlists or favourites.
+  /// Screens subscribe to this instead of relying on whichever call site
+  /// happened to make the change to also remember to refresh them.
+  static Stream<void> get libraryUpdateStream => _libraryUpdateController.stream;
+
+  /// Emitted when the recently-played list changes — including when the audio
+  /// handler auto-advances, which no UI action would otherwise notice.
+  static Stream<void> get historyUpdateStream => _historyUpdateController.stream;
+
+  /// Cap on the in-memory + on-disk lyrics cache.
+  static const int _maxLyricsCacheEntries = 200;
 
   static final List<Playlist> _playlists = [
     Playlist(
@@ -66,7 +77,7 @@ class DatabaseService {
                 final metaContent = await metaFile.readAsString();
                 final trackMap = Map<String, dynamic>.from(jsonDecode(metaContent));
                 final track = Track.fromMap(trackMap);
-                if (!_downloadedTracks.any((t) => t.id == track.id || (t.bvid.isNotEmpty && t.bvid == track.bvid))) {
+                if (!_downloadedTracks.any((t) => t.id == track.id)) {
                   _downloadedTracks.add(track);
                 }
               } catch (e) {
@@ -121,6 +132,22 @@ class DatabaseService {
           ..clear()
           ..addAll(list.map((e) => e.toString()));
       }
+
+      // Load the lyrics cache so a restart does not re-hit the network for
+      // every track the user already has lyrics for.
+      final lyricsFile = File('${docs.path}/bilibeat_lyrics.json');
+      if (await lyricsFile.exists()) {
+        final content = await lyricsFile.readAsString();
+        final Map<String, dynamic> map = jsonDecode(content);
+        map.forEach((key, value) {
+          try {
+            _lyricsCache[key] =
+                LyricsResult.fromMap(Map<String, dynamic>.from(value as Map));
+          } catch (e) {
+            debugPrint('Lyrics cache entry $key skipped: $e');
+          }
+        });
+      }
     } catch (e) {
       debugPrint('DatabaseService _ensureLoaded error: $e');
     }
@@ -161,6 +188,7 @@ class DatabaseService {
     } catch (e) {
       debugPrint('DatabaseService _persistPlaylists error: $e');
     }
+    _libraryUpdateController.add(null);
   }
 
   static Future<void> _persistSearchHistory() async {
@@ -196,7 +224,7 @@ class DatabaseService {
 
   static Future<void> updateTrackMetadata(Track updated) async {
     await _ensureLoaded();
-    final dlIdx = _downloadedTracks.indexWhere((t) => t.bvid == updated.bvid || t.id == updated.id);
+    final dlIdx = _downloadedTracks.indexWhere((t) => t.id == updated.id);
     if (dlIdx != -1) {
       _downloadedTracks[dlIdx] = updated;
       await _persistDownloaded();
@@ -205,20 +233,21 @@ class DatabaseService {
     await AudioDownloadService.saveTrackMetadata(updated);
 
     for (final pl in _playlists) {
-      final idx = pl.tracks.indexWhere((t) => t.bvid == updated.bvid || t.id == updated.id);
+      final idx = pl.tracks.indexWhere((t) => t.id == updated.id);
       if (idx != -1) {
         pl.tracks[idx] = updated;
       }
     }
     await _persistPlaylists();
 
-    final recIdx = _recentlyPlayed.indexWhere((t) => t.bvid == updated.bvid || t.id == updated.id);
+    final recIdx = _recentlyPlayed.indexWhere((t) => t.id == updated.id);
     if (recIdx != -1) {
       _recentlyPlayed[recIdx] = updated;
       await _persistRecentlyPlayed();
     }
 
-    _downloadUpdateController.add(null);
+    _libraryUpdateController.add(null);
+    _historyUpdateController.add(null);
   }
 
   static Future<List<Playlist>> getPlaylists() async {
@@ -262,7 +291,7 @@ class DatabaseService {
       (p) => p.id == playlistId,
       orElse: () => _playlists.first,
     );
-    if (!playlist.tracks.any((t) => t.id == track.id || (t.bvid.isNotEmpty && t.bvid == track.bvid))) {
+    if (!playlist.tracks.any((t) => t.id == track.id)) {
       playlist.tracks.insert(0, track);
       await _persistPlaylists();
     }
@@ -281,16 +310,16 @@ class DatabaseService {
   static Future<bool> isFavorite(String trackId) async {
     await _ensureLoaded();
     final favorites = await getFavoritesPlaylist();
-    return favorites.tracks.any((t) => t.id == trackId || (t.bvid.isNotEmpty && t.bvid == trackId));
+    return favorites.tracks.any((t) => t.id == trackId);
   }
 
   static Future<bool> toggleFavorite(Track track) async {
     await _ensureLoaded();
     final favorites = await getFavoritesPlaylist();
-    final exists = favorites.tracks.any((t) => t.id == track.id || (t.bvid.isNotEmpty && t.bvid == track.bvid));
+    final exists = favorites.tracks.any((t) => t.id == track.id);
 
     if (exists) {
-      favorites.tracks.removeWhere((t) => t.id == track.id || (t.bvid.isNotEmpty && t.bvid == track.bvid));
+      favorites.tracks.removeWhere((t) => t.id == track.id);
       await _persistPlaylists();
       return false;
     } else {
@@ -300,27 +329,52 @@ class DatabaseService {
     }
   }
 
+  /// Records a play. De-duplication is by track **id** (`bvid_cid`) only:
+  /// keying by `bvid` used to collapse the separate parts (P1/P2/…) of one
+  /// video into a single entry, silently dropping tracks from the list.
   static Future<void> addRecentlyPlayed(Track track) async {
     await _ensureLoaded();
-    final bvid = track.bvid.isNotEmpty ? track.bvid : track.id;
-    _recentlyPlayed.removeWhere((t) => t.id == track.id || (t.bvid.isNotEmpty && t.bvid == bvid));
+    final alreadyFirst =
+        _recentlyPlayed.isNotEmpty && _recentlyPlayed.first.id == track.id;
+    _recentlyPlayed.removeWhere((t) => t.id == track.id);
     _recentlyPlayed.insert(0, track);
     if (_recentlyPlayed.length > 50) _recentlyPlayed.removeLast();
     await _persistRecentlyPlayed();
+    if (!alreadyFirst) _historyUpdateController.add(null);
   }
 
   static Future<List<Track>> getRecentlyPlayed() async {
     await _ensureLoaded();
-    return _recentlyPlayed;
+    return List<Track>.from(_recentlyPlayed);
   }
 
   static Future<void> saveDownloadedTrack(Track track, String filePath) async {
     await _ensureLoaded();
-    final bvid = track.bvid.isNotEmpty ? track.bvid : track.id;
-    _downloadedTracks.removeWhere((t) => t.id == track.id || (t.bvid.isNotEmpty && t.bvid == bvid));
+    final existing = _downloadedTracks.indexWhere((t) => t.id == track.id);
+    // Playback calls this on every start; skip the rewrite + notify when
+    // nothing actually changed.
+    if (existing == 0) {
+      final head = _downloadedTracks[0];
+      if (head.title == track.title &&
+          head.uploader == track.uploader &&
+          head.coverUrl == track.coverUrl &&
+          head.duration == track.duration) {
+        return;
+      }
+    }
+    if (existing != -1) _downloadedTracks.removeAt(existing);
     _downloadedTracks.insert(0, track);
     await _persistDownloaded();
-    _downloadUpdateController.add(null);
+    _libraryUpdateController.add(null);
+  }
+
+  /// Deletes the local audio for [track] and forgets it from the library.
+  static Future<void> removeDownloadedTrack(Track track) async {
+    await _ensureLoaded();
+    await AudioDownloadService.delete(track);
+    _downloadedTracks.removeWhere((t) => t.id == track.id);
+    await _persistDownloaded();
+    _libraryUpdateController.add(null);
   }
 
   static Future<List<Track>> getDownloadedTracks() async {
@@ -329,10 +383,33 @@ class DatabaseService {
   }
 
   static Future<void> cacheLyrics(String trackId, LyricsResult lyrics) async {
+    await _ensureLoaded();
+    // Do not persist "not found" placeholders: they would stick forever and
+    // stop the app from ever retrying a lookup that might succeed later.
+    if (lyrics.source == 'none') {
+      _lyricsCache.remove(trackId);
+      return;
+    }
     _lyricsCache[trackId] = lyrics;
+    while (_lyricsCache.length > _maxLyricsCacheEntries) {
+      _lyricsCache.remove(_lyricsCache.keys.first);
+    }
+    await _persistLyrics();
   }
 
   static Future<LyricsResult?> getCachedLyrics(String trackId) async {
+    await _ensureLoaded();
     return _lyricsCache[trackId];
+  }
+
+  static Future<void> _persistLyrics() async {
+    try {
+      final docs = await getApplicationDocumentsDirectory();
+      final file = File('${docs.path}/bilibeat_lyrics.json');
+      final map = _lyricsCache.map((k, v) => MapEntry(k, v.toMap()));
+      await file.writeAsString(jsonEncode(map));
+    } catch (e) {
+      debugPrint('DatabaseService _persistLyrics error: $e');
+    }
   }
 }

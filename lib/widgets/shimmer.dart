@@ -100,26 +100,3 @@ class SkeletonTrackTile extends StatelessWidget {
   }
 }
 
-/// A horizontal card skeleton (for grids / rails).
-class SkeletonCard extends StatelessWidget {
-  final double width;
-  const SkeletonCard({super.key, this.width = 130});
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Shimmer(
-          width: width,
-          height: width,
-          borderRadius: const BorderRadius.all(Radius.circular(14)),
-        ),
-        const SizedBox(height: 8),
-        Shimmer(width: width, height: 13),
-        const SizedBox(height: 6),
-        Shimmer(width: width * 0.6, height: 11),
-      ],
-    );
-  }
-}

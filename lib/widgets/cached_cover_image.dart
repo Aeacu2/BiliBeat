@@ -15,6 +15,8 @@ import '../theme/app_theme.dart';
 ///    cutting download bytes and decode cost dramatically in long lists.
 ///  * Uses one shared [HttpClient] so connections are pooled and reused rather
 ///    than spawning (and leaking) a new client per image.
+///  * Never touches the filesystem synchronously during `build` — that used to
+///    put a blocking `existsSync` on the raster path for every local cover.
 class CachedCoverImage extends StatefulWidget {
   final String url;
   final double width;
@@ -31,9 +33,32 @@ class CachedCoverImage extends StatefulWidget {
     this.fallback,
   });
 
+  /// Appends Bilibili CDN resize params when the host supports them.
+  static String sizedUrl(String url, int w, int h) {
+    if (url.isEmpty) return url;
+    final uri = Uri.tryParse(url);
+    if (uri == null) return url;
+    final host = uri.host;
+    final isBili = host.contains('hdslb.com') ||
+        host.contains('biliimg.com') ||
+        host.contains('bilivideo.com') ||
+        host.contains('bilibili.com');
+    if (!isBili) return url;
+    if (url.contains('@')) return url; // already parameterized
+    return '$url@${w}w_${h}h_1e_1c.webp';
+  }
+
+  static bool isLocalPath(String url) =>
+      url.startsWith('/') || url.startsWith('file://');
+
+  static String localPathOf(String url) =>
+      url.startsWith('file://') ? url.substring('file://'.length) : url;
+
   @override
   State<CachedCoverImage> createState() => _CachedCoverImageState();
 }
+
+enum _CoverStatus { loading, ready, failed }
 
 class _CachedCoverImageState extends State<CachedCoverImage> {
   static final HttpClient _client = HttpClient()
@@ -43,8 +68,8 @@ class _CachedCoverImageState extends State<CachedCoverImage> {
   // Avoid requesting absurdly large thumbnails.
   static const int _maxEdge = 1080;
 
-  File? _localImageFile;
-  bool _isLoading = true;
+  File? _file;
+  _CoverStatus _status = _CoverStatus.loading;
   late String _loadKey;
   bool _needsLoad = true;
 
@@ -68,6 +93,10 @@ class _CachedCoverImageState extends State<CachedCoverImage> {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.url != widget.url) {
       _loadKey = widget.url;
+      setState(() {
+        _file = null;
+        _status = _CoverStatus.loading;
+      });
       _loadImage();
     }
   }
@@ -82,30 +111,17 @@ class _CachedCoverImageState extends State<CachedCoverImage> {
     return (widget.height * dpr).round().clamp(1, _maxEdge);
   }
 
-  static bool _isLocalPath(String url) =>
-      url.startsWith('/') || url.startsWith('file://');
-
-  static String _localPathOf(String url) =>
-      url.startsWith('file://') ? url.substring('file://'.length) : url;
-
-  /// Append Bilibili CDN resize params when applicable.
-  String _sizedUrl(String url, int w, int h) {
-    if (url.isEmpty) return url;
-    final uri = Uri.tryParse(url);
-    if (uri == null) return url;
-    final host = uri.host;
-    final isBili = host.contains('hdslb.com') ||
-        host.contains('biliimg.com') ||
-        host.contains('bilivideo.com') ||
-        host.contains('bilibili.com');
-    if (!isBili) return url;
-    if (url.contains('@')) return url; // already parameterized
-    return '$url@${w}w_${h}h_1e_1c.webp';
+  void _settle(String token, File? file) {
+    if (!mounted || token != _loadKey) return;
+    setState(() {
+      _file = file;
+      _status = file == null ? _CoverStatus.failed : _CoverStatus.ready;
+    });
   }
 
   Future<void> _loadImage() async {
     if (widget.url.isEmpty) {
-      if (mounted) setState(() => _isLoading = false);
+      _settle(_loadKey, null);
       return;
     }
 
@@ -113,34 +129,22 @@ class _CachedCoverImageState extends State<CachedCoverImage> {
 
     // Local file path (e.g. a user-picked custom cover): use it directly,
     // no download or CDN resizing needed.
-    if (_isLocalPath(widget.url)) {
-      final f = File(_localPathOf(widget.url));
-      final exists = await f.exists();
-      if (mounted && token == _loadKey) {
-        setState(() {
-          _localImageFile = exists ? f : null;
-          _isLoading = false;
-        });
-      }
+    if (CachedCoverImage.isLocalPath(widget.url)) {
+      final f = File(CachedCoverImage.localPathOf(widget.url));
+      _settle(token, await f.exists() ? f : null);
       return;
     }
 
     try {
-      final w = _targetW;
-      final h = _targetH;
-      final fetchUrl = _sizedUrl(widget.url, w, h);
+      final fetchUrl =
+          CachedCoverImage.sizedUrl(widget.url, _targetW, _targetH);
 
       final cacheDir = await getTemporaryDirectory();
       final md5Key = md5.convert(utf8.encode(fetchUrl)).toString();
-      final file = File('${cacheDir.path}/img_$md5Key.png');
+      final file = File('${cacheDir.path}/img_$md5Key.img');
 
-      if (await file.exists()) {
-        if (mounted && token == _loadKey) {
-          setState(() {
-            _localImageFile = file;
-            _isLoading = false;
-          });
-        }
+      if (await file.exists() && await file.length() > 0) {
+        _settle(token, file);
         return;
       }
 
@@ -153,95 +157,83 @@ class _CachedCoverImageState extends State<CachedCoverImage> {
       );
       final res = await req.close();
 
-      if (res.statusCode == 200) {
-        final sink = file.openWrite();
-        await res.pipe(sink);
-        if (mounted && token == _loadKey) {
-          setState(() {
-            _localImageFile = file;
-            _isLoading = false;
-          });
-        }
-      } else {
+      if (res.statusCode != 200) {
         await res.drain<void>();
-        if (mounted && token == _loadKey) setState(() => _isLoading = false);
+        _settle(token, null);
+        return;
       }
+
+      // Download to a temp sibling and rename into place, so a kill mid-write
+      // can never leave a truncated file cached forever.
+      final part = File('${file.path}.part');
+      final sink = part.openWrite();
+      try {
+        await res.pipe(sink);
+      } finally {
+        await sink.close();
+      }
+      if (await part.length() == 0) {
+        await part.delete();
+        _settle(token, null);
+        return;
+      }
+      await part.rename(file.path);
+      _settle(token, file);
     } catch (_) {
-      if (mounted && token == _loadKey) setState(() => _isLoading = false);
+      _settle(token, null);
     }
   }
 
   @override
   Widget build(BuildContext context) {
     final dpr = MediaQuery.of(context).devicePixelRatio;
-    final targetCacheWidth = (widget.width * dpr).round();
-    final targetCacheHeight = (widget.height * dpr).round();
+    final cacheW = (widget.width * dpr).round();
+    final cacheH = (widget.height * dpr).round();
 
-    if (widget.url.startsWith('/') || widget.url.startsWith('file://')) {
-      final path = widget.url.replaceFirst('file://', '');
-      final localF = File(path);
-      if (localF.existsSync()) {
-        return Image.file(
-          localF,
+    late final Widget child;
+    switch (_status) {
+      case _CoverStatus.ready:
+        child = Image.file(
+          _file!,
+          key: ValueKey(_file!.path),
           width: widget.width,
           height: widget.height,
-          cacheWidth: targetCacheWidth > 0 ? targetCacheWidth : null,
-          cacheHeight: targetCacheHeight > 0 ? targetCacheHeight : null,
+          cacheWidth: cacheW > 0 ? cacheW : null,
+          cacheHeight: cacheH > 0 ? cacheH : null,
           fit: widget.fit,
           alignment: Alignment.center,
+          gaplessPlayback: true,
           errorBuilder: (context, error, stackTrace) => _buildFallback(),
         );
-      }
+      case _CoverStatus.failed:
+        child = _buildFallback();
+      case _CoverStatus.loading:
+        child = _buildPlaceholder();
     }
 
-    if (_localImageFile != null) {
-      return Image.file(
-        _localImageFile!,
+    return AnimatedSwitcher(
+      duration: const Duration(milliseconds: 220),
+      child: SizedBox(
+        key: ValueKey(_status),
         width: widget.width,
         height: widget.height,
-        cacheWidth: targetCacheWidth > 0 ? targetCacheWidth : null,
-        cacheHeight: targetCacheHeight > 0 ? targetCacheHeight : null,
-        fit: widget.fit,
-        alignment: Alignment.center,
-        errorBuilder: (context, error, stackTrace) => _buildFallback(),
-      );
-    }
+        child: child,
+      ),
+    );
+  }
 
-    if (_isLoading) {
-      return Container(
-        width: widget.width,
-        height: widget.height,
-        decoration: BoxDecoration(
-          color: const Color(0xFF1C1C22),
-          borderRadius: BorderRadius.circular(AppRadius.md),
-        ),
-        child: const Center(
-          child: SizedBox(
-            width: 20,
-            height: 20,
-            child: CircularProgressIndicator(
-              strokeWidth: 2,
-              color: AppColors.accent,
-            ),
-          ),
-        ),
-      );
-    }
-
-    return Image.network(
-      _sizedUrl(widget.url, targetCacheWidth, targetCacheHeight),
-      headers: const {
-        'Referer': 'https://www.bilibili.com/',
-        'User-Agent':
-            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36',
-      },
+  Widget _buildPlaceholder() {
+    return Container(
       width: widget.width,
       height: widget.height,
-      cacheWidth: targetCacheWidth > 0 ? targetCacheWidth : null,
-      cacheHeight: targetCacheHeight > 0 ? targetCacheHeight : null,
-      fit: widget.fit,
-      alignment: Alignment.center,
-      errorBuilder: (context, error, stackTrace) => _buildFallback(),
+      color: const Color(0xFF17171C),
+      child: Center(
+        child: Icon(
+          Icons.music_note_rounded,
+          color: AppColors.textFaint,
+          size: (widget.width * 0.28).clamp(14.0, 40.0),
+        ),
+      ),
     );
   }
 

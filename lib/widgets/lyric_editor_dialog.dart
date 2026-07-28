@@ -41,6 +41,11 @@ class _LyricEditorDialogState extends State<LyricEditorDialog> with SingleTicker
   final TextEditingController _searchController = TextEditingController();
   final TextEditingController _importController = TextEditingController();
 
+  /// Stand-in clock for the preview when the caller has no live position.
+  /// This used to be constructed inline inside `build`, which handed the
+  /// preview a brand-new notifier on every rebuild and leaked its listener.
+  final ValueNotifier<Duration> _idlePosition = ValueNotifier(Duration.zero);
+
   List<LyricsResult> _searchResults = [];
   final List<LyricsResult> _pastedResults = [];
   int? _selectedIndex;
@@ -70,6 +75,7 @@ class _LyricEditorDialogState extends State<LyricEditorDialog> with SingleTicker
     _coverUrlController.dispose();
     _searchController.dispose();
     _importController.dispose();
+    _idlePosition.dispose();
     super.dispose();
   }
 
@@ -233,77 +239,109 @@ class _LyricEditorDialogState extends State<LyricEditorDialog> with SingleTicker
     Navigator.pop(context);
   }
 
-  /// Vertical timeline-offset calibration rail (sits to the right of the lyric
-  /// preview so the controls are not cramped horizontally).
-  Widget _offsetRail() {
+  void _nudgeOffset(double delta) {
+    setState(() => _previewOffset =
+        double.parse((_previewOffset + delta).toStringAsFixed(1)));
+  }
+
+  /// Timeline calibration. A single horizontal bar with real-sized targets;
+  /// the old vertical rail of five 50px buttons squeezed the preview and was
+  /// fiddly to hit.
+  Widget _offsetBar() {
+    final label =
+        '${_previewOffset >= 0 ? "+" : ""}${_previewOffset.toStringAsFixed(1)}s';
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 12),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
       decoration: BoxDecoration(
         color: AppColors.surfaceCard,
         borderRadius: BorderRadius.circular(AppRadius.md),
         border: Border.all(color: AppColors.hairline),
       ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
+      child: Row(
         children: [
           const Icon(Icons.timer_outlined, color: AppColors.accent, size: 16),
-          const SizedBox(height: 4),
-          Text(
-            '${_previewOffset >= 0 ? "+" : ""}${_previewOffset.toStringAsFixed(1)}s',
-            style: const TextStyle(
-              color: AppColors.textPrimary,
-              fontSize: 11,
-              fontWeight: FontWeight.bold,
+          const SizedBox(width: 8),
+          SizedBox(
+            width: 52,
+            child: Text(
+              label,
+              style: const TextStyle(
+                color: AppColors.textPrimary,
+                fontSize: 13,
+                fontWeight: FontWeight.bold,
+                fontFeatures: [FontFeature.tabularFigures()],
+              ),
             ),
           ),
-          const SizedBox(height: 12),
-          _offsetBtn('+0.5', () => setState(() => _previewOffset = double.parse((_previewOffset + 0.5).toStringAsFixed(1)))),
-          const SizedBox(height: 6),
-          _offsetBtn('+0.1', () => setState(() => _previewOffset = double.parse((_previewOffset + 0.1).toStringAsFixed(1)))),
-          const SizedBox(height: 6),
-          _offsetBtn('重置', () => setState(() => _previewOffset = 0.0)),
-          const SizedBox(height: 6),
-          _offsetBtn('-0.1', () => setState(() => _previewOffset = double.parse((_previewOffset - 0.1).toStringAsFixed(1)))),
-          const SizedBox(height: 6),
-          _offsetBtn('-0.5', () => setState(() => _previewOffset = double.parse((_previewOffset - 0.5).toStringAsFixed(1)))),
+          const Spacer(),
+          _offsetBtn('-0.5', () => _nudgeOffset(-0.5)),
+          const SizedBox(width: 6),
+          _offsetBtn('-0.1', () => _nudgeOffset(-0.1)),
+          const SizedBox(width: 6),
+          _offsetBtn('归零', () => setState(() => _previewOffset = 0.0),
+              muted: true),
+          const SizedBox(width: 6),
+          _offsetBtn('+0.1', () => _nudgeOffset(0.1)),
+          const SizedBox(width: 6),
+          _offsetBtn('+0.5', () => _nudgeOffset(0.5)),
         ],
       ),
     );
   }
 
-  Widget _offsetBtn(String label, VoidCallback onPressed) {
+  Widget _offsetBtn(String label, VoidCallback onPressed,
+      {bool muted = false}) {
     return GestureDetector(
       onTap: onPressed,
+      behavior: HitTestBehavior.opaque,
       child: Container(
-        width: 50,
-        padding: const EdgeInsets.symmetric(vertical: 7),
+        padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 10),
         decoration: BoxDecoration(
           color: AppColors.surfaceHighlight,
           borderRadius: BorderRadius.circular(AppRadius.sm),
           border: Border.all(color: AppColors.hairline),
         ),
-        child: Center(
-          child: Text(
-            label,
-            style: const TextStyle(
-              color: AppColors.textPrimary,
-              fontSize: 12,
-              fontWeight: FontWeight.w600,
-            ),
+        child: Text(
+          label,
+          style: TextStyle(
+            color: muted ? AppColors.textMuted : AppColors.textPrimary,
+            fontSize: 12,
+            fontWeight: FontWeight.w600,
           ),
         ),
       ),
     );
   }
 
+  /// First couple of lines, so candidates are distinguishable at a glance
+  /// instead of all reading "NETEASE • 42 行歌词".
+  String _snippet(LyricsResult res) {
+    final texts = res.lines
+        .map((l) => l.text.trim())
+        .where((t) => t.isNotEmpty)
+        .take(2)
+        .join(' / ');
+    return texts.isEmpty ? '（无文本内容）' : texts;
+  }
+
   @override
   Widget build(BuildContext context) {
+    final media = MediaQuery.of(context);
+    // A hardcoded 580 overflowed short phones outright, and overflowed every
+    // phone once the keyboard came up. Fit to what is actually available.
+    final available = media.size.height - media.viewInsets.bottom - 80;
+    final height = available.clamp(320.0, 620.0);
+
     return Dialog(
       backgroundColor: const Color(0xFF18181C),
+      insetPadding: EdgeInsets.symmetric(
+        horizontal: 20,
+        vertical: media.viewInsets.bottom > 0 ? 12 : 32,
+      ),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
       child: Container(
         padding: const EdgeInsets.all(20),
-        height: 580,
+        height: height,
         child: Column(
           children: [
             // Header bar
@@ -443,29 +481,28 @@ class _LyricEditorDialogState extends State<LyricEditorDialog> with SingleTicker
                             ),
                             const SizedBox(height: 6),
 
-                            // Live preview with a vertical timeline-offset rail on the right
+                            // Live preview gets the full width; calibration
+                            // sits beneath it.
                             Expanded(
-                              child: Row(
-                                children: [
-                                  Expanded(
-                                    child: ClipRRect(
-                                      borderRadius: BorderRadius.circular(16),
-                                      child: Container(
-                                        color: Colors.black26,
-                                        child: SyncedLyricsView(
-                                          lines: _previewingResult!.lines,
-                                          positionNotifier: widget.positionNotifier ?? ValueNotifier(Duration.zero),
-                                          offset: _previewOffset,
-                                        ),
-                                      ),
-                                    ),
+                              child: ClipRRect(
+                                borderRadius: BorderRadius.circular(16),
+                                child: Container(
+                                  color: Colors.black26,
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: 12),
+                                  child: SyncedLyricsView(
+                                    lines: _previewingResult!.lines,
+                                    positionNotifier:
+                                        widget.positionNotifier ??
+                                            _idlePosition,
+                                    offset: _previewOffset,
                                   ),
-                                  const SizedBox(width: 10),
-                                  _offsetRail(),
-                                ],
+                                ),
                               ),
                             ),
-                            const SizedBox(height: 12),
+                            const SizedBox(height: 10),
+                            _offsetBar(),
+                            const SizedBox(height: 10),
                             // Apply Button for Live Preview
                             SizedBox(
                               width: double.infinity,
@@ -582,24 +619,48 @@ class _LyricEditorDialogState extends State<LyricEditorDialog> with SingleTicker
                                                                 ),
                                                               ],
                                                             ),
-                                                            const SizedBox(height: 4),
-                                                            SingleChildScrollView(
-                                                              scrollDirection: Axis.horizontal,
-                                                              child: Row(
-                                                                children: [
-                                                                  Text(
-                                                                    isCurrent
-                                                                        ? '当前使用 • ${res.lines.length} 行歌词'
-                                                                        : '${res.source.toUpperCase()} • ${res.lines.length} 行歌词',
-                                                                    style: const TextStyle(color: AppColors.textMuted, fontSize: 12),
-                                                                  ),
-                                                                  const SizedBox(width: 8),
-                                                                  const Text(
-                                                                    '点击预览/校准 ➔',
-                                                                    style: TextStyle(color: AppColors.pinkStart, fontSize: 11, fontWeight: FontWeight.w500),
-                                                                  ),
-                                                                ],
+                                                            const SizedBox(height: 5),
+                                                            // The actual words: without this every
+                                                            // candidate looked identical.
+                                                            Text(
+                                                              _snippet(res),
+                                                              maxLines: 2,
+                                                              overflow: TextOverflow.ellipsis,
+                                                              style: const TextStyle(
+                                                                color: AppColors.textSecondary,
+                                                                fontSize: 12.5,
+                                                                height: 1.35,
                                                               ),
+                                                            ),
+                                                            const SizedBox(height: 6),
+                                                            Row(
+                                                              children: [
+                                                                Text(
+                                                                  isCurrent
+                                                                      ? '当前使用'
+                                                                      : res.source.toUpperCase(),
+                                                                  style: const TextStyle(
+                                                                      color: AppColors.textFaint,
+                                                                      fontSize: 11,
+                                                                      fontWeight: FontWeight.w700,
+                                                                      letterSpacing: 0.6),
+                                                                ),
+                                                                const SizedBox(width: 8),
+                                                                Text(
+                                                                  '${res.lines.length} 行',
+                                                                  style: const TextStyle(
+                                                                      color: AppColors.textFaint,
+                                                                      fontSize: 11),
+                                                                ),
+                                                                const Spacer(),
+                                                                const Text(
+                                                                  '点击预览 / 校准 ➔',
+                                                                  style: TextStyle(
+                                                                      color: AppColors.pinkStart,
+                                                                      fontSize: 11,
+                                                                      fontWeight: FontWeight.w500),
+                                                                ),
+                                                              ],
                                                             ),
                                                           ],
                                                         ),

@@ -33,6 +33,7 @@ class _TrackDownloadButtonState extends State<TrackDownloadButton> {
   StreamSubscription<void>? _sub;
   bool _isDownloaded = false;
   bool _wasDownloading = false;
+  double _fraction = 0.0;
 
   @override
   void initState() {
@@ -40,10 +41,16 @@ class _TrackDownloadButtonState extends State<TrackDownloadButton> {
     _refresh();
     _sub = DownloadManager.instance.updates.listen((_) {
       if (!mounted) return;
-      final downloading =
-          DownloadManager.instance.isDownloading(widget.track.id);
+      final task = DownloadManager.instance.taskFor(widget.track.id);
+      final downloading = task != null &&
+          task.status == DownloadStatus.downloading;
+      final fraction = task?.fraction ?? 0.0;
+      // The manager broadcasts for *every* download in flight; a row that is
+      // not involved must not rebuild.
+      if (downloading == _wasDownloading && fraction == _fraction) return;
       if (_wasDownloading && !downloading) _refresh();
       _wasDownloading = downloading;
+      _fraction = fraction;
       setState(() {});
     });
   }
@@ -51,7 +58,11 @@ class _TrackDownloadButtonState extends State<TrackDownloadButton> {
   @override
   void didUpdateWidget(covariant TrackDownloadButton oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.track.id != widget.track.id) _refresh();
+    if (oldWidget.track.id != widget.track.id) {
+      _wasDownloading = false;
+      _fraction = 0.0;
+      _refresh();
+    }
   }
 
   @override

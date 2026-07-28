@@ -8,8 +8,10 @@ import '../widgets/glass_card.dart';
 import '../widgets/playlist_detail_sheet.dart';
 import '../widgets/track_options_menu.dart';
 import '../theme/app_theme.dart';
+import '../theme/haptics.dart';
 import '../widgets/cached_cover_image.dart';
 import '../widgets/empty_state.dart';
+import '../widgets/mini_player.dart';
 import '../widgets/track_download_button.dart';
 
 import 'dart:async';
@@ -45,7 +47,7 @@ class _HomeScreenState extends State<HomeScreen> {
     super.initState();
     _loadData();
     _refreshDownloading();
-    _downloadSub = DatabaseService.downloadUpdateStream.listen((_) {
+    _downloadSub = DatabaseService.libraryUpdateStream.listen((_) {
       _loadData();
     });
     _downloadManagerSub = DownloadManager.instance.updates.listen((_) {
@@ -117,6 +119,39 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
+  /// Long-pressing a playlist card offers to delete it — previously a playlist
+  /// could be created but never removed.
+  Future<void> _confirmDeletePlaylist(Playlist pl) async {
+    if (pl.id == 'favorites') return;
+    Haptics.medium();
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppColors.backgroundElevated,
+        title: const Text('删除歌单',
+            style: TextStyle(color: AppColors.textPrimary)),
+        content: Text(
+          '确定要删除歌单「${pl.name}」吗？已下载的音频文件不会被删除。',
+          style: const TextStyle(color: AppColors.textSecondary),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('取消'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('删除', style: TextStyle(color: AppColors.danger)),
+          ),
+        ],
+      ),
+    );
+    if (confirmed == true) {
+      await DatabaseService.deletePlaylist(pl.id);
+      await _loadData();
+    }
+  }
+
   void _openPlaylist(Playlist pl) {
     if (widget.onOpenPlaylist != null) {
       widget.onOpenPlaylist!(pl);
@@ -142,10 +177,63 @@ class _HomeScreenState extends State<HomeScreen> {
     ));
   }
 
+  Widget _quickCard({
+    required IconData icon,
+    required List<Color> gradient,
+    required String title,
+    required String subtitle,
+    required VoidCallback onTap,
+  }) {
+    return GestureDetector(
+      onTap: onTap,
+      child: GlassCard(
+        borderRadius: 18,
+        padding: const EdgeInsets.all(14),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Container(
+              width: 40,
+              height: 40,
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(12),
+                gradient: LinearGradient(colors: gradient),
+              ),
+              child: Icon(icon, color: AppColors.textPrimary, size: 22),
+            ),
+            const SizedBox(height: 12),
+            Text(title, style: AppTypography.headline),
+            const SizedBox(height: 2),
+            Text(subtitle,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: AppTypography.caption),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Playlist? get _favorites {
+    for (final pl in _playlists) {
+      if (pl.id == 'favorites') return pl;
+    }
+    return null;
+  }
+
   @override
   Widget build(BuildContext context) {
+    // Playlists other than 收藏, which has its own quick-access card.
+    final otherPlaylists =
+        _playlists.where((p) => p.id != 'favorites').toList();
+
     return ListView(
-      padding: const EdgeInsets.only(left: 20, right: 20, top: 20, bottom: 120),
+      padding: EdgeInsets.only(
+        left: 20,
+        right: 20,
+        top: 20,
+        bottom: MiniPlayer.totalHeight(context) + 24,
+      ),
       children: [
         // Screen Header
         const Text('聆听', style: AppTypography.display),
@@ -156,46 +244,27 @@ class _HomeScreenState extends State<HomeScreen> {
         Row(
           children: [
             Expanded(
-              child: GestureDetector(
+              child: _quickCard(
+                icon: Icons.download_done_rounded,
+                gradient: const [AppColors.success, Color(0xFF059669)],
+                title: '已下载',
+                subtitle: _downloadingTasks.isEmpty
+                    ? '${_downloadedTracks.length} 首'
+                    : '${_downloadingTasks.length} 首下载中',
                 onTap: _openDownloadedPlaylist,
-                child: GlassCard(
-                  borderRadius: 18,
-                  padding: const EdgeInsets.all(16),
-                  child: Row(
-                    children: [
-                      Container(
-                        width: 44,
-                        height: 44,
-                        decoration: BoxDecoration(
-                          borderRadius: BorderRadius.circular(12),
-                          gradient: const LinearGradient(
-                            colors: [AppColors.success, Color(0xFF059669)],
-                          ),
-                        ),
-                        child: const Icon(Icons.download_done, color: AppColors.textPrimary, size: 24),
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            const Text(
-                              '已下载',
-                              style: TextStyle(color: AppColors.textPrimary, fontSize: 16, fontWeight: FontWeight.bold),
-                            ),
-                            const SizedBox(height: 2),
-                            Text(
-                              _downloadingTasks.isEmpty
-                                  ? '${_downloadedTracks.length} 首已下载'
-                                  : '${_downloadingTasks.length} 首下载中 · ${_downloadedTracks.length} 首已下载',
-                              style: const TextStyle(color: AppColors.textMuted, fontSize: 12),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: _quickCard(
+                icon: Icons.favorite_rounded,
+                gradient: const [AppColors.pinkStart, AppColors.accent],
+                title: '收藏',
+                subtitle: '${_favorites?.tracks.length ?? 0} 首',
+                onTap: () {
+                  final fav = _favorites;
+                  if (fav != null) _openPlaylist(fav);
+                },
               ),
             ),
           ],
@@ -266,9 +335,9 @@ class _HomeScreenState extends State<HomeScreen> {
           height: 140,
           child: ListView.builder(
             scrollDirection: Axis.horizontal,
-            itemCount: _playlists.length + 1,
+            itemCount: otherPlaylists.length + 1,
             itemBuilder: (context, index) {
-              if (index == _playlists.length) {
+              if (index == otherPlaylists.length) {
                 // "New Playlist" button card
                 return GestureDetector(
                   onTap: _openCreatePlaylistDialog,
@@ -290,11 +359,11 @@ class _HomeScreenState extends State<HomeScreen> {
                 );
               }
 
-              final pl = _playlists[index];
-              final isFav = pl.id == 'favorites';
+              final pl = otherPlaylists[index];
 
               return GestureDetector(
                 onTap: () => _openPlaylist(pl),
+                onLongPress: () => _confirmDeletePlaylist(pl),
                 child: Container(
                   width: 140,
                   margin: const EdgeInsets.only(right: 14),
@@ -310,14 +379,12 @@ class _HomeScreenState extends State<HomeScreen> {
                           height: 44,
                           decoration: BoxDecoration(
                             borderRadius: BorderRadius.circular(12),
-                            gradient: LinearGradient(
-                              colors: isFav
-                                  ? [AppColors.accent, AppColors.pinkStart]
-                                  : [const Color(0xFF3A3A40), const Color(0xFF232327)],
+                            gradient: const LinearGradient(
+                              colors: [Color(0xFF3A3A40), Color(0xFF232327)],
                             ),
                           ),
-                          child: Icon(
-                            isFav ? Icons.favorite : Icons.queue_music,
+                          child: const Icon(
+                            Icons.queue_music_rounded,
                             color: AppColors.textPrimary,
                             size: 24,
                           ),

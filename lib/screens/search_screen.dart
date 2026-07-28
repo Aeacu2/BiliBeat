@@ -6,6 +6,8 @@ import '../widgets/glass_card.dart';
 import '../widgets/track_options_menu.dart';
 import '../theme/app_theme.dart';
 import '../widgets/cached_cover_image.dart';
+import '../widgets/empty_state.dart';
+import '../widgets/mini_player.dart';
 import '../widgets/shimmer.dart';
 import '../widgets/track_download_button.dart';
 
@@ -37,6 +39,11 @@ class _SearchScreenState extends State<SearchScreen> {
   List<String> _searchHistory = [];
 
   bool _wasFocused = false;
+  bool _hadText = false;
+
+  /// Monotonic token so a slow earlier search can never overwrite the results
+  /// of a later one.
+  int _searchToken = 0;
 
   @override
   void initState() {
@@ -70,7 +77,13 @@ class _SearchScreenState extends State<SearchScreen> {
   }
 
   void _onTextChange() {
-    setState(() {});
+    // The only thing the text drives in this build is the clear button, so
+    // rebuilding the entire result list on every keystroke is wasted work.
+    final hasText = _searchController.text.isNotEmpty;
+    if (hasText != _hadText) {
+      _hadText = hasText;
+      setState(() {});
+    }
   }
 
   Future<void> _loadRecommendations() async {
@@ -104,8 +117,9 @@ class _SearchScreenState extends State<SearchScreen> {
       _lastQuery = trimmed;
     });
 
+    final token = ++_searchToken;
     final results = await BilibiliSdk.search(trimmed);
-    if (mounted) {
+    if (mounted && token == _searchToken) {
       setState(() {
         _searchResults = results;
         _isLoading = false;
@@ -113,11 +127,41 @@ class _SearchScreenState extends State<SearchScreen> {
     }
   }
 
+  /// Result rows that should be built lazily rather than all at once.
+  List<Track> get _visibleTracks {
+    if (_isLoading) return const [];
+    if (_hasSearched) return _searchResults;
+    return _isLoadingRecommended ? const [] : _recommendedTracks;
+  }
+
   @override
   Widget build(BuildContext context) {
-    return ListView(
-      padding: const EdgeInsets.only(left: 20, right: 20, top: 20, bottom: 120),
-      children: [
+    return CustomScrollView(
+      keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+      slivers: [
+        SliverPadding(
+          padding: const EdgeInsets.only(left: 20, right: 20, top: 20),
+          sliver: SliverList(delegate: SliverChildListDelegate(_header())),
+        ),
+        // Rows are built on demand so a long result list costs only what is
+        // actually on screen.
+        SliverPadding(
+          padding: const EdgeInsets.symmetric(horizontal: 20),
+          sliver: SliverList.builder(
+            itemCount: _visibleTracks.length,
+            itemBuilder: (context, index) =>
+                _buildTrackTile(_visibleTracks[index]),
+          ),
+        ),
+        SliverToBoxAdapter(
+          child: SizedBox(height: MiniPlayer.totalHeight(context) + 24),
+        ),
+      ],
+    );
+  }
+
+  List<Widget> _header() {
+    return [
         const Text('搜索', style: AppTypography.display),
 
         const SizedBox(height: 16),
@@ -230,7 +274,6 @@ class _SearchScreenState extends State<SearchScreen> {
             ],
           ),
           const SizedBox(height: 12),
-          ..._searchResults.map((track) => _buildTrackTile(track)),
         ]
         // Search Completed but No Results Found
         else if (_hasSearched && _searchResults.isEmpty) ...[
@@ -279,17 +322,21 @@ class _SearchScreenState extends State<SearchScreen> {
           const SizedBox(height: 12),
 
           if (_isLoadingRecommended)
-            const Center(
-              child: Padding(
-                padding: EdgeInsets.all(30),
-                child: CircularProgressIndicator(strokeWidth: 2, color: AppColors.accent),
-              ),
+            const Column(
+              children: [
+                SkeletonTrackTile(),
+                SkeletonTrackTile(),
+                SkeletonTrackTile(),
+              ],
             )
-          else
-            ..._recommendedTracks.map((track) => _buildTrackTile(track)),
+          else if (_recommendedTracks.isEmpty)
+            const EmptyState(
+              icon: Icons.wifi_off_rounded,
+              title: '推荐加载失败',
+              subtitle: '检查网络后下拉重试，或直接搜索歌名 / BV 号',
+            ),
         ],
-      ],
-    );
+      ];
   }
 
   Widget _buildTrackTile(Track track) {

@@ -173,13 +173,29 @@ class _TrackOptionsMenuState extends State<TrackOptionsMenu> {
 
   Future<void> _handleDownload() async {
     final messenger = ScaffoldMessenger.of(context);
+    final track = widget.track;
     Navigator.pop(context);
-    await DownloadManager.instance.startDownload(widget.track);
+
+    // Already local: offer to reclaim the space instead of downloading twice.
+    if (_isDownloaded) {
+      await DatabaseService.removeDownloadedTrack(track);
+      widget.onTrackChanged?.call();
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text('已删除「${track.title}」的本地音频'),
+          backgroundColor: AppColors.backgroundElevated,
+          duration: const Duration(seconds: 2),
+        ),
+      );
+      return;
+    }
+
+    await DownloadManager.instance.startDownload(track);
     widget.onTrackChanged?.call();
 
     messenger.showSnackBar(
       SnackBar(
-        content: Text('已成功将「${widget.track.title}」下载到本地'),
+        content: Text('已成功将「${track.title}」下载到本地'),
         backgroundColor: AppColors.accent,
         duration: const Duration(seconds: 2),
       ),
@@ -303,14 +319,17 @@ class _TrackOptionsMenuState extends State<TrackOptionsMenu> {
           // Action Items
           ListTile(
             leading: Icon(
-              _isDownloaded ? Icons.offline_pin : Icons.download,
-              color: _isDownloaded ? AppColors.success : AppColors.textPrimary,
+              _isDownloaded ? Icons.delete_outline_rounded : Icons.download,
+              color: _isDownloaded ? AppColors.danger : AppColors.textPrimary,
             ),
             title: Text(
-              _isDownloaded ? '离线已保存' : '下载到本地',
+              _isDownloaded ? '删除本地音频' : '下载到本地',
               style: const TextStyle(color: AppColors.textPrimary, fontSize: 15, fontWeight: FontWeight.w500),
             ),
-            subtitle: const Text('支持无网络离线播放', style: TextStyle(color: AppColors.textFaint, fontSize: 12)),
+            subtitle: Text(
+              _isDownloaded ? '释放存储空间，可随时重新下载' : '支持无网络离线播放',
+              style: const TextStyle(color: AppColors.textFaint, fontSize: 12),
+            ),
             onTap: _handleDownload,
           ),
 

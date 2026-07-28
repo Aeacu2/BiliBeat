@@ -86,11 +86,19 @@ class AudioDownloadService {
   static String _metaPath(String dir, String key) => '$dir/audio_$key.json';
 
   /// Saves track metadata JSON next to the audio file (used for rediscovery).
+  ///
+  /// Skips the write when the on-disk copy already matches: this runs on every
+  /// playback start, and rewriting an identical file each time is pure I/O.
   static Future<void> saveTrackMetadata(Track track) async {
     try {
       final dir = await _dir();
       final metaFile = File(_metaPath(dir, _key(track)));
-      await metaFile.writeAsString(jsonEncode(track.toMap()));
+      final encoded = jsonEncode(track.toMap());
+      if (await metaFile.exists()) {
+        final existing = await metaFile.readAsString();
+        if (existing == encoded) return;
+      }
+      await metaFile.writeAsString(encoded);
     } catch (e) {
       debugPrint('saveTrackMetadata error: $e');
     }
@@ -107,6 +115,49 @@ class AudioDownloadService {
     if (!await ready.exists()) return false;
     if (!await audio.exists()) return false;
     return await audio.length() > 0;
+  }
+
+  /// Removes a track's audio, ready-marker and metadata from disk.
+  /// Returns true when something was actually deleted.
+  static Future<bool> delete(Track track) async {
+    final dir = await _dir();
+    final id = _key(track);
+    var deleted = false;
+    for (final path in [
+      _readyPath(dir, id),
+      _audioPath(dir, id),
+      _metaPath(dir, id),
+      '${_audioPath(dir, id)}.part',
+    ]) {
+      final file = File(path);
+      try {
+        if (await file.exists()) {
+          await file.delete();
+          deleted = true;
+        }
+      } catch (e) {
+        debugPrint('delete download error: $e');
+      }
+    }
+    return deleted;
+  }
+
+  /// Total bytes currently occupied by downloaded audio.
+  static Future<int> usedBytes() async {
+    try {
+      final dir = Directory(await _dir());
+      if (!await dir.exists()) return 0;
+      var total = 0;
+      await for (final entity in dir.list()) {
+        if (entity is File && entity.path.endsWith('.m4a')) {
+          total += await entity.length();
+        }
+      }
+      return total;
+    } catch (e) {
+      debugPrint('usedBytes error: $e');
+      return 0;
+    }
   }
 
   /// Returns the local file path if [track] is already downloaded, else null.
@@ -165,7 +216,16 @@ class AudioDownloadService {
 
       final res = await req.close();
       if (res.statusCode != HttpStatus.ok) {
+        await res.drain<void>();
         throw Exception('CDN HTTP ${res.statusCode}');
+      }
+      // A signed CDN link that has expired answers 200 with an HTML/JSON error
+      // body; writing that to disk would leave a permanently "downloaded"
+      // track that cannot play.
+      final contentType = res.headers.contentType?.mimeType ?? '';
+      if (contentType.startsWith('text/') || contentType.contains('json')) {
+        await res.drain<void>();
+        throw Exception('CDN 返回了非音频内容 ($contentType)');
       }
 
       final total = res.contentLength > 0 ? res.contentLength : null;
@@ -185,6 +245,15 @@ class AudioDownloadService {
       await sink.flush();
       await sink.close();
       sink = null;
+
+      // Truncated transfer (dropped connection mid-stream): fail loudly rather
+      // than marking a half file as ready.
+      if (total != null && received < total) {
+        throw Exception('下载不完整 ($received/$total 字节)');
+      }
+      if (received < 1024) {
+        throw Exception('音频文件异常 ($received 字节)');
+      }
 
       final destination = File(path);
       if (await destination.exists()) {
