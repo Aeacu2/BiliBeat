@@ -223,20 +223,17 @@ class _AmbientBackgroundState extends State<AmbientBackground> {
           ),
         ),
 
-        // Static frosted overlay: diffuses the glow + deepens for legibility.
-        Positioned.fill(
-          child: BackdropFilter(
-            filter: ui.ImageFilter.blur(sigmaX: 30, sigmaY: 30),
-            child: const DecoratedBox(
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  begin: Alignment.topCenter,
-                  end: Alignment.bottomCenter,
-                  colors: [
-                    AppColors.black30,
-                    AppColors.black55,
-                  ],
-                ),
+        // Overlay gradient: deepens the ambient background glow for high legibility.
+        const Positioned.fill(
+          child: DecoratedBox(
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                colors: [
+                  AppColors.black30,
+                  AppColors.black55,
+                ],
               ),
             ),
           ),
