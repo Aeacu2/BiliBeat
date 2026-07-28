@@ -35,7 +35,7 @@ class DatabaseService {
     Playlist(
       id: 'favorites',
       name: '收藏',
-      description: '你的个人精选收藏',
+      description: null,
       tracks: [],
       createdAt: DateTime.now().millisecondsSinceEpoch,
       updatedAt: DateTime.now().millisecondsSinceEpoch,
@@ -116,7 +116,7 @@ class DatabaseService {
           _playlists.insert(0, Playlist(
             id: 'favorites',
             name: '收藏',
-            description: '你的个人精选收藏',
+            description: null,
             tracks: [],
             createdAt: DateTime.now().millisecondsSinceEpoch,
             updatedAt: DateTime.now().millisecondsSinceEpoch,

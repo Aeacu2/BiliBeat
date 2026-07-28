@@ -165,7 +165,7 @@ void main() {
         onTap: () {},
       )));
 
-      expect(find.text('BiliBeat'), findsOneWidget);
+      expect(find.text('选一首歌开始播放'), findsOneWidget);
       expect(tester.takeException(), isNull);
     });
 

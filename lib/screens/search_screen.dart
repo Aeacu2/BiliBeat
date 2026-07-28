@@ -183,7 +183,7 @@ class _SearchScreenState extends State<SearchScreen> {
                   onSubmitted: _performSearch,
                   decoration: const InputDecoration(
                     isCollapsed: true,
-                    hintText: '输入 BV 号 / B 站链接 / 歌曲关键词',
+                    hintText: '搜索歌曲、BV 号或链接',
                     hintStyle: TextStyle(color: AppColors.textFaint, fontSize: 14),
                     border: InputBorder.none,
                   ),
@@ -258,7 +258,7 @@ class _SearchScreenState extends State<SearchScreen> {
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               Text(
-                '搜索结果 (${_searchResults.length})',
+                '${_searchResults.length} 个结果',
                 style: const TextStyle(color: AppColors.textSecondary, fontSize: 14, fontWeight: FontWeight.bold),
               ),
               TextButton(
@@ -284,12 +284,12 @@ class _SearchScreenState extends State<SearchScreen> {
                 const Icon(Icons.search_off_rounded, size: 48, color: AppColors.textMuted),
                 const SizedBox(height: 12),
                 Text(
-                  '未找到与 "$_lastQuery" 相关的搜索结果',
+                  '未找到「$_lastQuery」',
                   style: const TextStyle(color: AppColors.textSecondary, fontSize: 14),
                 ),
                 const SizedBox(height: 6),
                 const Text(
-                  '提示：您可以尝试直接输入 BV 号 (如 BV1xx411c7mD) 或简化搜索关键词',
+                  '试试 BV 号，或更简短的关键词',
                   style: TextStyle(color: AppColors.textFaint, fontSize: 12),
                   textAlign: TextAlign.center,
                 ),
@@ -297,7 +297,7 @@ class _SearchScreenState extends State<SearchScreen> {
                 OutlinedButton.icon(
                   onPressed: () => _performSearch(_lastQuery),
                   icon: const Icon(Icons.refresh, size: 16),
-                  label: const Text('重试搜索'),
+                  label: const Text('重试'),
                   style: OutlinedButton.styleFrom(
                     foregroundColor: AppColors.accent,
                     side: const BorderSide(color: AppColors.accent30),
@@ -333,7 +333,7 @@ class _SearchScreenState extends State<SearchScreen> {
             const EmptyState(
               icon: Icons.wifi_off_rounded,
               title: '推荐加载失败',
-              subtitle: '检查网络后下拉重试，或直接搜索歌名 / BV 号',
+              subtitle: '检查网络后重试',
             ),
         ],
       ];

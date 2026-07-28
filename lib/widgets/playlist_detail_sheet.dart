@@ -188,7 +188,7 @@ class _PlaylistDetailSheetState extends State<PlaylistDetailSheet> {
                       ),
                       const SizedBox(height: 4),
                       Text(
-                        '${_currentPlaylist.tracks.length} 首曲目 • ${_currentPlaylist.description ?? "歌单音源已归档"}',
+                        '${_currentPlaylist.tracks.length} 首',
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: const TextStyle(color: AppColors.textMuted, fontSize: 13),
@@ -216,7 +216,7 @@ class _PlaylistDetailSheetState extends State<PlaylistDetailSheet> {
                         widget.onSelectTrack(queue.first, queue: queue);
                       },
                 icon: const Icon(Icons.play_arrow_rounded, size: 24),
-                label: const Text('播放全部并展开', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                label: const Text('播放全部', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
                 style: ElevatedButton.styleFrom(
                   backgroundColor: AppColors.accent,
                   foregroundColor: AppColors.textPrimary,
@@ -235,7 +235,7 @@ class _PlaylistDetailSheetState extends State<PlaylistDetailSheet> {
                     child: EmptyState(
                       icon: Icons.library_music_rounded,
                       title: '歌单暂无曲目',
-                      subtitle: '在搜索或推荐页点击歌曲右侧的 + 添加',
+                      subtitle: '在搜索页点 + 添加',
                     ),
                   )
                 : ListView.builder(
@@ -361,7 +361,7 @@ class _PlaylistDetailSheetState extends State<PlaylistDetailSheet> {
         backgroundColor: AppColors.backgroundElevated,
         title: const Text('删除本地音频',
             style: TextStyle(color: AppColors.textPrimary)),
-        content: Text('「${track.title}」的离线音频将被删除，可随时重新下载。',
+        content: Text('将删除本地音频，可重新下载。',
             style: const TextStyle(color: AppColors.textSecondary)),
         actions: [
           TextButton(

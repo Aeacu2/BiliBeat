@@ -32,6 +32,14 @@
   - 控件排布：播放模式 / 上一首 / 播放 / 下一首 / 收藏；音量条支持一键静音；下滑关闭。
 - [x] **本地音频删除与歌单删除 (Delete Local Audio & Delete Playlist)**
   - 曲目长按菜单可删除本地音频释放空间；歌单内左滑移除曲目；歌单卡片长按删除歌单。
+- [x] **播放页主按钮如实反映曲目状态 (Download-Then-Play Primary Control)**
+  - 架构上「未下载即不可播放」，因此播放页主按钮按真实状态切换：**未下载 → 下载按钮**；**下载中 → 圆环进度条**（与列表中 `TrackDownloadButton` 同一视觉）；**已下载 → 播放/暂停**。
+  - 移除播放页的「已下载 ✓」指示与顶部音源行：能播放本身即代表已下载，再标注是冗余。
+  - handler 自身的下载不经过 `DownloadManager`，故播放开始时会复查一次落盘状态，避免按钮卡在「下载」。
+- [x] **发布构建混淆 (Obfuscated Release Builds)**
+  - `tool/build_release.sh`：强制 JDK 21+（AGP lint 依赖 `List.removeLast()`，JDK 17 会以无关的 `NoSuchMethodError` 失败），产出混淆 APK，符号写入 `symbols/<version>/`。
+  - 实测 `libapp.so` 6.36MB → 5.31MB（−16.5%），APK −0.85MB。
+  - **符号文件必须随版本归档**，否则该版本的崩溃栈不可读；`symbols/` 不入库，随 Release 附件发布。
 - [x] **歌词磁盘缓存 (Persistent Lyrics Cache)**
   - 歌词写入 `bilibeat_lyrics.json`，重启不再重复联网；「未找到」结果不落盘，保证后续可重试。
 - [x] **歌词界面重做 (Reworked Lyrics View)**

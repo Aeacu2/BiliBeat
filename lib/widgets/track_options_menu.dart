@@ -66,7 +66,7 @@ class TrackOptionsMenu extends StatefulWidget {
                             context: ctx,
                             builder: (dCtx) => AlertDialog(
                               backgroundColor: AppColors.backgroundElevated,
-                              title: const Text('创建新歌单', style: TextStyle(color: AppColors.textPrimary)),
+                              title: const Text('新建歌单', style: TextStyle(color: AppColors.textPrimary)),
                               content: TextField(
                                 controller: controller,
                                 style: const TextStyle(color: AppColors.textPrimary),
@@ -96,7 +96,7 @@ class TrackOptionsMenu extends StatefulWidget {
                             onTrackChanged?.call();
                             parentMessenger.showSnackBar(
                               SnackBar(
-                                content: Text('已加入新歌单「${created.name}」并自动开启下载'),
+                                content: Text('已加入「${created.name}」'),
                                 backgroundColor: AppColors.accent,
                               ),
                             );
@@ -119,7 +119,7 @@ class TrackOptionsMenu extends StatefulWidget {
                             color: pl.id == 'favorites' ? AppColors.accent : AppColors.textSecondary,
                           ),
                           title: Text(pl.name, style: const TextStyle(color: AppColors.textPrimary)),
-                          subtitle: Text('${pl.tracks.length} 首歌曲', style: const TextStyle(color: AppColors.textMuted, fontSize: 12)),
+                          subtitle: Text('${pl.tracks.length} 首', style: const TextStyle(color: AppColors.textMuted, fontSize: 12)),
                           onTap: () async {
                             await DatabaseService.addTrackToPlaylist(pl.id, track);
                             DownloadManager.instance.startDownload(track);
@@ -127,7 +127,7 @@ class TrackOptionsMenu extends StatefulWidget {
                             onTrackChanged?.call();
                             parentMessenger.showSnackBar(
                               SnackBar(
-                                content: Text('已加入歌单「${pl.name}」并自动开启下载'),
+                                content: Text('已加入「${pl.name}」'),
                                 backgroundColor: AppColors.accent,
                               ),
                             );
@@ -182,7 +182,7 @@ class _TrackOptionsMenuState extends State<TrackOptionsMenu> {
       widget.onTrackChanged?.call();
       messenger.showSnackBar(
         SnackBar(
-          content: Text('已删除「${track.title}」的本地音频'),
+          content: const Text('已删除本地音频'),
           backgroundColor: AppColors.backgroundElevated,
           duration: const Duration(seconds: 2),
         ),
@@ -195,7 +195,7 @@ class _TrackOptionsMenuState extends State<TrackOptionsMenu> {
 
     messenger.showSnackBar(
       SnackBar(
-        content: Text('已成功将「${track.title}」下载到本地'),
+        content: Text('已开始下载'),
         backgroundColor: AppColors.accent,
         duration: const Duration(seconds: 2),
       ),
@@ -212,8 +212,8 @@ class _TrackOptionsMenuState extends State<TrackOptionsMenu> {
     widget.onTrackChanged?.call();
 
     final msg = nowFav
-        ? '已加入「收藏」'
-        : '已从「收藏」中移除';
+        ? '已收藏'
+        : '已取消收藏';
     messenger.showSnackBar(
       SnackBar(
         behavior: SnackBarBehavior.floating,
@@ -326,20 +326,15 @@ class _TrackOptionsMenuState extends State<TrackOptionsMenu> {
               _isDownloaded ? '删除本地音频' : '下载到本地',
               style: const TextStyle(color: AppColors.textPrimary, fontSize: 15, fontWeight: FontWeight.w500),
             ),
-            subtitle: Text(
-              _isDownloaded ? '释放存储空间，可随时重新下载' : '支持无网络离线播放',
-              style: const TextStyle(color: AppColors.textFaint, fontSize: 12),
-            ),
             onTap: _handleDownload,
           ),
 
           ListTile(
             leading: const Icon(Icons.playlist_add, color: AppColors.textPrimary),
             title: const Text(
-              '加入歌单...',
+              '加入歌单',
               style: TextStyle(color: AppColors.textPrimary, fontSize: 15, fontWeight: FontWeight.w500),
             ),
-            subtitle: const Text('选择并添加至已有或新建歌单', style: TextStyle(color: AppColors.textFaint, fontSize: 12)),
             onTap: _handleAddToPlaylist,
           ),
 
@@ -351,10 +346,6 @@ class _TrackOptionsMenuState extends State<TrackOptionsMenu> {
             title: Text(
               _isFav ? '取消收藏' : '添加至收藏',
               style: const TextStyle(color: AppColors.textPrimary, fontSize: 15, fontWeight: FontWeight.w500),
-            ),
-            subtitle: Text(
-              _isFav ? '从收藏列表中移出' : '加入个人收藏目录',
-              style: const TextStyle(color: AppColors.textFaint, fontSize: 12),
             ),
             onTap: _handleFavorite,
           ),

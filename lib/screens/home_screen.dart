@@ -96,7 +96,7 @@ class _HomeScreenState extends State<HomeScreen> {
           controller: controller,
           style: const TextStyle(color: AppColors.textPrimary),
           decoration: const InputDecoration(
-            hintText: '请输入歌单名称',
+            hintText: '歌单名称',
             hintStyle: TextStyle(color: AppColors.textFaint),
           ),
         ),
@@ -131,7 +131,7 @@ class _HomeScreenState extends State<HomeScreen> {
         title: const Text('删除歌单',
             style: TextStyle(color: AppColors.textPrimary)),
         content: Text(
-          '确定要删除歌单「${pl.name}」吗？已下载的音频文件不会被删除。',
+          '「${pl.name}」将被删除，本地音频保留。',
           style: const TextStyle(color: AppColors.textSecondary),
         ),
         actions: [
@@ -169,8 +169,8 @@ class _HomeScreenState extends State<HomeScreen> {
   void _openDownloadedPlaylist() {
     _openPlaylist(Playlist(
       id: 'downloaded',
-      name: '已下载歌曲',
-      description: '无网络离线可播放的本地歌曲',
+      name: '已下载',
+      description: null,
       tracks: [..._downloadingTasks.map((t) => t.track), ..._downloadedTracks],
       createdAt: DateTime.now().millisecondsSinceEpoch,
       updatedAt: DateTime.now().millisecondsSinceEpoch,
@@ -400,7 +400,7 @@ class _HomeScreenState extends State<HomeScreen> {
                             ),
                             const SizedBox(height: 2),
                             Text(
-                              '${pl.tracks.length} 首歌曲',
+                              '${pl.tracks.length} 首',
                               style: const TextStyle(color: AppColors.textMuted, fontSize: 12),
                             ),
                           ],
@@ -424,8 +424,8 @@ class _HomeScreenState extends State<HomeScreen> {
         if (widget.recentlyPlayed.isEmpty)
           const EmptyState(
             icon: Icons.history_rounded,
-            title: '暂无最近播放记录',
-            subtitle: '在搜索页查找 BV 号或输入歌名开始听歌吧',
+            title: '暂无播放记录',
+            subtitle: '去搜索页找歌',
           )
         else
           SizedBox(

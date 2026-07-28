@@ -196,7 +196,7 @@ class _LyricEditorDialogState extends State<LyricEditorDialog> with SingleTicker
     final lines = LyricsEngine.parseLrc(text);
     final userResult = LyricsResult(
       source: 'user',
-      songTitle: '用户粘贴歌词',
+      songTitle: '粘贴歌词',
       artistName: _artistController.text.trim().isNotEmpty ? _artistController.text.trim() : '自定义',
       lines: lines.isNotEmpty ? lines : [LyricLine(time: 0, text: text)],
       rawLrc: text,
@@ -216,7 +216,7 @@ class _LyricEditorDialogState extends State<LyricEditorDialog> with SingleTicker
 
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(
-        content: Text('已成功在歌词列表第 1 位生成用户粘贴歌词！点击可进行对齐校准'),
+        content: Text('已置顶，可点击校准'),
         backgroundColor: AppColors.success,
         behavior: SnackBarBehavior.floating,
         duration: Duration(seconds: 2),
@@ -321,7 +321,7 @@ class _LyricEditorDialogState extends State<LyricEditorDialog> with SingleTicker
         .where((t) => t.isNotEmpty)
         .take(2)
         .join(' / ');
-    return texts.isEmpty ? '（无文本内容）' : texts;
+    return texts.isEmpty ? '无文本' : texts;
   }
 
   @override
@@ -397,7 +397,7 @@ class _LyricEditorDialogState extends State<LyricEditorDialog> with SingleTicker
                               OutlinedButton.icon(
                                 onPressed: _pickLocalCoverImage,
                                 icon: const Icon(Icons.photo_library, size: 18, color: AppColors.accent),
-                                label: const Text('从手机相册选择封面', style: TextStyle(color: AppColors.textSecondary, fontSize: 13)),
+                                label: const Text('选择封面', style: TextStyle(color: AppColors.textSecondary, fontSize: 13)),
                                 style: OutlinedButton.styleFrom(
                                   side: const BorderSide(color: Colors.white24),
                                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
@@ -414,7 +414,7 @@ class _LyricEditorDialogState extends State<LyricEditorDialog> with SingleTicker
                           controller: _titleController,
                           style: const TextStyle(color: AppColors.textPrimary, fontSize: 14),
                           decoration: InputDecoration(
-                            hintText: '输入歌曲名称',
+                            hintText: '歌曲名称',
                             hintStyle: const TextStyle(color: AppColors.textFaint),
                             filled: true,
                             fillColor: Colors.white10,
@@ -431,7 +431,7 @@ class _LyricEditorDialogState extends State<LyricEditorDialog> with SingleTicker
                           controller: _artistController,
                           style: const TextStyle(color: AppColors.textPrimary, fontSize: 14),
                           decoration: InputDecoration(
-                            hintText: '输入歌手或UP主名称',
+                            hintText: '歌手 / UP主',
                             hintStyle: const TextStyle(color: AppColors.textFaint),
                             filled: true,
                             fillColor: Colors.white10,
@@ -451,7 +451,7 @@ class _LyricEditorDialogState extends State<LyricEditorDialog> with SingleTicker
                               backgroundColor: AppColors.accent,
                               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                             ),
-                            child: const Text('保存歌曲信息', style: TextStyle(color: AppColors.textPrimary, fontWeight: FontWeight.bold, fontSize: 15)),
+                            child: const Text('保存', style: TextStyle(color: AppColors.textPrimary, fontWeight: FontWeight.bold, fontSize: 15)),
                           ),
                         ),
                       ],
@@ -471,7 +471,8 @@ class _LyricEditorDialogState extends State<LyricEditorDialog> with SingleTicker
                                 ),
                                 Expanded(
                                   child: Text(
-                                    '实时预览: ${_previewingResult!.songTitle ?? widget.songTitle}',
+                                    _previewingResult!.songTitle ??
+                                        widget.songTitle,
                                     maxLines: 1,
                                     overflow: TextOverflow.ellipsis,
                                     style: const TextStyle(color: AppColors.textPrimary, fontSize: 14, fontWeight: FontWeight.bold),
@@ -510,7 +511,7 @@ class _LyricEditorDialogState extends State<LyricEditorDialog> with SingleTicker
                               child: ElevatedButton.icon(
                                 onPressed: () => _applyLyricResult(_previewingResult!, offset: _previewOffset),
                                 icon: const Icon(Icons.check_circle, color: AppColors.textPrimary, size: 20),
-                                label: const Text('确认应用此歌词', style: TextStyle(color: AppColors.textPrimary, fontWeight: FontWeight.bold, fontSize: 15)),
+                                label: const Text('应用', style: TextStyle(color: AppColors.textPrimary, fontWeight: FontWeight.bold, fontSize: 15)),
                                 style: ElevatedButton.styleFrom(
                                   backgroundColor: AppColors.accent,
                                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
@@ -527,7 +528,7 @@ class _LyricEditorDialogState extends State<LyricEditorDialog> with SingleTicker
                               style: const TextStyle(color: AppColors.textPrimary, fontSize: 14),
                               onSubmitted: (_) => _performSearch(),
                               decoration: InputDecoration(
-                                hintText: '输入歌曲名或歌手搜索歌词',
+                                hintText: '搜索歌曲或歌手',
                                 hintStyle: const TextStyle(color: AppColors.textFaint),
                                 suffixIcon: _isSearching
                                     ? const Padding(
@@ -554,7 +555,7 @@ class _LyricEditorDialogState extends State<LyricEditorDialog> with SingleTicker
                               child: (_isSearching && _searchResults.isEmpty)
                                   ? const Center(child: CircularProgressIndicator(color: AppColors.accent))
                                   : _searchResults.isEmpty
-                                      ? const Center(child: Text('未搜到相关歌词', style: TextStyle(color: AppColors.textFaint)))
+                                      ? const Center(child: Text('无结果', style: TextStyle(color: AppColors.textFaint)))
                                       : ListView.builder(
                                           itemCount: _searchResults.length,
                                           itemBuilder: (context, index) {
@@ -604,8 +605,8 @@ class _LyricEditorDialogState extends State<LyricEditorDialog> with SingleTicker
                                                                 Expanded(
                                                                   child: Text(
                                                                     isCurrent
-                                                                        ? '✅ 当前使用的歌词'
-                                                                        : (isUserPasted ? '📌 用户粘贴歌词 (.lrc)' : (res.songTitle ?? '未知歌曲')),
+                                                                        ? '当前歌词'
+                                                                        : (isUserPasted ? '粘贴歌词' : (res.songTitle ?? '未知歌曲')),
                                                                     maxLines: 1,
                                                                     overflow: TextOverflow.ellipsis,
                                                                     style: TextStyle(
@@ -652,14 +653,6 @@ class _LyricEditorDialogState extends State<LyricEditorDialog> with SingleTicker
                                                                       color: AppColors.textFaint,
                                                                       fontSize: 11),
                                                                 ),
-                                                                const Spacer(),
-                                                                const Text(
-                                                                  '点击预览 / 校准 ➔',
-                                                                  style: TextStyle(
-                                                                      color: AppColors.pinkStart,
-                                                                      fontSize: 11,
-                                                                      fontWeight: FontWeight.w500),
-                                                                ),
                                                               ],
                                                             ),
                                                           ],
@@ -685,7 +678,7 @@ class _LyricEditorDialogState extends State<LyricEditorDialog> with SingleTicker
                                                             setState(() => _selectedIndex = index);
                                                             _applyLyricResult(res);
                                                           },
-                                                    tooltip: isCurrent ? '当前正在使用此歌词' : '直接选中并应用此歌词',
+                                                    tooltip: isCurrent ? '当前歌词' : '应用',
                                                   ),
                                                   const SizedBox(width: 4),
                                                 ],
@@ -723,7 +716,7 @@ class _LyricEditorDialogState extends State<LyricEditorDialog> with SingleTicker
                                               Icon(Icons.content_paste, color: AppColors.accent, size: 18),
                                               SizedBox(width: 8),
                                               Text(
-                                                '粘贴 .lrc 文本',
+                                                '粘贴 LRC',
                                                 style: TextStyle(color: AppColors.textPrimary, fontSize: 13, fontWeight: FontWeight.w600),
                                               ),
                                             ],
@@ -750,7 +743,7 @@ class _LyricEditorDialogState extends State<LyricEditorDialog> with SingleTicker
                                               expands: true,
                                               style: const TextStyle(color: AppColors.textPrimary, fontSize: 12, fontFamily: 'monospace'),
                                               decoration: InputDecoration(
-                                                hintText: '在此粘贴 LRC 格式歌词，如：[00:12.34]第一句歌词',
+                                                hintText: '粘贴 LRC 文本，如 [00:12.34]歌词',
                                                 hintStyle: const TextStyle(color: AppColors.textFaint, fontSize: 12),
                                                 filled: true,
                                                 fillColor: Colors.white10,
@@ -772,7 +765,7 @@ class _LyricEditorDialogState extends State<LyricEditorDialog> with SingleTicker
                                                 backgroundColor: AppColors.accent,
                                                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                                               ),
-                                              child: const Text('生成并排在第 1 位', style: TextStyle(color: AppColors.textPrimary, fontWeight: FontWeight.bold, fontSize: 13)),
+                                              child: const Text('导入', style: TextStyle(color: AppColors.textPrimary, fontWeight: FontWeight.bold, fontSize: 13)),
                                             ),
                                           ),
                                         ],

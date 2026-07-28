@@ -249,14 +249,14 @@ class LyricsEngine {
       return lrclibResult;
     }
 
+    // No placeholder lines: the UI renders its own empty state with a real
+    // action, and fake "lyrics" would otherwise scroll past as if they were
+    // the song's words.
     return LyricsResult(
       source: 'none',
       songTitle: title,
       artistName: artist,
-      lines: [
-        LyricLine(time: 0, text: '未找到同步歌词'),
-        LyricLine(time: 5, text: '点击右上角 🔍 手动搜索或导入 LRC 歌词'),
-      ],
+      lines: const [],
     );
   }
 }

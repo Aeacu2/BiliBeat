@@ -66,24 +66,22 @@ class MiniPlayer extends StatelessWidget {
     );
   }
 
+  /// One flat surface, one hairline, one soft shadow. No gradient, no sheen —
+  /// stacking those on a 64pt bar is what made it read as busy.
   Widget _shell({required Widget child}) {
     return DecoratedBox(
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(_radius),
         boxShadow: const [
-          BoxShadow(color: AppColors.black45, blurRadius: 24, offset: Offset(0, 8)),
+          BoxShadow(color: AppColors.black45, blurRadius: 20, offset: Offset(0, 6)),
         ],
       ),
       child: ClipRRect(
         borderRadius: BorderRadius.circular(_radius),
         child: DecoratedBox(
           decoration: BoxDecoration(
-            gradient: const LinearGradient(
-              begin: Alignment.topCenter,
-              end: Alignment.bottomCenter,
-              colors: [Color(0xFF1D1D22), Color(0xFF141418)],
-            ),
-            border: Border.all(color: AppColors.hairlineStrong, width: 0.5),
+            color: const Color(0xFF17171B),
+            border: Border.all(color: AppColors.hairline, width: 1),
             borderRadius: BorderRadius.circular(_radius),
           ),
           child: child,
@@ -95,39 +93,27 @@ class MiniPlayer extends StatelessWidget {
   Widget _emptyState() {
     return _shell(
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 14),
+        padding: const EdgeInsets.symmetric(horizontal: 10),
         child: Row(
           children: [
             Container(
-              width: 40,
-              height: 40,
+              width: 44,
+              height: 44,
               decoration: BoxDecoration(
-                color: AppColors.surfaceHighlight,
-                borderRadius: BorderRadius.circular(12),
+                color: AppColors.surfaceCard,
+                borderRadius: BorderRadius.circular(10),
               ),
               child: const Icon(Icons.music_note_rounded,
                   color: AppColors.textFaint, size: 20),
             ),
             const SizedBox(width: 12),
             const Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Text('BiliBeat',
-                      style: TextStyle(
-                          color: AppColors.textSecondary,
-                          fontSize: 13.5,
-                          fontWeight: FontWeight.w600,
-                          letterSpacing: -0.2)),
-                  SizedBox(height: 2),
-                  Text('选一首歌开始播放',
-                      style: TextStyle(
-                          color: AppColors.textFaint,
-                          fontSize: 11.5,
-                          letterSpacing: 0.1)),
-                ],
-              ),
+              child: Text('选一首歌开始播放',
+                  style: TextStyle(
+                      color: AppColors.textMuted,
+                      fontSize: 13.5,
+                      fontWeight: FontWeight.w500,
+                      letterSpacing: -0.1)),
             ),
           ],
         ),
@@ -159,15 +145,15 @@ class MiniPlayer extends StatelessWidget {
         child: Stack(
           children: [
             Padding(
-              padding: const EdgeInsets.fromLTRB(8, 0, 4, 0),
+              padding: const EdgeInsets.fromLTRB(10, 0, 10, 0),
               child: Row(
                 children: [
                   ClipRRect(
-                    borderRadius: BorderRadius.circular(12),
+                    borderRadius: BorderRadius.circular(10),
                     child: CachedCoverImage(
                       url: track.coverUrl,
-                      width: 48,
-                      height: 48,
+                      width: 44,
+                      height: 44,
                     ),
                   ),
                   const SizedBox(width: 12),
@@ -182,34 +168,43 @@ class MiniPlayer extends StatelessWidget {
                           style: const TextStyle(
                             color: AppColors.textPrimary,
                             fontSize: 14,
-                            height: 1.25,
+                            height: 1.3,
                             fontWeight: FontWeight.w600,
                             letterSpacing: -0.2,
                           ),
                         ),
-                        const SizedBox(height: 1),
                         MarqueeText(
                           text: track.uploader,
                           scrolling: false,
                           style: const TextStyle(
                             color: AppColors.textMuted,
                             fontSize: 12,
-                            height: 1.25,
+                            height: 1.35,
                           ),
                         ),
                       ],
                     ),
                   ),
-                  const SizedBox(width: 8),
-                  _playButton(),
-                  IconButton(
+                  const SizedBox(width: 12),
+                  // Two bare icons of equal weight. The filled circle around
+                  // play was the heaviest thing on the bar and fought the
+                  // artwork for attention.
+                  _iconButton(
+                    isPlaying ? Icons.pause_rounded : Icons.play_arrow_rounded,
+                    onPressed: () {
+                      Haptics.light();
+                      onPlayPause();
+                    },
+                    color: AppColors.textPrimary,
+                    animateSwap: true,
+                  ),
+                  _iconButton(
+                    Icons.skip_next_rounded,
                     onPressed: () {
                       Haptics.selection();
                       onNext();
                     },
-                    visualDensity: VisualDensity.compact,
-                    icon: const Icon(Icons.skip_next_rounded,
-                        color: AppColors.textSecondary, size: 26),
+                    color: AppColors.textSecondary,
                   ),
                 ],
               ),
@@ -226,30 +221,28 @@ class MiniPlayer extends StatelessWidget {
     );
   }
 
-  Widget _playButton() {
+  Widget _iconButton(
+    IconData icon, {
+    required VoidCallback onPressed,
+    required Color color,
+    bool animateSwap = false,
+  }) {
+    final glyph = Icon(icon, key: ValueKey(icon), color: color, size: 28);
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
-      onTap: () {
-        Haptics.light();
-        onPlayPause();
-      },
-      child: Container(
-        width: 40,
-        height: 40,
-        decoration: const BoxDecoration(
-          shape: BoxShape.circle,
-          color: AppColors.surfaceHighlight,
-        ),
-        child: AnimatedSwitcher(
-          duration: const Duration(milliseconds: 180),
-          transitionBuilder: (child, animation) =>
-              ScaleTransition(scale: animation, child: child),
-          child: Icon(
-            isPlaying ? Icons.pause_rounded : Icons.play_arrow_rounded,
-            key: ValueKey<bool>(isPlaying),
-            color: AppColors.textPrimary,
-            size: 24,
-          ),
+      onTap: onPressed,
+      child: SizedBox(
+        width: 44,
+        height: 44,
+        child: Center(
+          child: animateSwap
+              ? AnimatedSwitcher(
+                  duration: const Duration(milliseconds: 160),
+                  transitionBuilder: (child, animation) =>
+                      ScaleTransition(scale: animation, child: child),
+                  child: glyph,
+                )
+              : glyph,
         ),
       ),
     );
@@ -264,7 +257,7 @@ class MiniPlayer extends StatelessWidget {
             ? (positionNotifier.value.inMilliseconds / dur).clamp(0.0, 1.0)
             : 0.0;
         return SizedBox(
-          height: 2.5,
+          height: 2,
           child: Stack(
             children: [
               const Positioned.fill(
@@ -273,9 +266,7 @@ class MiniPlayer extends StatelessWidget {
               FractionallySizedBox(
                 widthFactor: progress,
                 alignment: Alignment.centerLeft,
-                child: const DecoratedBox(
-                  decoration: BoxDecoration(gradient: AppColors.primaryGradient),
-                ),
+                child: const ColoredBox(color: AppColors.accent),
               ),
             ],
           ),

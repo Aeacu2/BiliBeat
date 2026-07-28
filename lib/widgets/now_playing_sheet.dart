@@ -89,7 +89,12 @@ class _NowPlayingSheetState extends State<NowPlayingSheet> {
       }
     }));
     _subs.add(h.playerStateStream.listen((p) {
-      if (mounted) setState(() => _isPlaying = p);
+      if (!mounted) return;
+      setState(() => _isPlaying = p);
+      // Playback implies the file reached disk, and the handler downloads
+      // outside DownloadManager — so re-check rather than leaving the control
+      // stuck on "download" while the track plays.
+      if (p && _isActive && !_isDownloaded) _refreshDownloaded();
     }));
     _subs.add(h.shuffleStream.listen((s) {
       if (mounted) setState(() => _isShuffle = s);
@@ -253,23 +258,12 @@ class _NowPlayingSheetState extends State<NowPlayingSheet> {
             onPressed: () => Navigator.of(context).maybePop(),
           ),
           Expanded(
-            child: Column(
-              children: [
-                Text(
-                  _isActive ? '正在播放' : '预览',
-                  style: AppTypography.overline.copyWith(
-                    color: _isActive ? AppColors.accent : AppColors.textFaint,
-                  ),
-                ),
-                const SizedBox(height: 2),
-                Text(
-                  _isDownloaded ? '本地音源' : 'Bilibili',
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                      color: AppColors.textFaint, fontSize: 11),
-                ),
-              ],
+            child: Text(
+              _isActive ? '正在播放' : '预览',
+              textAlign: TextAlign.center,
+              style: AppTypography.overline.copyWith(
+                color: _isActive ? AppColors.accent : AppColors.textFaint,
+              ),
             ),
           ),
           IconButton(
@@ -363,11 +357,10 @@ class _NowPlayingSheetState extends State<NowPlayingSheet> {
                 ),
               ),
               const SizedBox(width: 8),
-              _downloadChip(),
               IconButton(
                 icon: const Icon(Icons.edit_note_rounded,
                     color: AppColors.textSecondary, size: 24),
-                tooltip: '信息与歌词',
+                tooltip: '编辑',
                 onPressed: () => widget.onOpenLyricEditor(_displayTrack),
               ),
             ],
@@ -380,34 +373,6 @@ class _NowPlayingSheetState extends State<NowPlayingSheet> {
           _volumeBar(),
         ],
       ),
-    );
-  }
-
-  /// Compact download affordance: ring while fetching, check once local.
-  Widget _downloadChip() {
-    if (_downloadTask != null) {
-      // Progress itself is drawn around the play button; here we only say
-      // "this is being fetched" so the two do not compete for attention.
-      return const SizedBox(
-        width: 40,
-        height: 40,
-        child: Icon(Icons.downloading_rounded,
-            color: AppColors.accent, size: 22),
-      );
-    }
-    if (_isDownloaded) {
-      return const SizedBox(
-        width: 40,
-        height: 40,
-        child: Icon(Icons.offline_pin_rounded,
-            color: AppColors.success, size: 22),
-      );
-    }
-    return IconButton(
-      icon: const Icon(Icons.download_rounded,
-          color: AppColors.textSecondary, size: 22),
-      tooltip: '下载到本地',
-      onPressed: _startDownload,
     );
   }
 
@@ -520,67 +485,71 @@ class _NowPlayingSheetState extends State<NowPlayingSheet> {
     );
   }
 
-  /// The primary control is always play/pause. Tapping an undownloaded track
-  /// fetches it and starts playing — the download is an implementation detail,
-  /// surfaced as a ring around the button rather than as a separate mode.
+  /// The primary control mirrors the track's real state, because playback is
+  /// download-then-play: a track that is not on disk cannot be played, so it
+  /// offers a download (with the same progress ring used in the lists) and
+  /// only becomes play/pause once the file is there.
   Widget _playButton() {
+    final task = _downloadTask;
+    if (task != null) {
+      return SizedBox(
+        width: 76,
+        height: 76,
+        child: Center(
+          child: ProgressRing(
+            fraction: task.fraction,
+            size: 68,
+            strokeWidth: 3,
+            child: const Icon(Icons.arrow_downward_rounded,
+                color: AppColors.textPrimary, size: 26),
+          ),
+        ),
+      );
+    }
+
+    if (!_isDownloaded) {
+      return _circleButton(
+        tooltip: '下载',
+        onPressed: _startDownload,
+        filled: false,
+        icon: const Icon(Icons.download_rounded,
+            color: AppColors.textPrimary, size: 34),
+      );
+    }
+
     final playing = _isActive && _isPlaying;
     return ValueListenableBuilder<bool>(
       valueListenable: widget.handler.isPreparing,
       builder: (context, preparing, _) {
-        final busy = (preparing && _isActive) || _downloadTask != null;
         return SizedBox(
           width: 76,
           height: 76,
           child: Stack(
             alignment: Alignment.center,
             children: [
-              if (busy)
-                SizedBox(
+              if (preparing && _isActive)
+                const SizedBox(
                   width: 76,
                   height: 76,
-                  child: _downloadTask != null
-                      ? ProgressRing(
-                          fraction: _downloadTask!.fraction,
-                          size: 76,
-                          strokeWidth: 2.5,
-                          trackColor: AppColors.hairline,
-                        )
-                      : const CircularProgressIndicator(
-                          strokeWidth: 2.5,
-                          color: AppColors.accent,
-                          backgroundColor: AppColors.hairline,
-                        ),
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2.5,
+                    color: AppColors.accent,
+                    backgroundColor: AppColors.hairline,
+                  ),
                 ),
-              Container(
-                width: 68,
-                height: 68,
-                decoration: const BoxDecoration(
-                  shape: BoxShape.circle,
-                  gradient: AppColors.primaryGradient,
-                  boxShadow: [
-                    BoxShadow(
-                      color: AppColors.accent30,
-                      blurRadius: 22,
-                      offset: Offset(0, 6),
-                    ),
-                  ],
-                ),
-                child: IconButton(
-                  onPressed: _playOrPause,
-                  tooltip: playing ? '暂停' : '播放',
-                  icon: AnimatedSwitcher(
-                    duration: const Duration(milliseconds: 180),
-                    transitionBuilder: (child, animation) =>
-                        ScaleTransition(scale: animation, child: child),
-                    child: Icon(
-                      playing
-                          ? Icons.pause_rounded
-                          : Icons.play_arrow_rounded,
-                      key: ValueKey<bool>(playing),
-                      color: Colors.white,
-                      size: 40,
-                    ),
+              _circleButton(
+                tooltip: playing ? '暂停' : '播放',
+                onPressed: _playOrPause,
+                filled: true,
+                icon: AnimatedSwitcher(
+                  duration: const Duration(milliseconds: 180),
+                  transitionBuilder: (child, animation) =>
+                      ScaleTransition(scale: animation, child: child),
+                  child: Icon(
+                    playing ? Icons.pause_rounded : Icons.play_arrow_rounded,
+                    key: ValueKey<bool>(playing),
+                    color: Colors.white,
+                    size: 40,
                   ),
                 ),
               ),
@@ -588,6 +557,40 @@ class _NowPlayingSheetState extends State<NowPlayingSheet> {
           ),
         );
       },
+    );
+  }
+
+  Widget _circleButton({
+    required Widget icon,
+    required VoidCallback onPressed,
+    required String tooltip,
+    required bool filled,
+  }) {
+    return Container(
+      width: 68,
+      height: 68,
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        gradient: filled ? AppColors.primaryGradient : null,
+        color: filled ? null : AppColors.surfaceHighlight,
+        border: filled
+            ? null
+            : Border.all(color: AppColors.hairlineStrong, width: 1),
+        boxShadow: filled
+            ? const [
+                BoxShadow(
+                  color: AppColors.accent30,
+                  blurRadius: 22,
+                  offset: Offset(0, 6),
+                ),
+              ]
+            : null,
+      ),
+      child: IconButton(
+        onPressed: onPressed,
+        tooltip: tooltip,
+        icon: icon,
+      ),
     );
   }
 
