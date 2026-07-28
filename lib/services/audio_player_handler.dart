@@ -68,9 +68,6 @@ class BiliBeatAudioHandler extends BaseAudioHandler with SeekHandler {
   final StreamController<double> _volumeController =
       StreamController<double>.broadcast();
 
-  /// True while the current track is being fetched/prepared.
-  final ValueNotifier<bool> isPreparing = ValueNotifier(false);
-
   Duration _duration = Duration.zero;
 
   Stream<Track?> get currentTrackStream => _currentTrackController.stream;
@@ -406,7 +403,6 @@ class BiliBeatAudioHandler extends BaseAudioHandler with SeekHandler {
     if (active == null) return;
 
     final token = ++_startToken;
-    isPreparing.value = true;
     _broadcastState(processingOverride: AudioProcessingState.loading);
 
     final String path;
@@ -414,10 +410,7 @@ class BiliBeatAudioHandler extends BaseAudioHandler with SeekHandler {
       path = await AudioDownloadService.ensureDownloaded(active);
     } catch (e) {
       debugPrint('playTrack download failed: $e');
-      if (token == _startToken) {
-        isPreparing.value = false;
-        _broadcastState();
-      }
+      if (token == _startToken) _broadcastState();
       return;
     }
     // A newer start won the race while we were downloading — drop this one.
@@ -448,7 +441,6 @@ class BiliBeatAudioHandler extends BaseAudioHandler with SeekHandler {
       debugPrint('startCurrent error: $e');
     } finally {
       _isRebuilding = false;
-      if (token == _startToken) isPreparing.value = false;
     }
 
     _broadcastState();
@@ -561,7 +553,6 @@ class BiliBeatAudioHandler extends BaseAudioHandler with SeekHandler {
   }
 
   Future<void> disposePlayer() async {
-    isPreparing.dispose();
     await _player.dispose();
     await _currentTrackController.close();
     await _queueController.close();

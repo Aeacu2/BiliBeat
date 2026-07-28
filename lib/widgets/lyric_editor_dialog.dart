@@ -17,6 +17,10 @@ class LyricEditorDialog extends StatefulWidget {
   final Function(LyricsResult) onApplyLyrics;
   final Function(String title, String artist, String coverUrl)? onUpdateMetadata;
 
+  /// Which tab to land on: 0 = 信息, 1 = 歌词. Opening from the lyrics view's
+  /// "search or paste" action should go straight to the lyrics tab.
+  final int initialTabIndex;
+
   const LyricEditorDialog({
     super.key,
     required this.songTitle,
@@ -26,6 +30,7 @@ class LyricEditorDialog extends StatefulWidget {
     this.currentLines,
     required this.onApplyLyrics,
     this.onUpdateMetadata,
+    this.initialTabIndex = 0,
   });
 
   @override
@@ -57,7 +62,8 @@ class _LyricEditorDialogState extends State<LyricEditorDialog> with SingleTicker
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 2, vsync: this);
+    _tabController = TabController(
+        length: 2, vsync: this, initialIndex: widget.initialTabIndex);
     _titleController = TextEditingController(text: widget.songTitle);
     _artistController = TextEditingController(text: widget.artistName);
     _coverUrlController = TextEditingController(text: widget.coverUrl ?? '');

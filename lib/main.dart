@@ -261,7 +261,7 @@ class _MainLayoutState extends State<MainLayout> {
 
   /// Opens the info/lyrics editor for [track] — which is whatever the player
   /// sheet is actually showing, not necessarily the playing track.
-  void _openLyricEditor(Track track) {
+  void _openLyricEditor(Track track, {bool lyricsTab = false}) {
     final isCurrent = _currentTrack?.id == track.id;
     showDialog(
       context: context,
@@ -271,6 +271,7 @@ class _MainLayoutState extends State<MainLayout> {
           artistName: track.uploader,
           coverUrl: track.coverUrl,
           positionNotifier: _positionNotifier,
+          initialTabIndex: lyricsTab ? 1 : 0,
           currentLines: isCurrent ? _lyricsNotifier.value : const [],
           onApplyLyrics: (result) async {
             if (isCurrent) _lyricsNotifier.value = result.lines;

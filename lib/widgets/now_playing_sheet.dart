@@ -25,7 +25,7 @@ class NowPlayingSheet extends StatefulWidget {
 
   /// Receives the track actually on screen — which is not always the one the
   /// handler is playing (a search result can be previewed here).
-  final void Function(Track track) onOpenLyricEditor;
+  final void Function(Track track, {bool lyricsTab}) onOpenLyricEditor;
 
   /// Set when the sheet is opened as part of "play this now". The handler has
   /// not switched track yet at that instant, so it cannot be inferred — and
@@ -229,8 +229,9 @@ class _NowPlayingSheetState extends State<NowPlayingSheet> {
                                 onSeek: (sec) => widget.handler.seek(
                                   Duration(milliseconds: (sec * 1000).toInt()),
                                 ),
-                                onOpenEditor: () =>
-                                    widget.onOpenLyricEditor(_displayTrack),
+                                onOpenEditor: () => widget
+                                    .onOpenLyricEditor(_displayTrack,
+                                        lyricsTab: true),
                               );
                             },
                           )
@@ -450,11 +451,11 @@ class _NowPlayingSheetState extends State<NowPlayingSheet> {
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
-        _modeButton(),
+        _favoriteButton(),
         _skipButton(Icons.skip_previous_rounded, _isActive ? _prev : null),
         _playButton(),
         _skipButton(Icons.skip_next_rounded, _isActive ? _next : null),
-        _favoriteButton(),
+        _modeButton(),
       ],
     );
   }
@@ -491,82 +492,52 @@ class _NowPlayingSheetState extends State<NowPlayingSheet> {
   /// only becomes play/pause once the file is there.
   Widget _playButton() {
     final task = _downloadTask;
-    if (task != null) {
-      return SizedBox(
-        width: 76,
-        height: 76,
-        child: Center(
-          child: ProgressRing(
-            fraction: task.fraction,
-            size: 68,
-            strokeWidth: 3,
-            child: const Icon(Icons.arrow_downward_rounded,
-                color: AppColors.textPrimary, size: 26),
-          ),
-        ),
-      );
-    }
 
-    if (!_isDownloaded) {
+    // Download and downloading are the *same button*, not two designs: the
+    // circle, its fill, its border and its glyph are identical, and starting a
+    // download only adds a progress arc around the outside. Previously the
+    // filled circle was replaced by a bare thin ring, so the control appeared
+    // to vanish the instant you tapped it.
+    if (task != null || !_isDownloaded) {
       return _circleButton(
-        tooltip: '下载',
-        onPressed: _startDownload,
+        tooltip: task != null ? '下载中' : '下载',
+        onPressed: task != null ? null : _startDownload,
         filled: false,
+        progress: task?.fraction,
         icon: const Icon(Icons.download_rounded,
             color: AppColors.textPrimary, size: 34),
       );
     }
 
     final playing = _isActive && _isPlaying;
-    return ValueListenableBuilder<bool>(
-      valueListenable: widget.handler.isPreparing,
-      builder: (context, preparing, _) {
-        return SizedBox(
-          width: 76,
-          height: 76,
-          child: Stack(
-            alignment: Alignment.center,
-            children: [
-              if (preparing && _isActive)
-                const SizedBox(
-                  width: 76,
-                  height: 76,
-                  child: CircularProgressIndicator(
-                    strokeWidth: 2.5,
-                    color: AppColors.accent,
-                    backgroundColor: AppColors.hairline,
-                  ),
-                ),
-              _circleButton(
-                tooltip: playing ? '暂停' : '播放',
-                onPressed: _playOrPause,
-                filled: true,
-                icon: AnimatedSwitcher(
-                  duration: const Duration(milliseconds: 180),
-                  transitionBuilder: (child, animation) =>
-                      ScaleTransition(scale: animation, child: child),
-                  child: Icon(
-                    playing ? Icons.pause_rounded : Icons.play_arrow_rounded,
-                    key: ValueKey<bool>(playing),
-                    color: Colors.white,
-                    size: 40,
-                  ),
-                ),
-              ),
-            ],
-          ),
-        );
-      },
+    return _circleButton(
+      tooltip: playing ? '暂停' : '播放',
+      onPressed: _playOrPause,
+      filled: true,
+      icon: AnimatedSwitcher(
+        duration: const Duration(milliseconds: 180),
+        transitionBuilder: (child, animation) =>
+            ScaleTransition(scale: animation, child: child),
+        child: Icon(
+          playing ? Icons.pause_rounded : Icons.play_arrow_rounded,
+          key: ValueKey<bool>(playing),
+          color: Colors.white,
+          size: 40,
+        ),
+      ),
     );
   }
 
+  /// The one primary-control shape. [progress], when set, draws a determinate
+  /// arc just outside the circle without altering the circle itself.
   Widget _circleButton({
     required Widget icon,
-    required VoidCallback onPressed,
+    required VoidCallback? onPressed,
     required String tooltip,
     required bool filled,
+    double? progress,
   }) {
-    return Container(
+    final button = Container(
       width: 68,
       height: 68,
       decoration: BoxDecoration(
@@ -590,6 +561,25 @@ class _NowPlayingSheetState extends State<NowPlayingSheet> {
         onPressed: onPressed,
         tooltip: tooltip,
         icon: icon,
+      ),
+    );
+
+    if (progress == null) return button;
+
+    return SizedBox(
+      width: 76,
+      height: 76,
+      child: Stack(
+        alignment: Alignment.center,
+        children: [
+          ProgressRing(
+            fraction: progress,
+            size: 76,
+            strokeWidth: 3,
+            trackColor: AppColors.hairline,
+          ),
+          button,
+        ],
       ),
     );
   }
