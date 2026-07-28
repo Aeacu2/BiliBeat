@@ -36,7 +36,8 @@ class _MarqueeTextState extends State<MarqueeText>
     _controller = AnimationController(
       vsync: this,
       duration: const Duration(seconds: 10),
-    )..repeat();
+    );
+    if (widget.scrolling) _controller.repeat();
     WidgetsBinding.instance.addPostFrameCallback((_) => _measure());
   }
 
@@ -47,6 +48,10 @@ class _MarqueeTextState extends State<MarqueeText>
         oldWidget.scrolling != widget.scrolling) {
       _measured = false;
       WidgetsBinding.instance.addPostFrameCallback((_) => _measure());
+    }
+    // Stop the controller immediately when scrolling turns off.
+    if (!widget.scrolling && _controller.isAnimating) {
+      _controller.stop();
     }
   }
 
@@ -67,8 +72,8 @@ class _MarqueeTextState extends State<MarqueeText>
       final secs = (cycle / widget.speed).clamp(5.0, 30.0);
       _controller
         ..stop()
-        ..duration = Duration(milliseconds: (secs * 1000).round())
-        ..repeat();
+        ..duration = Duration(milliseconds: (secs * 1000).round());
+      if (widget.scrolling) _controller.repeat();
       if (mounted) setState(() {});
     }
   }

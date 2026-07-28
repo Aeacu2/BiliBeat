@@ -40,6 +40,7 @@ class _AmbientBackgroundState extends State<AmbientBackground> {
       '(KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36';
 
   static final Map<String, Color> _colorCache = {};
+  static const int _maxCacheSize = 100;
   static const Color _fallback = AppColors.accent;
 
   Color _color = _fallback;
@@ -72,6 +73,10 @@ class _AmbientBackgroundState extends State<AmbientBackground> {
     final token = ++_token;
     try {
       final color = await _extractDominantColor(url);
+      // Evict oldest entries when cache grows too large.
+      if (_colorCache.length >= _maxCacheSize) {
+        _colorCache.remove(_colorCache.keys.first);
+      }
       _colorCache[url] = color;
       if (mounted && token == _token) _apply(color);
     } catch (e) {

@@ -60,6 +60,7 @@ class _NowPlayingSheetState extends State<NowPlayingSheet> {
   DownloadTask? _downloadTask;
   bool _modePressed = false;
   double? _dragValue;
+  double? _dragVolumeValue;
 
   bool get _isActive => widget.handler.currentTrack?.id == _displayTrack.id;
 
@@ -193,27 +194,24 @@ class _NowPlayingSheetState extends State<NowPlayingSheet> {
         coverUrl: _displayTrack.coverUrl,
         child: SafeArea(
           child: Column(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               _topBar(),
               Expanded(
-                child: Center(
-                  child: _showLyrics && _isActive
-                      ? ValueListenableBuilder<List<LyricLine>>(
-                          valueListenable: widget.lyricsNotifier,
-                          builder: (context, lines, _) {
-                            return SyncedLyricsView(
-                              lines: lines,
-                              positionNotifier: widget.positionNotifier,
-                              onSeek: (sec) => widget.handler.seek(
-                                Duration(milliseconds: (sec * 1000).toInt()),
-                              ),
-                              onOpenEditor: widget.onOpenLyricEditor,
-                            );
-                          },
-                        )
-                      : _albumArt(),
-                ),
+                child: _showLyrics && _isActive
+                    ? ValueListenableBuilder<List<LyricLine>>(
+                        valueListenable: widget.lyricsNotifier,
+                        builder: (context, lines, _) {
+                          return SyncedLyricsView(
+                            lines: lines,
+                            positionNotifier: widget.positionNotifier,
+                            onSeek: (sec) => widget.handler.seek(
+                              Duration(milliseconds: (sec * 1000).toInt()),
+                            ),
+                            onOpenEditor: widget.onOpenLyricEditor,
+                          );
+                        },
+                      )
+                    : Center(child: _albumArt()),
               ),
               _bottomPanel(),
             ],
@@ -305,11 +303,13 @@ class _NowPlayingSheetState extends State<NowPlayingSheet> {
     return Padding(
       padding: const EdgeInsets.fromLTRB(24, 8, 24, 12),
       child: Column(
+        mainAxisSize: MainAxisSize.min,
         children: [
           Row(
             children: [
               Expanded(
                 child: Column(
+                  mainAxisSize: MainAxisSize.min,
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     MarqueeText(
@@ -377,101 +377,54 @@ class _NowPlayingSheetState extends State<NowPlayingSheet> {
                 ? Duration.zero
                 : (Duration(seconds: maxSec.round()) -
                     Duration(seconds: posSec.round()));
-            return LayoutBuilder(
-              builder: (context, constraints) {
-                final width = constraints.maxWidth;
-                const pad = 24.0;
-                final fraction = maxSec > 0 ? posSec / maxSec : 0.0;
-                final thumbX = pad / 2 + fraction * (width - pad);
-                return Column(
-                  children: [
-                    SizedBox(
-                      height: 40,
-                      child: Stack(
-                        clipBehavior: Clip.none,
-                        children: [
-                          if (_dragValue != null)
-                            Positioned(
-                              left: (thumbX - 26).clamp(0.0, width - 52),
-                              top: -22,
-                              child: _timeBubble(
-                                  _formatDuration(Duration(seconds: posSec.round()))),
-                            ),
-                          Center(
-                            child: SliderTheme(
-                              data: SliderTheme.of(context).copyWith(
-                                trackHeight: 4,
-                                thumbShape: const RoundSliderThumbShape(
-                                    enabledThumbRadius: 6),
-                                overlayShape: const RoundSliderOverlayShape(
-                                    overlayRadius: 14),
-                              ),
-                              child: Slider(
-                                value: posSec,
-                                max: maxSec,
-                                onChanged: (v) {
-                                  setState(() => _dragValue = v);
-                                  if (_isActive) {
-                                    widget.handler
-                                        .seek(Duration(seconds: v.toInt()));
-                                  }
-                                },
-                                onChangeStart: (v) =>
-                                    setState(() => _dragValue = v),
-                                onChangeEnd: (v) {
-                                  Haptics.light();
-                                  setState(() => _dragValue = null);
-                                },
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 4),
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          Text(_formatDuration(Duration(seconds: posSec.round())),
-                              style: timeStyle),
-                          Text('-${_formatDuration(remaining)}', style: timeStyle),
-                        ],
-                      ),
-                    ),
-                  ],
-                );
-              },
+            return Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                SliderTheme(
+                  data: SliderTheme.of(context).copyWith(
+                    trackHeight: 4,
+                    thumbShape: const RoundSliderThumbShape(
+                        enabledThumbRadius: 6),
+                    overlayShape: const RoundSliderOverlayShape(
+                        overlayRadius: 14),
+                  ),
+                  child: Slider(
+                    value: posSec,
+                    max: maxSec,
+                    label: _dragValue != null
+                        ? _formatDuration(Duration(seconds: posSec.round()))
+                        : null,
+                    onChanged: (v) {
+                      setState(() => _dragValue = v);
+                    },
+                    onChangeStart: (v) =>
+                        setState(() => _dragValue = v),
+                    onChangeEnd: (v) {
+                      Haptics.light();
+                      if (_isActive) {
+                        widget.handler
+                            .seek(Duration(seconds: v.toInt()));
+                      }
+                      setState(() => _dragValue = null);
+                    },
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 4),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text(_formatDuration(Duration(seconds: posSec.round())),
+                          style: timeStyle),
+                      Text('-${_formatDuration(remaining)}', style: timeStyle),
+                    ],
+                  ),
+                ),
+              ],
             );
           },
         );
       },
-    );
-  }
-
-  Widget _timeBubble(String text) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-      decoration: BoxDecoration(
-        color: AppColors.textPrimary,
-        borderRadius: BorderRadius.circular(AppRadius.sm),
-        boxShadow: const [
-          BoxShadow(
-            color: AppColors.black30,
-            blurRadius: 8,
-            offset: Offset(0, 2),
-          ),
-        ],
-      ),
-      child: Text(
-        text,
-        style: const TextStyle(
-          color: AppColors.background,
-          fontSize: 12,
-          fontWeight: FontWeight.w700,
-          fontFeatures: [FontFeature.tabularFigures()],
-        ),
-      ),
     );
   }
 
@@ -603,9 +556,14 @@ class _NowPlayingSheetState extends State<NowPlayingSheet> {
   }
 
   Widget _volumeBar() {
+    final displayVolume = _dragVolumeValue ?? _volume;
     return Row(
       children: [
-        const Icon(Icons.volume_mute, color: AppColors.textFaint, size: 18),
+        Icon(
+          displayVolume <= 0.01 ? Icons.volume_off : Icons.volume_mute,
+          color: AppColors.textFaint,
+          size: 18,
+        ),
         Expanded(
           child: SliderTheme(
             data: SliderTheme.of(context).copyWith(
@@ -614,10 +572,16 @@ class _NowPlayingSheetState extends State<NowPlayingSheet> {
               overlayShape: const RoundSliderOverlayShape(overlayRadius: 12),
             ),
             child: Slider(
-              value: _volume,
+              value: displayVolume,
               onChanged: (v) {
-                setState(() => _volume = v);
+                setState(() => _dragVolumeValue = v);
                 widget.handler.setVolume(v);
+              },
+              onChangeEnd: (v) {
+                setState(() {
+                  _volume = v;
+                  _dragVolumeValue = null;
+                });
               },
             ),
           ),

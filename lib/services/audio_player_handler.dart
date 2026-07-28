@@ -275,11 +275,12 @@ class BiliBeatAudioHandler extends BaseAudioHandler with SeekHandler {
       _loopMode = LoopMode.all;
       if (_playlist.isNotEmpty) {
         final current = currentTrack;
-        _playlist.shuffle();
-        if (current != null) {
-          _playlist.removeWhere((t) => t.id == current.id);
-          _playlist.insert(0, current);
-        }
+        // Build a shuffled copy with the current track pinned to index 0.
+        final others = _playlist.where((t) => t.id != current?.id).toList()
+          ..shuffle();
+        _playlist
+          ..clear()
+          ..addAll([if (current != null) current, ...others]);
         _currentIndex = 0;
         _queueController.add(_playlist);
         _startCurrent(autoplay: _isPlaying);

@@ -52,7 +52,7 @@ class DatabaseService {
       // Auto-discover any downloaded audio files on disk
       final audioDir = Directory('${docs.path}/bilibeat_audio');
       if (await audioDir.exists()) {
-        final List<FileSystemEntity> entities = audioDir.listSync();
+        final List<FileSystemEntity> entities = await audioDir.list().toList();
         for (final entity in entities) {
           if (entity is File && entity.path.endsWith('.ready')) {
             final readyPath = entity.path;
@@ -223,7 +223,7 @@ class DatabaseService {
 
   static Future<List<Playlist>> getPlaylists() async {
     await _ensureLoaded();
-    return _playlists;
+    return List<Playlist>.from(_playlists);
   }
 
   static Future<Playlist> getFavoritesPlaylist() async {
@@ -325,7 +325,7 @@ class DatabaseService {
 
   static Future<List<Track>> getDownloadedTracks() async {
     await _ensureLoaded();
-    return _downloadedTracks;
+    return List<Track>.from(_downloadedTracks);
   }
 
   static Future<void> cacheLyrics(String trackId, LyricsResult lyrics) async {

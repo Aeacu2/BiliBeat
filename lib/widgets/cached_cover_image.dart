@@ -46,12 +46,21 @@ class _CachedCoverImageState extends State<CachedCoverImage> {
   File? _localImageFile;
   bool _isLoading = true;
   late String _loadKey;
+  bool _needsLoad = true;
 
   @override
   void initState() {
     super.initState();
     _loadKey = widget.url;
-    _loadImage();
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (_needsLoad) {
+      _needsLoad = false;
+      _loadImage();
+    }
   }
 
   @override
