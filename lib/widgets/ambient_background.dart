@@ -100,7 +100,11 @@ class _AmbientBackgroundState extends State<AmbientBackground> {
           url.startsWith('file://') ? url.substring('file://'.length) : url;
       bytes = await File(path).readAsBytes();
     } else {
-      final req = await _client.getUrl(Uri.parse(url));
+      var cleanUrl = url;
+      if (cleanUrl.contains('@') && !cleanUrl.endsWith('.webp') && !cleanUrl.endsWith('.jpg') && !cleanUrl.endsWith('.png')) {
+        cleanUrl = cleanUrl.split('@').first;
+      }
+      final req = await _client.getUrl(Uri.parse(cleanUrl));
       req.headers.set('Referer', 'https://www.bilibili.com/');
       req.headers.set('User-Agent', _userAgent);
       final res = await req.close();
