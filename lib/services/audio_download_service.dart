@@ -1,0 +1,216 @@
+import 'dart:async';
+import 'dart:convert';
+import 'dart:io';
+
+import 'package:flutter/foundation.dart';
+import 'package:path_provider/path_provider.dart';
+
+import '../models/track.dart';
+import 'bilibili_sdk.dart';
+import 'database_service.dart';
+
+/// Immutable snapshot of a single track download's progress.
+class DownloadProgress {
+  final String trackId;
+  final int receivedBytes;
+  final int? totalBytes;
+  final bool done;
+  final String? error;
+
+  const DownloadProgress(
+    this.trackId,
+    this.receivedBytes,
+    this.totalBytes,
+    this.done,
+    this.error,
+  );
+
+  double get fraction {
+    final total = totalBytes;
+    if (total == null || total <= 0) return 0.0;
+    return (receivedBytes / total).clamp(0.0, 1.0);
+  }
+}
+
+/// Downloads Bilibili audio to disk so playback is always served from a local
+/// file. The native player (ExoPlayer / AVPlayer) reads straight from disk with
+/// zero extra hops, no Dart-isolate byte forwarding, and no cleartext/ATS
+/// issues on iOS.
+///
+/// Files are keyed by the full track id (`bvid_cid`), which uniquely identifies
+/// a single playable part. Keying by `bvid` alone would collide across the
+/// parts (P1/P2/…) of a multi-part video and play the wrong audio.
+class AudioDownloadService {
+  AudioDownloadService._();
+
+  static final HttpClient _client = HttpClient()
+    ..idleTimeout = const Duration(seconds: 60)
+    ..maxConnectionsPerHost = 4;
+
+  static const String _userAgent =
+      'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 '
+      '(KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36';
+
+  static String? _dirPath;
+
+  /// Deduplicates concurrent downloads of the same track.
+  static final Map<String, Future<String>> _inFlight = {};
+
+  static final StreamController<DownloadProgress> _progressController =
+      StreamController<DownloadProgress>.broadcast();
+
+  /// Broadcast stream of download progress events (throttled per chunk batch).
+  static Stream<DownloadProgress> get progressStream =>
+      _progressController.stream;
+
+  static Future<String> _dir() async {
+    final cached = _dirPath;
+    if (cached != null) return cached;
+    final docs = await getApplicationDocumentsDirectory();
+    final path = '${docs.path}/bilibeat_audio';
+    final dir = Directory(path);
+    if (!await dir.exists()) {
+      await dir.create(recursive: true);
+    }
+    _dirPath = path;
+    return path;
+  }
+
+  /// Stable per-part key. Falls back to bvid only for the (rare) track built
+  /// without a usable id.
+  static String _key(Track track) =>
+      track.id.isNotEmpty ? track.id : track.bvid;
+
+  static String _audioPath(String dir, String key) => '$dir/audio_$key.m4a';
+  static String _readyPath(String dir, String key) => '$dir/audio_$key.ready';
+  static String _metaPath(String dir, String key) => '$dir/audio_$key.json';
+
+  /// Saves track metadata JSON next to the audio file (used for rediscovery).
+  static Future<void> saveTrackMetadata(Track track) async {
+    try {
+      final dir = await _dir();
+      final metaFile = File(_metaPath(dir, _key(track)));
+      await metaFile.writeAsString(jsonEncode(track.toMap()));
+    } catch (e) {
+      debugPrint('saveTrackMetadata error: $e');
+    }
+  }
+
+  /// True when a complete, verified audio file exists on disk for [track].
+  static Future<bool> isDownloaded(Track track) => isDownloadedById(_key(track));
+
+  /// String-id variant of [isDownloaded] for callers that only hold an id.
+  static Future<bool> isDownloadedById(String id) async {
+    final dir = await _dir();
+    final audio = File(_audioPath(dir, id));
+    final ready = File(_readyPath(dir, id));
+    if (!await ready.exists()) return false;
+    if (!await audio.exists()) return false;
+    return await audio.length() > 0;
+  }
+
+  /// Returns the local file path if [track] is already downloaded, else null.
+  static Future<String?> localPathIfDownloaded(Track track) async {
+    final id = _key(track);
+    if (!await isDownloadedById(id)) return null;
+    return _audioPath(await _dir(), id);
+  }
+
+  /// Ensures [track]'s audio is fully downloaded and returns the local path.
+  ///
+  /// Idempotent and concurrency-safe: a second call for the same track while a
+  /// download is in flight awaits the same future instead of downloading twice.
+  static Future<String> ensureDownloaded(Track track) async {
+    final dir = await _dir();
+    final id = _key(track);
+    final path = _audioPath(dir, id);
+    await saveTrackMetadata(track);
+    if (await isDownloadedById(id)) {
+      await DatabaseService.saveDownloadedTrack(track, path);
+      return path;
+    }
+
+    final existing = _inFlight[id];
+    if (existing != null) return existing;
+
+    final future = _download(track, dir, path);
+    _inFlight[id] = future;
+    try {
+      return await future;
+    } finally {
+      _inFlight.remove(id);
+    }
+  }
+
+  static Future<String> _download(Track track, String dir, String path) async {
+    var url = track.audioUrl;
+    if (url == null || url.isEmpty) {
+      final info = await BilibiliSdk.fetchAudioStream(track.bvid, track.cid);
+      url = info?['url'];
+    }
+    if (url == null || url.isEmpty) {
+      _emit(DownloadProgress(track.id, 0, null, false, '无法获取音源下载链接'));
+      throw Exception('无法获取音源下载链接');
+    }
+
+    final tmp = File('$path.part');
+    IOSink? sink;
+    var lastEmitted = 0;
+    try {
+      final req = await _client.getUrl(Uri.parse(url));
+      req.headers.set('Referer', 'https://www.bilibili.com/');
+      req.headers.set('User-Agent', _userAgent);
+      req.headers.set('Accept', '*/*');
+      req.headers.set('Accept-Encoding', 'identity');
+
+      final res = await req.close();
+      if (res.statusCode != HttpStatus.ok) {
+        throw Exception('CDN HTTP ${res.statusCode}');
+      }
+
+      final total = res.contentLength > 0 ? res.contentLength : null;
+      sink = tmp.openWrite();
+      var received = 0;
+
+      await for (final chunk in res) {
+        sink.add(chunk);
+        received += chunk.length;
+        // Throttle progress events to ~every 64 KiB to avoid stream spam.
+        if (received - lastEmitted >= 65536) {
+          lastEmitted = received;
+          _emit(DownloadProgress(track.id, received, total, false, null));
+        }
+      }
+
+      await sink.flush();
+      await sink.close();
+      sink = null;
+
+      final destination = File(path);
+      if (await destination.exists()) {
+        await destination.delete();
+      }
+      await tmp.rename(path);
+      await File(_readyPath(dir, _key(track))).create();
+      await saveTrackMetadata(track);
+
+      _emit(DownloadProgress(track.id, received, total, true, null));
+      debugPrint('Downloaded ${track.title} -> $path ($received bytes)');
+      await DatabaseService.saveDownloadedTrack(track, path);
+      return path;
+    } catch (e) {
+      try {
+        await sink?.close();
+      } catch (_) {}
+      try {
+        if (await tmp.exists()) await tmp.delete();
+      } catch (_) {}
+      _emit(DownloadProgress(track.id, 0, null, false, '$e'));
+      rethrow;
+    }
+  }
+
+  static void _emit(DownloadProgress p) {
+    if (!_progressController.isClosed) _progressController.add(p);
+  }
+}

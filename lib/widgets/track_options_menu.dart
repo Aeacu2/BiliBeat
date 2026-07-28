@@ -1,0 +1,346 @@
+import 'package:flutter/material.dart';
+import '../theme/app_theme.dart';
+import '../models/track.dart';
+import '../models/playlist.dart';
+import '../services/database_service.dart';
+import '../services/audio_download_service.dart';
+import '../services/download_manager.dart';
+import 'cached_cover_image.dart';
+
+class TrackOptionsMenu extends StatefulWidget {
+  final Track track;
+  final VoidCallback? onTrackChanged;
+
+  const TrackOptionsMenu({
+    super.key,
+    required this.track,
+    this.onTrackChanged,
+  });
+
+  static Future<void> show(BuildContext context, Track track, {VoidCallback? onTrackChanged}) {
+    return showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      builder: (context) => TrackOptionsMenu(
+        track: track,
+        onTrackChanged: onTrackChanged,
+      ),
+    );
+  }
+
+  static Future<void> showAddToPlaylist(BuildContext context, Track track, {VoidCallback? onTrackChanged}) async {
+    final List<Playlist> playlists = await DatabaseService.getPlaylists();
+
+    if (!context.mounted) return;
+    final parentMessenger = ScaffoldMessenger.of(context);
+
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: AppColors.backgroundElevated,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (dialogCtx, setDialogState) {
+            return Container(
+              padding: const EdgeInsets.all(20),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      const Text(
+                        '加入歌单',
+                        style: TextStyle(color: AppColors.textPrimary, fontSize: 18, fontWeight: FontWeight.bold),
+                      ),
+                      TextButton.icon(
+                        icon: const Icon(Icons.add, color: AppColors.accent, size: 20),
+                        label: const Text('新建歌单', style: TextStyle(color: AppColors.accent)),
+                        onPressed: () async {
+                          final controller = TextEditingController();
+                          final newPlName = await showDialog<String>(
+                            context: ctx,
+                            builder: (dCtx) => AlertDialog(
+                              backgroundColor: AppColors.backgroundElevated,
+                              title: const Text('创建新歌单', style: TextStyle(color: AppColors.textPrimary)),
+                              content: TextField(
+                                controller: controller,
+                                style: const TextStyle(color: AppColors.textPrimary),
+                                decoration: const InputDecoration(
+                                  hintText: '歌单名称',
+                                  hintStyle: TextStyle(color: AppColors.textFaint),
+                                ),
+                              ),
+                              actions: [
+                                TextButton(
+                                  child: const Text('取消'),
+                                  onPressed: () => Navigator.pop(dCtx),
+                                ),
+                                TextButton(
+                                  child: const Text('创建', style: TextStyle(color: AppColors.accent)),
+                                  onPressed: () => Navigator.pop(dCtx, controller.text),
+                                ),
+                              ],
+                            ),
+                          );
+
+                          if (newPlName != null && newPlName.trim().isNotEmpty) {
+                            final created = await DatabaseService.createPlaylist(newPlName);
+                            await DatabaseService.addTrackToPlaylist(created.id, track);
+                            DownloadManager.instance.startDownload(track);
+                            if (ctx.mounted) Navigator.pop(ctx);
+                            onTrackChanged?.call();
+                            parentMessenger.showSnackBar(
+                              SnackBar(
+                                content: Text('已加入新歌单「${created.name}」并自动开启下载'),
+                                backgroundColor: AppColors.accent,
+                              ),
+                            );
+                          }
+                        },
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  ConstrainedBox(
+                    constraints: const BoxConstraints(maxHeight: 280),
+                    child: ListView.builder(
+                      shrinkWrap: true,
+                      itemCount: playlists.length,
+                      itemBuilder: (context, index) {
+                        final pl = playlists[index];
+                        return ListTile(
+                          leading: Icon(
+                            pl.id == 'favorites' ? Icons.favorite : Icons.queue_music,
+                            color: pl.id == 'favorites' ? AppColors.accent : AppColors.textSecondary,
+                          ),
+                          title: Text(pl.name, style: const TextStyle(color: AppColors.textPrimary)),
+                          subtitle: Text('${pl.tracks.length} 首歌曲', style: const TextStyle(color: AppColors.textMuted, fontSize: 12)),
+                          onTap: () async {
+                            await DatabaseService.addTrackToPlaylist(pl.id, track);
+                            DownloadManager.instance.startDownload(track);
+                            if (ctx.mounted) Navigator.pop(ctx);
+                            onTrackChanged?.call();
+                            parentMessenger.showSnackBar(
+                              SnackBar(
+                                content: Text('已加入歌单「${pl.name}」并自动开启下载'),
+                                backgroundColor: AppColors.accent,
+                              ),
+                            );
+                          },
+                        );
+                      },
+                    ),
+                  ),
+                ],
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  @override
+  State<TrackOptionsMenu> createState() => _TrackOptionsMenuState();
+}
+
+class _TrackOptionsMenuState extends State<TrackOptionsMenu> {
+  bool _isFav = false;
+  bool _isDownloaded = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _checkStatus();
+  }
+
+  Future<void> _checkStatus() async {
+    final fav = await DatabaseService.isFavorite(widget.track.id);
+    final isDown = await AudioDownloadService.isDownloaded(widget.track);
+
+    if (mounted) {
+      setState(() {
+        _isFav = fav;
+        _isDownloaded = isDown;
+      });
+    }
+  }
+
+  Future<void> _handleDownload() async {
+    final messenger = ScaffoldMessenger.of(context);
+    Navigator.pop(context);
+    await DownloadManager.instance.startDownload(widget.track);
+    widget.onTrackChanged?.call();
+
+    messenger.showSnackBar(
+      SnackBar(
+        content: Text('已成功将「${widget.track.title}」下载到本地'),
+        backgroundColor: AppColors.accent,
+        duration: const Duration(seconds: 2),
+      ),
+    );
+  }
+
+  Future<void> _handleFavorite() async {
+    final messenger = ScaffoldMessenger.of(context);
+    Navigator.pop(context);
+    final nowFav = await DatabaseService.toggleFavorite(widget.track);
+    if (nowFav && !_isDownloaded) {
+      DownloadManager.instance.startDownload(widget.track);
+    }
+    widget.onTrackChanged?.call();
+
+    final msg = nowFav
+        ? '已加入「收藏」'
+        : '已从「收藏」中移除';
+    messenger.showSnackBar(
+      SnackBar(
+        behavior: SnackBarBehavior.floating,
+        margin: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+        backgroundColor: AppColors.backgroundElevated,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        content: Row(
+          children: [
+            Icon(nowFav ? Icons.favorite : Icons.favorite_border, color: AppColors.accent, size: 20),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                msg,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(color: AppColors.textPrimary, fontSize: 14, fontWeight: FontWeight.w500),
+              ),
+            ),
+          ],
+        ),
+        duration: const Duration(seconds: 2),
+      ),
+    );
+  }
+
+  Future<void> _handleAddToPlaylist() async {
+    Navigator.pop(context);
+    if (!mounted) return;
+    TrackOptionsMenu.showAddToPlaylist(context, widget.track, onTrackChanged: widget.onTrackChanged);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: const BoxDecoration(
+        color: AppColors.backgroundElevated,
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      padding: const EdgeInsets.only(top: 12, bottom: 24, left: 16, right: 16),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          // Drag Handle
+          Container(
+            width: 36,
+            height: 5,
+            decoration: BoxDecoration(
+              color: AppColors.textFaint,
+              borderRadius: BorderRadius.circular(3),
+            ),
+          ),
+
+          const SizedBox(height: 16),
+
+          // Header: Track Thumbnail, FULL Untruncated Title, Uploader
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              ClipRRect(
+                borderRadius: BorderRadius.circular(12),
+                child: CachedCoverImage(
+                  url: widget.track.coverUrl,
+                  width: 60,
+                  height: 60,
+                ),
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // FULL Untruncated Track Title
+                    Text(
+                      widget.track.title,
+                      style: const TextStyle(
+                        color: AppColors.textPrimary,
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                        height: 1.3,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      widget.track.uploader,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: AppColors.textMuted,
+                        fontSize: 13,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+
+          const Padding(
+            padding: EdgeInsets.symmetric(vertical: 12),
+            child: Divider(color: Colors.white12, height: 1),
+          ),
+
+          // Action Items
+          ListTile(
+            leading: Icon(
+              _isDownloaded ? Icons.offline_pin : Icons.download,
+              color: _isDownloaded ? AppColors.success : AppColors.textPrimary,
+            ),
+            title: Text(
+              _isDownloaded ? '离线已保存' : '下载到本地',
+              style: const TextStyle(color: AppColors.textPrimary, fontSize: 15, fontWeight: FontWeight.w500),
+            ),
+            subtitle: const Text('支持无网络离线播放', style: TextStyle(color: AppColors.textFaint, fontSize: 12)),
+            onTap: _handleDownload,
+          ),
+
+          ListTile(
+            leading: const Icon(Icons.playlist_add, color: AppColors.textPrimary),
+            title: const Text(
+              '加入歌单...',
+              style: TextStyle(color: AppColors.textPrimary, fontSize: 15, fontWeight: FontWeight.w500),
+            ),
+            subtitle: const Text('选择并添加至已有或新建歌单', style: TextStyle(color: AppColors.textFaint, fontSize: 12)),
+            onTap: _handleAddToPlaylist,
+          ),
+
+          ListTile(
+            leading: Icon(
+              _isFav ? Icons.favorite : Icons.favorite_border,
+              color: _isFav ? AppColors.accent : AppColors.textPrimary,
+            ),
+            title: Text(
+              _isFav ? '取消收藏' : '添加至收藏',
+              style: const TextStyle(color: AppColors.textPrimary, fontSize: 15, fontWeight: FontWeight.w500),
+            ),
+            subtitle: Text(
+              _isFav ? '从收藏列表中移出' : '加入个人收藏目录',
+              style: const TextStyle(color: AppColors.textFaint, fontSize: 12),
+            ),
+            onTap: _handleFavorite,
+          ),
+        ],
+      ),
+    );
+  }
+}
