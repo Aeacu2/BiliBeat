@@ -16,6 +16,8 @@ import numpy as np
 
 SRC = 'tool/brand/app_icon_source.jpg'   # the original artwork, wordmark and all
 GLYPH_BOX = (303, 237, 721, 679)   # pink pixels, measured
+TILE_BOX = (197, 159, 827, 789)    # the rounded rectangle's outer edge
+TILE_MARGIN = 20                   # canvas kept around it, for the halo
 # How far past the glyph to take the bloom. Bounded by the artwork's tile: the
 # source's glow is *clipped* at the tile edge, a real step in the pixels that no
 # colour key can undo, so anything that includes that edge shows a rounded
@@ -49,29 +51,30 @@ def cutout(size):
     yy, xx = np.mgrid[0:n, 0:n]
     edge = np.maximum(np.abs(xx - n / 2), np.abs(yy - n / 2)) / (n / 2)
     alpha *= np.clip((0.99 - edge) / 0.18, 0, 1)
-    rgb = np.clip(a / np.maximum(alpha[..., None], 0.25), 0, 255)
+    # Un-premultiply, so compositing the mark back onto a near-black
+    # background reproduces the artwork's own glow rather than a dimmed
+    # copy of it.
+    rgb = np.clip(a / np.maximum(alpha[..., None], 0.15), 0, 255)
     return Image.fromarray(
         np.dstack([rgb, alpha * 255]).astype(np.uint8), 'RGBA')
 
 
 def icon(size):
-    """Icon = dark plate + the mark, with the bloom fading into the plate.
+    """The icon is the artwork itself, cropped — not rebuilt.
 
-    Rebuilt rather than cropped: any crop of the source that keeps the glow
-    outside the tile also keeps the tile's edge, which is what made the icon
-    read as a square inside a square.
+    The tile plus a thin margin of the canvas around it. That margin is the
+    whole point: the artwork has a faint pink halo bleeding onto the canvas
+    outside the rounded rectangle, and keeping a little of it is what makes the
+    tile look like it is floating. Keep much more and the tile reads as a
+    second rounded rectangle inside the launcher's own mask — the "square
+    inside a square" this margin is tuned against. The note and its glow are
+    untouched.
     """
-    s = max(size, 512)
-    yy, xx = np.mgrid[0:s, 0:s]
-    d = np.sqrt((xx - s / 2) ** 2 + (yy - s / 2) ** 2) / (s / 2)
-    lift = np.clip(1.0 - d * 0.85, 0, 1)          # gentle centre lift
-    plate = np.dstack([10 + 12 * lift, 10 + 11 * lift, 13 + 13 * lift])
-    base = Image.fromarray(plate.astype(np.uint8), 'RGB').convert('RGBA')
-
-    mark = cutout(int(s * 0.90))
-    off = (s - mark.width) // 2
-    base.alpha_composite(mark, (off, off))
-    return base.convert('RGB').resize((size, size), Image.LANCZOS)
+    src = Image.open(SRC).convert('RGB')
+    x0, y0, x1, y1 = TILE_BOX
+    m = TILE_MARGIN
+    return src.crop((x0 - m, y0 - m, x1 + m, y1 + m)).resize(
+        (size, size), Image.LANCZOS)
 
 
 def main():

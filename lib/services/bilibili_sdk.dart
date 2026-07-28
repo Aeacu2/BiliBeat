@@ -69,7 +69,7 @@ class BilibiliSdk {
           if (pages.isEmpty) {
             return [
               Track(
-                id: '${bvid}_0',
+                id: '${bvid}_p1',
                 bvid: bvid,
                 cid: data['cid'] as int? ?? 0,
                 title: title,
@@ -87,7 +87,7 @@ class BilibiliSdk {
             final pageDuration = p['duration'] as int? ?? totalDuration;
 
             return Track(
-              id: '${bvid}_$cid',
+              id: '${bvid}_p$pageNo',
               bvid: bvid,
               cid: cid,
               title: pages.length > 1 ? '$title - P$pageNo: $partTitle' : title,
@@ -241,8 +241,13 @@ class BilibiliSdk {
               durationSec = durRaw;
             }
 
+            // Search results are always the video's first part, and the search
+            // API does not return a cid — hence the page-based id: keying on
+            // cid would have produced `bvid_0` here and `bvid_<cid>` for the
+            // same video opened by BV number, i.e. two entries for one song
+            // with separate download state.
             tracks.add(Track(
-              id: '${bvid}_${item['cid'] ?? 0}',
+              id: '${bvid}_p1',
               bvid: bvid,
               cid: item['cid'] as int? ?? 0,
               title: cleanTitle,

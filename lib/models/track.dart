@@ -7,8 +7,13 @@ import 'package:flutter/foundation.dart';
 /// — and could contradict — what is actually on disk) have been removed.
 /// Download state has exactly one source of truth: [AudioDownloadService].
 class Track {
-  /// `bvid_cid`, uniquely naming one part of one video. This is the identity
-  /// used for equality, de-duplication and on-disk file naming.
+  /// `bvid_p<page>`, uniquely naming one part of one video. This is the
+  /// identity used for equality, de-duplication and on-disk file naming.
+  ///
+  /// Deliberately *not* keyed on cid: search results do not carry one, so a
+  /// cid-based id gave the same song two identities — `bvid_0` from search and
+  /// `bvid_<cid>` from a BV number — with separate library entries and
+  /// separate downloads. The page number is known on both paths.
   final String id;
   final String bvid;
   final int cid;
