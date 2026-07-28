@@ -21,16 +21,24 @@ class SyncedLyricsView extends StatefulWidget {
   final VoidCallback? onOpenEditor;
   final double offset;
 
-  /// Reference moment the calibration drag aligns lines against: the live
-  /// playback position for the playing track, 0:00 for anything else. Read on
-  /// every frame of the drag, so the readout stays true while the song plays
-  /// on underneath the finger.
-  final double Function()? anchorSeconds;
+  /// Calibration mode, armed by the parent. While it is on, a vertical drag
+  /// moves the *timeline* instead of scrolling, and a guide marks the line the
+  /// drag is measured against.
+  ///
+  /// It is a mode rather than a long-press because the two gestures cannot
+  /// share a pointer: a long-press recogniser wins the arena whenever a finger
+  /// rests before it moves, which is exactly how people scroll — so browsing
+  /// the lyrics kept turning into an accidental calibration.
+  final bool calibrating;
 
-  /// Long-press-and-drag calibration: called once, on release, with how many
-  /// seconds the timeline should move (positive = the lyrics were early and
-  /// need delaying). Absent disables the gesture.
+  /// Called once per drag with how many seconds the timeline should move
+  /// (positive = the lyrics were early and need delaying).
   final void Function(double deltaSeconds)? onCalibrate;
+
+  /// Whether the view should follow playback. False for a preview driven by a
+  /// clock that never advances, where auto-scrolling back to 0:00 five seconds
+  /// after every scroll makes the lyrics impossible to read.
+  final bool autoFollow;
 
   const SyncedLyricsView({
     super.key,
@@ -39,8 +47,9 @@ class SyncedLyricsView extends StatefulWidget {
     this.onSeek,
     this.onOpenEditor,
     this.offset = 0.0,
-    this.anchorSeconds,
+    this.calibrating = false,
     this.onCalibrate,
+    this.autoFollow = true,
   });
 
   @override
@@ -58,12 +67,14 @@ class _SyncedLyricsViewState extends State<SyncedLyricsView> {
   bool _userBrowsing = false;
   Timer? _resumeTimer;
 
-  /// Timeline calibration: the finger is holding the lyrics and dragging them
-  /// against the anchor. [_dragDy] is the live finger travel; the list is
-  /// translated by it, and the time under the anchor after that translation is
-  /// what the correction is computed from.
-  bool _calibrating = false;
+  /// Live finger travel during a calibration drag. The list is translated by
+  /// it, and the amount of lyric-time that travel corresponds to is the
+  /// correction.
   double _dragDy = 0.0;
+
+  /// Accumulated correction from the drags in this calibration session, purely
+  /// so the readout can show a total rather than the last drag.
+  double _sessionDelta = 0.0;
 
   double _viewportHeight = 400;
   double _topPadding = 160;
@@ -84,10 +95,16 @@ class _SyncedLyricsViewState extends State<SyncedLyricsView> {
       oldWidget.positionNotifier.removeListener(_onPosition);
       widget.positionNotifier.addListener(_onPosition);
     }
+    if (oldWidget.calibrating != widget.calibrating) {
+      _dragDy = 0.0;
+      if (!widget.calibrating) _sessionDelta = 0.0;
+    }
     if (oldWidget.lines != widget.lines || oldWidget.offset != widget.offset) {
       _heightCache.clear();
       _lastUpdate = DateTime.fromMillisecondsSinceEpoch(0);
-      _onPosition(force: true);
+      // Re-centring here would undo the drag the user just made: the offset
+      // changing *is* the result of that drag.
+      _onPosition(force: true, keepPosition: widget.calibrating);
     }
   }
 
@@ -99,27 +116,21 @@ class _SyncedLyricsViewState extends State<SyncedLyricsView> {
     super.dispose();
   }
 
-  void _onPosition({bool force = false}) {
+  void _onPosition({bool force = false, bool keepPosition = false}) {
     if (widget.lines.isEmpty) return;
 
     final now = DateTime.now();
     if (!force && now.difference(_lastUpdate).inMilliseconds < 150) return;
     _lastUpdate = now;
 
-    // Mid-calibration the anchor is the moving playback position, so the
-    // readout has to follow it. Nothing else may move: the finger owns the
-    // list until it lifts.
-    if (_calibrating) {
-      setState(() {});
-      return;
-    }
-
     final posSec =
         (widget.positionNotifier.value.inMilliseconds / 1000.0) - widget.offset;
     final newIndex = _findActiveIndex(posSec);
     if (newIndex != _activeIndex || force) {
       setState(() => _activeIndex = newIndex);
-      if (!_userBrowsing) _scrollToActive();
+      if (widget.autoFollow && !_userBrowsing && !keepPosition) {
+        _scrollToActive();
+      }
     }
   }
 
@@ -146,6 +157,7 @@ class _SyncedLyricsViewState extends State<SyncedLyricsView> {
   }
 
   void _scheduleResume() {
+    if (!widget.autoFollow) return;
     _resumeTimer?.cancel();
     _resumeTimer = Timer(_browseGrace, _resumeFollowing);
   }
@@ -190,10 +202,11 @@ class _SyncedLyricsViewState extends State<SyncedLyricsView> {
   // Timeline calibration by dragging
   // ---------------------------------------------------------------------------
 
-  bool get _canCalibrate => widget.onCalibrate != null && widget.lines.isNotEmpty;
+  bool get _canCalibrate =>
+      widget.calibrating && widget.onCalibrate != null && widget.lines.isNotEmpty;
 
-  /// The scroll offset of the middle of the viewport — where the "current"
-  /// line sits, and therefore what the drag aligns against.
+  /// The scroll offset of the middle of the viewport — the line the guide sits
+  /// on, and therefore what the drag is measured against.
   double get _anchorContentY =>
       (_scrollController.hasClients ? _scrollController.offset : 0.0) +
       _viewportHeight / 2;
@@ -218,38 +231,52 @@ class _SyncedLyricsViewState extends State<SyncedLyricsView> {
     return lines.last.time;
   }
 
-  /// Seconds the timeline would move if the finger lifted now. Positive means
-  /// the lyrics were running ahead and need delaying.
-  double get _pendingDelta {
-    if (!_canCalibrate) return 0.0;
-    final anchor = widget.anchorSeconds?.call() ?? 0.0;
-    final lineTime = _timeAtContentY(_anchorContentY - _dragDy) + widget.offset;
-    return anchor - lineTime;
+  /// How much lyric-time a drag of [dy] pixels is worth: the difference between
+  /// what sits under the guide now and what would sit under it after the drag.
+  ///
+  /// Deliberately *relative*. Measuring against the playhead instead — "the
+  /// line you dragged onto the guide should be singing now" — is only defined
+  /// while the track is actually playing; in a preview, whose clock sits at
+  /// 0:00, it turned every drag into an offset of minus-however-far-into-the-
+  /// song-you-had-scrolled. A displacement is the same correction in both
+  /// cases, because the guide already sits on the line the timeline currently
+  /// claims is playing.
+  double _deltaForDrag(double dy) {
+    if (widget.lines.isEmpty) return 0.0;
+    final anchor = _anchorContentY;
+    return _timeAtContentY(anchor) - _timeAtContentY(anchor - dy);
   }
 
-  void _beginCalibration() {
-    if (!_canCalibrate) return;
-    Haptics.light();
-    _beginBrowsing();
-    setState(() {
-      _calibrating = true;
-      _dragDy = 0.0;
-    });
+  double get _pendingDelta => _sessionDelta + _deltaForDrag(_dragDy);
+
+  void _onCalibrationDrag(DragUpdateDetails details) {
+    setState(() => _dragDy += details.delta.dy);
   }
 
-  void _endCalibration({required bool apply}) {
-    if (!_calibrating) return;
-    final delta = _pendingDelta;
+  /// Commits the drag. The list is scrolled to where the finger left the
+  /// content and the transform is reset, so the line the user dragged onto the
+  /// guide stays there instead of springing back the moment they let go.
+  void _endCalibrationDrag() {
+    final dy = _dragDy;
+    if (dy == 0) return;
+
+    // The correction is what the finger asked for. Scrolling by the same
+    // amount keeps the line the user dragged onto the guide sitting there,
+    // but only as far as the list can travel — at either end it simply cannot,
+    // and the correction must not be silently swallowed with it.
+    final delta = _deltaForDrag(dy);
+    if (_scrollController.hasClients) {
+      _scrollController.jumpTo((_scrollController.offset - dy)
+          .clamp(0.0, _scrollController.position.maxScrollExtent));
+    }
     setState(() {
-      _calibrating = false;
       _dragDy = 0.0;
+      _sessionDelta += delta;
     });
-    if (apply && delta.abs() >= 0.05) {
+    if (delta.abs() >= 0.01) {
       Haptics.selection();
       widget.onCalibrate!(double.parse(delta.toStringAsFixed(2)));
     }
-    // Whatever happened, put the user back on the current line.
-    _resumeFollowing();
   }
 
   /// Measured row height, memoised per (text, state, width).
@@ -300,30 +327,21 @@ class _SyncedLyricsViewState extends State<SyncedLyricsView> {
 
         return Stack(
           children: [
-            // Long-press-then-drag calibrates; a plain drag still scrolls. The
-            // two never fight: the gesture arena hands the pointer to the list
-            // as soon as it moves, and to the long press only if it is held.
+            // Armed: the drag moves the timeline and the list is frozen.
+            // Otherwise the list scrolls exactly as it always did.
             GestureDetector(
-              onLongPressStart: _canCalibrate ? (_) => _beginCalibration() : null,
-              onLongPressMoveUpdate: _canCalibrate
-                  ? (details) {
-                      if (!_calibrating) return;
-                      setState(
-                          () => _dragDy = details.localOffsetFromOrigin.dy);
-                    }
-                  : null,
-              onLongPressEnd:
-                  _canCalibrate ? (_) => _endCalibration(apply: true) : null,
-              onLongPressCancel:
-                  _canCalibrate ? () => _endCalibration(apply: false) : null,
+              onVerticalDragUpdate: _canCalibrate ? _onCalibrationDrag : null,
+              onVerticalDragEnd:
+                  _canCalibrate ? (_) => _endCalibrationDrag() : null,
+              onVerticalDragCancel:
+                  _canCalibrate ? _endCalibrationDrag : null,
               child: NotificationListener<ScrollNotification>(
                 onNotification: (notification) {
                   if (notification is ScrollStartNotification &&
                       notification.dragDetails != null) {
                     _beginBrowsing();
                   } else if (notification is ScrollEndNotification &&
-                      _userBrowsing &&
-                      !_calibrating) {
+                      _userBrowsing) {
                     _scheduleResume();
                   }
                   return false;
@@ -332,7 +350,7 @@ class _SyncedLyricsViewState extends State<SyncedLyricsView> {
                   offset: Offset(0, _dragDy),
                   child: ListView.builder(
                     controller: _scrollController,
-                    physics: _calibrating
+                    physics: _canCalibrate
                         ? const NeverScrollableScrollPhysics()
                         : null,
                     padding: EdgeInsets.only(
@@ -345,32 +363,20 @@ class _SyncedLyricsViewState extends State<SyncedLyricsView> {
                 ),
               ),
             ),
-            if (_calibrating) _anchorGuide(),
-            if (_userBrowsing && !_calibrating)
+            if (_canCalibrate) _anchorGuide(),
+            if (_canCalibrate)
+              Positioned(
+                left: 0,
+                right: 0,
+                bottom: 8,
+                child: IgnorePointer(child: Center(child: _calibrationHud())),
+              )
+            else if (_userBrowsing && widget.autoFollow)
               Positioned(
                 left: 0,
                 right: 0,
                 bottom: 8,
                 child: Center(child: _resumePill()),
-              ),
-            if (_calibrating)
-              Positioned(
-                left: 0,
-                right: 0,
-                bottom: 8,
-                child: Center(child: _calibrationHud()),
-              )
-            else if (_canCalibrate && !_userBrowsing)
-              const Positioned(
-                left: 0,
-                right: 0,
-                bottom: 4,
-                child: Center(
-                  child: Text(
-                    '长按歌词上下拖动可校准时间轴',
-                    style: TextStyle(color: AppColors.textFaint, fontSize: 11),
-                  ),
-                ),
               ),
           ],
         );
@@ -449,14 +455,16 @@ class _SyncedLyricsViewState extends State<SyncedLyricsView> {
       left: 0,
       right: 0,
       top: _viewportHeight / 2 - 1,
-      child: Row(
-        children: [
-          Container(width: 14, height: 2, color: AppColors.accent),
-          Expanded(
-            child: Container(height: 1, color: AppColors.accent30),
-          ),
-          Container(width: 14, height: 2, color: AppColors.accent),
-        ],
+      // Ignores pointers: the guide sits exactly where the finger wants to
+      // start its drag, and an opaque overlay there swallows the gesture.
+      child: IgnorePointer(
+        child: Row(
+          children: [
+            Container(width: 14, height: 2, color: AppColors.accent),
+            Expanded(child: Container(height: 1, color: AppColors.accent30)),
+            Container(width: 14, height: 2, color: AppColors.accent),
+          ],
+        ),
       ),
     );
   }
@@ -465,6 +473,7 @@ class _SyncedLyricsViewState extends State<SyncedLyricsView> {
     final delta = _pendingDelta;
     final label = delta >= 0 ? '延迟' : '提前';
     final seconds = delta.abs().toStringAsFixed(1);
+    // 0.0 with no sign reads as "nothing has happened yet", which is true.
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
       decoration: BoxDecoration(
@@ -490,7 +499,7 @@ class _SyncedLyricsViewState extends State<SyncedLyricsView> {
             ),
           ),
           const SizedBox(width: 8),
-          const Text('松手保存',
+          const Text('上下拖动歌词对齐',
               style: TextStyle(color: AppColors.textFaint, fontSize: 11.5)),
         ],
       ),

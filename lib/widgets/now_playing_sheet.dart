@@ -253,13 +253,22 @@ class _NowPlayingSheetState extends State<NowPlayingSheet> {
             tooltip: '收起',
             onPressed: () => Navigator.of(context).maybePop(),
           ),
+          // The mark, not a caption. "正在播放" was 11pt of tracking-heavy text
+          // announcing what the entire screen already is; the one thing worth
+          // saying up here is when the screen is *not* that — a track being
+          // previewed rather than played.
           Expanded(
-            child: Text(
-              _isActive ? '正在播放' : '预览',
-              textAlign: TextAlign.center,
-              style: AppTypography.overline.copyWith(
-                color: _isActive ? AppColors.accent : AppColors.textFaint,
-              ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Image.asset('assets/logo.png', height: 30),
+                if (!_isActive) ...[
+                  const SizedBox(height: 2),
+                  Text('预览',
+                      style: AppTypography.overline
+                          .copyWith(color: AppColors.textFaint)),
+                ],
+              ],
             ),
           ),
           IconButton(

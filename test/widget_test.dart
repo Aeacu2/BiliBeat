@@ -1,4 +1,4 @@
-import 'package:flutter/gestures.dart' show kLongPressTimeout;
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -383,8 +383,9 @@ void main() {
       ValueNotifier<Duration>? position,
       void Function(double)? onSeek,
       VoidCallback? onOpenEditor,
-      double Function()? anchorSeconds,
+      bool calibrating = false,
       void Function(double)? onCalibrate,
+      bool autoFollow = true,
     }) {
       return MaterialApp(
         home: Scaffold(
@@ -395,8 +396,9 @@ void main() {
               positionNotifier: position ?? ValueNotifier(Duration.zero),
               onSeek: onSeek,
               onOpenEditor: onOpenEditor,
-              anchorSeconds: anchorSeconds,
+              calibrating: calibrating,
               onCalibrate: onCalibrate,
+              autoFollow: autoFollow,
             ),
           ),
         ),
@@ -446,51 +448,83 @@ void main() {
       expect(find.text('回到当前'), findsNothing);
     });
 
-    testWidgets('long-press dragging the lyrics calibrates the timeline',
-        (tester) async {
-      double? calibrated;
-      final position = ValueNotifier(const Duration(seconds: 40));
+    testWidgets('armed, dragging the lyrics moves the timeline', (tester) async {
+      final applied = <double>[];
       await tester.pumpWidget(host(
         data: lines(),
-        position: position,
-        anchorSeconds: () => 40.0,
-        onCalibrate: (d) => calibrated = d,
+        calibrating: true,
+        onCalibrate: applied.add,
       ));
       await tester.pumpAndSettle();
 
-      final gesture =
-          await tester.startGesture(tester.getCenter(find.byType(ListView)));
-      await tester.pump(kLongPressTimeout + const Duration(milliseconds: 50));
-      // The hold takes over from the scroll: dragging now moves the timeline,
-      // not the list.
-      await gesture.moveBy(const Offset(0, 60));
-      await tester.pump();
-
-      expect(find.textContaining('延迟'), findsOneWidget,
-          reason: 'dragging the lyrics down means they were early');
-      await gesture.up();
+      // Dragging down brings earlier lines under the guide, which means the
+      // lyrics were running ahead and have to be delayed.
+      await tester.drag(find.byType(ListView), const Offset(0, 90));
       await tester.pumpAndSettle();
 
-      expect(calibrated, isNotNull);
-      expect(calibrated, greaterThan(0));
-      expect(find.textContaining('松手保存'), findsNothing);
+      expect(applied, hasLength(1));
+      expect(applied.single, greaterThan(0));
     });
 
-    testWidgets('a plain drag still scrolls rather than calibrating',
+    testWidgets('a drag is worth the same correction wherever it starts',
         (tester) async {
-      double? calibrated;
+      // The correction is a displacement, so it must not depend on how far
+      // into the song the user has scrolled — measuring against a playhead
+      // parked at 0:00 made it depend on exactly that.
+      final near = <double>[], far = <double>[];
       await tester.pumpWidget(host(
-        data: lines(),
-        anchorSeconds: () => 0.0,
-        onCalibrate: (d) => calibrated = d,
-      ));
+          data: lines(), autoFollow: false, onCalibrate: near.add));
+      await tester.pumpAndSettle();
+      await tester.drag(find.byType(ListView), const Offset(0, -600));
+      await tester.pumpAndSettle();
+
+      await tester.pumpWidget(host(
+          data: lines(),
+          autoFollow: false,
+          calibrating: true,
+          onCalibrate: far.add));
+      await tester.pumpAndSettle();
+      await tester.drag(find.byType(ListView), const Offset(0, 90));
+      await tester.pumpAndSettle();
+
+      await tester.pumpWidget(host(
+          data: lines(), calibrating: true, onCalibrate: near.add));
+      await tester.pumpAndSettle();
+      await tester.drag(find.byType(ListView), const Offset(0, 90));
+      await tester.pumpAndSettle();
+
+      expect(far.single, closeTo(near.single, 0.6));
+    });
+
+    testWidgets('unarmed, a drag scrolls and calibrates nothing',
+        (tester) async {
+      final applied = <double>[];
+      await tester.pumpWidget(host(data: lines(), onCalibrate: applied.add));
       await tester.pump();
 
       await tester.drag(find.byType(ListView), const Offset(0, -200));
       await tester.pumpAndSettle();
 
-      expect(calibrated, isNull);
+      expect(applied, isEmpty);
       expect(find.text('回到当前'), findsOneWidget);
+    });
+
+    testWidgets('a preview with a frozen clock never scrolls itself back',
+        (tester) async {
+      // Auto-follow yanking the list back to 0:00 five seconds after every
+      // scroll made the lyrics unreadable in the editor's preview.
+      await tester.pumpWidget(host(data: lines(), autoFollow: false));
+      await tester.pumpAndSettle();
+
+      await tester.drag(find.byType(ListView), const Offset(0, -300));
+      await tester.pumpAndSettle();
+      final scrolled = tester.getTopLeft(find.text('第 5 行歌词内容')).dy;
+
+      await tester.pump(const Duration(seconds: 8));
+      await tester.pumpAndSettle();
+
+      expect(tester.getTopLeft(find.text('第 5 行歌词内容')).dy, scrolled);
+      expect(find.text('回到当前'), findsNothing);
     });
   });
 
