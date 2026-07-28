@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../models/track.dart';
 import '../services/bilibili_sdk.dart';
 import '../services/database_service.dart';
+import '../services/recommendation_engine.dart';
 import '../widgets/glass_card.dart';
 import '../widgets/track_options_menu.dart';
 import '../theme/app_theme.dart';
@@ -41,6 +42,7 @@ class _SearchScreenState extends State<SearchScreen> {
 
   bool _wasFocused = false;
   bool _hadText = false;
+  bool _recommendationsStale = false;
 
   /// Monotonic token so a slow earlier search can never overwrite the results
   /// of a later one.
@@ -52,12 +54,13 @@ class _SearchScreenState extends State<SearchScreen> {
     _focusNode.addListener(_onFocusChange);
     _searchController.addListener(_onTextChange);
     _loadSearchHistory();
-    _loadRecommendations();
   }
 
   Future<void> _loadSearchHistory() async {
     final history = await DatabaseService.getSearchHistory();
-    if (mounted) setState(() => _searchHistory = history);
+    if (!mounted) return;
+    setState(() => _searchHistory = history);
+    _loadRecommendations();
   }
 
   @override
@@ -87,47 +90,30 @@ class _SearchScreenState extends State<SearchScreen> {
     }
   }
 
-  /// Seed queries for 为您推荐. There is no personalisation behind this — it is
-  /// a Bilibili keyword search ordered by `totalrank` (their popularity mix).
-  /// Rotating the seed at least stops the page being identical every launch.
-  static const List<String> _recommendSeeds = [
-    '动漫原声OST',
-    '纯音乐 钢琴',
-    '古风 原创',
-    'ACG 音乐',
-    '华语 翻唱',
-    '电影 配乐',
-  ];
-
-  /// Recommendations are for listening, so long-form uploads — full concerts,
-  /// hour-long compilations, radio rips — are filtered out. Explicit searches
-  /// are not filtered: if you search for a two-hour set, you want it.
-  static const int _maxRecommendedSeconds = 6 * 60;
-
-  static List<Track> _songLength(List<Track> tracks) => tracks
-      .where((t) => t.duration > 0 && t.duration <= _maxRecommendedSeconds)
-      .toList();
+  /// Recommendations are only meaningful once there is something to learn
+  /// from, and the first search is the earliest moment that is true — so the
+  /// section stays hidden until then. Clearing search history hides it again,
+  /// which is deliberate: it is one of the three signals feeding the profile.
+  bool get _canRecommend => _searchHistory.isNotEmpty;
 
   Future<void> _loadRecommendations() async {
-    try {
-      final seeds = [..._recommendSeeds]..shuffle();
-      final picked = <Track>[];
-      final seen = <String>{};
-
-      // Filtering can gut a page of results, so fall through to further seeds
-      // until there is enough to fill the screen (bounded at three requests).
-      for (final seed in seeds.take(3)) {
-        for (final track in _songLength(await BilibiliSdk.search(seed))) {
-          if (seen.add(track.id)) picked.add(track);
-        }
-        if (!mounted) return;
-        if (picked.length >= 12) break;
-      }
-
+    if (!_canRecommend) {
       if (mounted) {
         setState(() {
-          _recommendedTracks = picked;
+          _recommendedTracks = const [];
           _isLoadingRecommended = false;
+        });
+      }
+      return;
+    }
+    if (mounted) setState(() => _isLoadingRecommended = true);
+    try {
+      final tracks = await RecommendationEngine.recommend();
+      if (mounted) {
+        setState(() {
+          _recommendedTracks = tracks;
+          _isLoadingRecommended = false;
+          _recommendationsStale = false;
         });
       }
     } catch (_) {
@@ -135,6 +121,30 @@ class _SearchScreenState extends State<SearchScreen> {
         setState(() => _isLoadingRecommended = false);
       }
     }
+  }
+
+  /// Returning to the recommendation view after searching is the natural place
+  /// to fold that new signal in — refreshing on every keystroke or every
+  /// search would mean several extra requests per query.
+  void _showRecommendations() {
+    _searchController.clear();
+    setState(() {
+      _searchResults = const [];
+      _hasSearched = false;
+    });
+    if (_recommendationsStale) _loadRecommendations();
+  }
+
+  Future<void> _clearSearchHistory() async {
+    await DatabaseService.clearSearchHistory();
+    if (!mounted) return;
+    // Search history feeds the taste profile, so dropping it must drop its
+    // influence too — not just the chips.
+    setState(() {
+      _searchHistory = const [];
+      _recommendedTracks = const [];
+      _recommendationsStale = true;
+    });
   }
 
   Future<void> _performSearch(String query) async {
@@ -161,6 +171,9 @@ class _SearchScreenState extends State<SearchScreen> {
       setState(() {
         _searchResults = results;
         _isLoading = false;
+        // This search is new evidence about taste; fold it in next time the
+        // recommendation view is shown.
+        _recommendationsStale = true;
       });
     }
   }
@@ -169,7 +182,8 @@ class _SearchScreenState extends State<SearchScreen> {
   List<Track> get _visibleTracks {
     if (_isLoading) return const [];
     if (_hasSearched) return _searchResults;
-    return _isLoadingRecommended ? const [] : _recommendedTracks;
+    if (!_canRecommend || _isLoadingRecommended) return const [];
+    return _recommendedTracks;
   }
 
   @override
@@ -250,10 +264,7 @@ class _SearchScreenState extends State<SearchScreen> {
               ),
               if (_searchHistory.isNotEmpty)
                 GestureDetector(
-                  onTap: () async {
-                    await DatabaseService.clearSearchHistory();
-                    if (mounted) setState(() => _searchHistory = []);
-                  },
+                  onTap: _clearSearchHistory,
                   child: const Text('清空历史', style: TextStyle(color: AppColors.textFaint, fontSize: 12)),
                 ),
             ],
@@ -299,13 +310,7 @@ class _SearchScreenState extends State<SearchScreen> {
                 style: const TextStyle(color: AppColors.textSecondary, fontSize: 14, fontWeight: FontWeight.bold),
               ),
               TextButton(
-                onPressed: () {
-                  _searchController.clear();
-                  setState(() {
-                    _searchResults = [];
-                    _hasSearched = false;
-                  });
-                },
+                onPressed: _showRecommendations,
                 child: const Text('清空搜索', style: TextStyle(color: AppColors.textFaint, fontSize: 12)),
               ),
             ],
@@ -344,8 +349,14 @@ class _SearchScreenState extends State<SearchScreen> {
             ),
           ),
         ]
-        // Default Auto Recommendations View
-        else ...[
+        // Default view: recommendations, once there is a search to learn from.
+        else if (!_canRecommend) ...[
+          const EmptyState(
+            icon: Icons.search_rounded,
+            title: '先搜索一首歌吧',
+            subtitle: '搜过之后，这里会根据你的收藏与播放推荐',
+          ),
+        ] else ...[
           const Row(
             children: [
               Icon(Icons.auto_awesome, color: AppColors.accent, size: 20),
@@ -355,6 +366,11 @@ class _SearchScreenState extends State<SearchScreen> {
                 style: TextStyle(color: AppColors.textPrimary, fontSize: 18, fontWeight: FontWeight.bold),
               ),
             ],
+          ),
+          const SizedBox(height: 2),
+          const Text(
+            '根据你的收藏、播放与搜索',
+            style: TextStyle(color: AppColors.textFaint, fontSize: 12),
           ),
           const SizedBox(height: 12),
 
@@ -369,8 +385,8 @@ class _SearchScreenState extends State<SearchScreen> {
           else if (_recommendedTracks.isEmpty)
             const EmptyState(
               icon: Icons.wifi_off_rounded,
-              title: '推荐加载失败',
-              subtitle: '检查网络后重试',
+              title: '暂时没有推荐',
+              subtitle: '收藏几首歌之后会更准，也可以检查网络后重试',
             ),
         ],
       ];

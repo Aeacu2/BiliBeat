@@ -3,6 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 
 import 'package:bilibeats/models/lyric_line.dart';
 import 'package:bilibeats/services/lyrics_engine.dart';
+import 'package:bilibeats/services/recommendation_engine.dart';
 import 'package:bilibeats/models/track.dart';
 import 'package:bilibeats/widgets/marquee_text.dart';
 import 'package:bilibeats/widgets/mini_player.dart';
@@ -33,6 +34,103 @@ Widget _host(String text, {double width = 160, bool scrolling = true}) {
 }
 
 void main() {
+  group('TasteProfile', () {
+    Track t(String id, String title, String uploader, {int duration = 200}) =>
+        Track(
+          id: id,
+          bvid: id,
+          cid: 1,
+          title: title,
+          uploader: uploader,
+          coverUrl: '',
+          duration: duration,
+        );
+
+    test('is empty with nothing to learn from', () {
+      expect(
+        TasteProfile.build(favourites: [], history: [], searches: []).isEmpty,
+        isTrue,
+      );
+    });
+
+    test('ranks a favourited UP主 above an unrelated track', () {
+      final profile = TasteProfile.build(
+        favourites: [t('a', '大鱼', '周深')],
+        history: [],
+        searches: [],
+      );
+      expect(
+        profile.score(t('b', '不同的歌', '周深')),
+        greaterThan(profile.score(t('c', '不同的歌', '别人'))),
+      );
+    });
+
+    test('weights a favourite above a mere play', () {
+      final fav = TasteProfile.build(
+        favourites: [t('a', '大鱼', '周深')], history: [], searches: []);
+      final played = TasteProfile.build(
+        favourites: [], history: [t('a', '大鱼', '周深')], searches: []);
+      expect(fav.score(t('b', '其他', '周深')),
+          greaterThan(played.score(t('b', '其他', '周深'))));
+    });
+
+    test('matches Chinese titles without a segmenter', () {
+      final profile = TasteProfile.build(
+        favourites: [t('a', '大鱼海棠', 'UP1')], history: [], searches: []);
+      // Shares the 海棠 bigram despite a different uploader.
+      expect(profile.score(t('b', '海棠依旧', 'UP2')), greaterThan(0));
+      expect(profile.score(t('c', '完全无关', 'UP3')), 0);
+    });
+
+    test('search history alone can drive the profile', () {
+      final profile = TasteProfile.build(
+        favourites: [], history: [], searches: ['周深 大鱼']);
+      expect(profile.isEmpty, isFalse);
+      expect(profile.score(t('b', '大鱼', 'someone')), greaterThan(0));
+    });
+
+    test('dropping search history drops its influence', () {
+      final withHistory = TasteProfile.build(
+        favourites: [], history: [], searches: ['古风']);
+      final cleared =
+          TasteProfile.build(favourites: [], history: [], searches: []);
+      expect(withHistory.score(t('x', '古风翻唱', 'UP')), greaterThan(0));
+      expect(cleared.isEmpty, isTrue);
+    });
+
+    test('knows what the user already has', () {
+      final profile = TasteProfile.build(
+        favourites: [t('owned', '大鱼', '周深')], history: [], searches: []);
+      expect(profile.knownIds, contains('owned'));
+    });
+
+    test('seeds queries from the strongest signals first', () {
+      final profile = TasteProfile.build(
+        favourites: [t('a', '大鱼', '周深'), t('b', '化身孤岛的鲸', '周深')],
+        history: [],
+        searches: [],
+      );
+      expect(profile.seedQueries().first, '周深');
+    });
+  });
+
+  group('RecommendationEngine.isSongLength', () {
+    Track withDuration(int d) => Track(
+        id: 'x', bvid: 'x', cid: 1, title: 't', uploader: 'u',
+        coverUrl: '', duration: d);
+
+    test('keeps song-length uploads and drops long-form ones', () {
+      expect(RecommendationEngine.isSongLength(withDuration(200)), isTrue);
+      expect(RecommendationEngine.isSongLength(withDuration(360)), isTrue);
+      expect(RecommendationEngine.isSongLength(withDuration(361)), isFalse);
+      expect(RecommendationEngine.isSongLength(withDuration(7200)), isFalse);
+    });
+
+    test('drops entries with unknown duration', () {
+      expect(RecommendationEngine.isSongLength(withDuration(0)), isFalse);
+    });
+  });
+
   group('LyricsEngine.parseLrc', () {
     test('accepts [mm:ss] with no fractional part', () {
       final lines = LyricsEngine.parseLrc('[00:12]第一句\n[01:05]第二句');

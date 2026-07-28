@@ -44,11 +44,17 @@
   - `android/app/build.gradle` 从 `android/key.properties` 读取签名信息；文件缺失时回退到 debug key 并打印警告，保证 `flutter run --release` 仍可用。
   - `tool/make_keystore.sh` 一次性生成密钥库（keytool 交互式输入密码，不进入命令行历史）。
   - **`*.jks` / `key.properties` 已加入 .gitignore，绝不入库。**
-  - **⚠️ 换签名 = 老用户无法覆盖安装**：Android 以签名标识应用身份。v1.0.0–v2.2.0 均为 debug key 签名，切换后已安装用户必须卸载重装（丢失已下载音频与歌单）。因此切换时机需要明确决策，且密钥库一旦丢失不可恢复。
-- [x] **推荐内容规则 (Recommendation Rules)**
-  - 推荐并非个性化算法，而是 B 站关键词搜索（`totalrank` 排序）。此前固定为单一关键词「动漫原声OST」，每次启动完全相同；现在在 6 组种子词中随机取用并去重。
-  - **推荐仅收录 ≤ 6 分钟的视频**，过滤掉整场演唱会 / 合集 / 电台录音等长视频；**搜索不做此过滤**——用户主动搜索长视频时就是想要它。
-  - 过滤可能导致单次结果过少，因此最多再取 2 组种子词补足到 12 条。
+  - **⚠️ 换签名 = 老用户无法覆盖安装**：Android 以签名标识应用身份。v1.0.0–v2.2.0 均为 debug key 签名，**自 v2.2.1 起改用正式密钥**，从旧版本升级必须先卸载。当时应用尚无用户，故选择尽早切换。
+  - **⚠️ `file()` 陷阱**：在 `app/build.gradle` 中 `file()` 相对 `android/app/` 解析，而 `key.properties` 与密钥库位于 `android/`，必须用 `rootProject.file()`，否则报 `Keystore file ... not found`。
+  - 验证方式：`apksigner verify --print-certs`，确认 `Signer #1 certificate DN` 不再是 `CN=Android Debug`。
+- [x] **基于收藏 / 播放 / 搜索的个性化推荐 (Local Taste-Based Recommendations)**
+  - `RecommendationEngine` 完全基于**本地数据**构建口味画像，不上传任何信息：收藏（权重 3）、最近 30 条播放（权重 1）、搜索历史（权重 2）。
+  - **中文分词问题**：不引入分词器，改用 **CJK 二元组**（「大鱼海棠」→ 大鱼/鱼海/海棠）＋ 拉丁词，足以支撑「相似推荐」。标题先经 `LyricsEngine.cleanTitle` 去噪。
+  - 检索：取权重最高的 UP主 与词条作为种子词搜索（最多 4 次请求）；候选按画像打分排序，**已在库中的曲目不再推荐**。
+  - **首次搜索前不展示推荐**（`_canRecommend => 搜索历史非空`），改为引导性空状态。
+  - **清空搜索历史会同步清除其对推荐的影响**：画像每次都从零重建，不存在缓存的历史权重；清空后推荐区同时隐藏。
+  - 推荐仅收录 ≤ 6 分钟的视频（过滤整场演唱会 / 合集 / 电台录音）；**搜索不做此过滤**——主动搜索长视频时就是想要它。
+  - 搜索后不立即重算推荐（会额外增加数次请求），而是标记为 stale，回到推荐视图时再刷新。
 - [x] **搜索 / 推荐列表标题滚动 (Marquee Titles in Result Rows)**
   - B 站标题普遍超长，列表行改用 `MarqueeText`。
   - 成本控制：仅在**确实溢出**时才启动动画；每行包 `RepaintBoundary`，滚动不会波及整行/整列表重绘；按行序错开起始延迟（1400ms + index%5 × 450ms），避免整屏同时启动。
