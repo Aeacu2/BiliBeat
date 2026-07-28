@@ -42,8 +42,11 @@ class MiniPlayer extends StatelessWidget {
     required this.onTap,
   });
 
-  /// Height of the controls themselves, above the home-indicator inset.
-  static const double contentHeight = 68.0;
+  /// Height of the controls themselves, above the home-indicator inset: the
+  /// row, then the progress lane under it.
+  static const double contentHeight = _rowHeight + _progressLane;
+  static const double _rowHeight = 58.0;
+  static const double _progressLane = 12.0;
 
   /// The card is seated on the bottom edge of the screen, so only its top
   /// corners are rounded: there is nothing below or beside it to round against.
@@ -102,9 +105,15 @@ class MiniPlayer extends StatelessWidget {
   }
 
   Widget _emptyState() {
-    return const Padding(
-        padding: EdgeInsets.symmetric(horizontal: 16),
-        child: Row(
+    // Same row height as the active state, so the artwork slot does not move
+    // when playback starts — only the progress lane below it stays empty.
+    return const Column(
+      children: [
+        SizedBox(
+          height: _rowHeight,
+          child: Padding(
+            padding: EdgeInsets.symmetric(horizontal: 16),
+            child: Row(
           children: [
             _EmptyArt(),
             SizedBox(width: 12),
@@ -115,9 +124,12 @@ class MiniPlayer extends StatelessWidget {
                       fontSize: 13.5,
                       fontWeight: FontWeight.w500,
                       letterSpacing: -0.1)),
+                ),
+              ],
             ),
-          ],
+          ),
         ),
+      ],
     );
   }
 
@@ -141,9 +153,11 @@ class MiniPlayer extends StatelessWidget {
           onPrevious!();
         }
       },
-      child: Stack(
-          children: [
-            Padding(
+      child: Column(
+        children: [
+          SizedBox(
+            height: _rowHeight,
+            child: Padding(
               padding: const EdgeInsets.fromLTRB(16, 0, 8, 0),
               child: Row(
                 children: [
@@ -188,8 +202,8 @@ class MiniPlayer extends StatelessWidget {
                   // Same shape and place as the page's primary control, so the
                   // eye can track it across the morph — but quiet. A filled
                   // pink disc is right at 68pt in the middle of the player;
-                  // shrunk onto a 68pt bar it was the loudest thing on the
-                  // screen and fought the artwork it sits next to.
+                  // shrunk onto a bar it was the loudest thing on the screen
+                  // and fought the artwork it sits next to.
                   _playButton(),
                   _iconButton(
                     Icons.skip_next_rounded,
@@ -201,17 +215,10 @@ class MiniPlayer extends StatelessWidget {
                 ],
               ),
             ),
-            // Seated on the bottom of the *controls*, not of the card: below
-            // this is the home-indicator inset, and a hairline hiding under
-            // the indicator is a hairline nobody can see.
-            Positioned(
-              left: 0,
-              right: 0,
-              bottom: 0,
-              child: RepaintBoundary(child: _progressLine()),
-            ),
-          ],
-        ),
+          ),
+          Expanded(child: RepaintBoundary(child: _progressBar())),
+        ],
+      ),
     );
   }
 
@@ -272,9 +279,13 @@ class MiniPlayer extends StatelessWidget {
     );
   }
 
-  /// The page's seek bar, reduced to the hairline it becomes when folded: it
-  /// sits on the card's bottom edge and is clipped to its radius.
-  Widget _progressLine() {
+  /// The page's seek bar, folded down.
+  ///
+  /// Inset and rounded like the one on the player page rather than a hairline
+  /// welded to the card's bottom edge: a full-width line floating above the
+  /// home indicator reads as a stray rule under the card, not as progress —
+  /// and the card is supposed to end at the screen edge with nothing after it.
+  Widget _progressBar() {
     return AnimatedBuilder(
       animation: Listenable.merge([positionNotifier, durationNotifier]),
       builder: (context, _) {
@@ -282,19 +293,28 @@ class MiniPlayer extends StatelessWidget {
         final progress = dur > 0
             ? (positionNotifier.value.inMilliseconds / dur).clamp(0.0, 1.0)
             : 0.0;
-        return SizedBox(
-          height: 2.5,
-          child: Stack(
-            children: [
-              const Positioned.fill(
-                child: ColoredBox(color: AppColors.hairline),
+        return Padding(
+          padding: const EdgeInsets.fromLTRB(16, 0, 16, 6),
+          child: Align(
+            alignment: Alignment.topCenter,
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(2),
+              child: SizedBox(
+                height: 3,
+                child: Stack(
+                  children: [
+                    const Positioned.fill(
+                      child: ColoredBox(color: AppColors.hairlineStrong),
+                    ),
+                    FractionallySizedBox(
+                      widthFactor: progress,
+                      alignment: Alignment.centerLeft,
+                      child: const ColoredBox(color: AppColors.accent),
+                    ),
+                  ],
+                ),
               ),
-              FractionallySizedBox(
-                widthFactor: progress,
-                alignment: Alignment.centerLeft,
-                child: const ColoredBox(color: AppColors.accent),
-              ),
-            ],
+            ),
           ),
         );
       },

@@ -261,7 +261,7 @@ class _LyricEditorDialogState extends State<LyricEditorDialog> with SingleTicker
     final off = _previewOffset;
     final label = off == 0
         ? '时间轴未调整'
-        : '${off > 0 ? "延迟" : "提前"} ${off.abs().toStringAsFixed(1)} 秒';
+        : '${off > 0 ? "歌词延迟" : "歌词提前"} ${off.abs().toStringAsFixed(1)} 秒';
     return Container(
       padding: const EdgeInsets.fromLTRB(12, 8, 8, 8),
       decoration: BoxDecoration(
@@ -288,8 +288,11 @@ class _LyricEditorDialogState extends State<LyricEditorDialog> with SingleTicker
             ),
           ),
           const Spacer(),
-          if (off != 0 && !_calibrating) ...[
-            _offsetBtn('归零', () => setState(() => _previewOffset = 0.0),
+          // Reset sits next to 完成 rather than replacing it: after a few
+          // drags the quickest way out of a mess is to start over, and that
+          // is exactly when calibration is still armed.
+          if (off != 0) ...[
+            _offsetBtn('重置', () => setState(() => _previewOffset = 0.0),
                 muted: true),
             const SizedBox(width: 6),
           ],

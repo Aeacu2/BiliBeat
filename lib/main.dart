@@ -37,9 +37,18 @@ void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   PaintingBinding.instance.imageCache.maximumSizeBytes = 50 * 1024 * 1024;
   PaintingBinding.instance.imageCache.maximumSize = 60;
+  // Edge to edge, with a transparent navigation bar and — the part that
+  // matters — no divider. Android draws a hairline above the gesture area by
+  // default, which is the line that kept showing under the docked player no
+  // matter how flush the card itself was.
+  SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
   SystemChrome.setSystemUIOverlayStyle(const SystemUiOverlayStyle(
     statusBarColor: Colors.transparent,
     statusBarIconBrightness: Brightness.light,
+    systemNavigationBarColor: Colors.transparent,
+    systemNavigationBarDividerColor: Colors.transparent,
+    systemNavigationBarIconBrightness: Brightness.light,
+    systemNavigationBarContrastEnforced: false,
   ));
   _audioHandlerInstance = await AudioService.init(
     builder: BiliBeatAudioHandler.new,

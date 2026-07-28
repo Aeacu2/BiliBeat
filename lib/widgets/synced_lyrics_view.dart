@@ -72,9 +72,6 @@ class _SyncedLyricsViewState extends State<SyncedLyricsView> {
   /// correction.
   double _dragDy = 0.0;
 
-  /// Accumulated correction from the drags in this calibration session, purely
-  /// so the readout can show a total rather than the last drag.
-  double _sessionDelta = 0.0;
 
   double _viewportHeight = 400;
   double _topPadding = 160;
@@ -95,10 +92,7 @@ class _SyncedLyricsViewState extends State<SyncedLyricsView> {
       oldWidget.positionNotifier.removeListener(_onPosition);
       widget.positionNotifier.addListener(_onPosition);
     }
-    if (oldWidget.calibrating != widget.calibrating) {
-      _dragDy = 0.0;
-      if (!widget.calibrating) _sessionDelta = 0.0;
-    }
+    if (oldWidget.calibrating != widget.calibrating) _dragDy = 0.0;
     if (oldWidget.lines != widget.lines || oldWidget.offset != widget.offset) {
       _heightCache.clear();
       _lastUpdate = DateTime.fromMillisecondsSinceEpoch(0);
@@ -213,13 +207,17 @@ class _SyncedLyricsViewState extends State<SyncedLyricsView> {
 
   /// Inverse of the list layout: which lyric time is drawn at content offset
   /// [y]. Interpolated inside a line so the drag is smooth rather than
-  /// snapping between lines. Uses inactive heights throughout, so the map does
-  /// not shift under the finger when the highlight moves.
+  /// snapping between lines.
+  ///
+  /// Measures the active line at its *active* height. It is drawn larger than
+  /// the rest, so assuming a uniform height put everything below it out by that
+  /// difference — and since the active line moves with every correction, the
+  /// error changed after each drag and accumulated across a session.
   double _timeAtContentY(double y) {
     final lines = widget.lines;
     double top = _topPadding;
     for (int i = 0; i < lines.length; i++) {
-      final h = _itemHeight(lines[i], false);
+      final h = _itemHeight(lines[i], i == _activeIndex);
       if (y < top + h) {
         final start = lines[i].time;
         final end = i + 1 < lines.length ? lines[i + 1].time : start + 4.0;
@@ -247,7 +245,10 @@ class _SyncedLyricsViewState extends State<SyncedLyricsView> {
     return _timeAtContentY(anchor) - _timeAtContentY(anchor - dy);
   }
 
-  double get _pendingDelta => _sessionDelta + _deltaForDrag(_dragDy);
+  /// The total correction as it stands, including the drag in progress — the
+  /// same number the editor shows, rather than a per-session tally that reset
+  /// every time calibration was re-armed.
+  double get _pendingDelta => widget.offset + _deltaForDrag(_dragDy);
 
   void _onCalibrationDrag(DragUpdateDetails details) {
     setState(() => _dragDy += details.delta.dy);
@@ -269,10 +270,7 @@ class _SyncedLyricsViewState extends State<SyncedLyricsView> {
       _scrollController.jumpTo((_scrollController.offset - dy)
           .clamp(0.0, _scrollController.position.maxScrollExtent));
     }
-    setState(() {
-      _dragDy = 0.0;
-      _sessionDelta += delta;
-    });
+    setState(() => _dragDy = 0.0);
     if (delta.abs() >= 0.01) {
       Haptics.selection();
       widget.onCalibrate!(double.parse(delta.toStringAsFixed(2)));
@@ -471,9 +469,9 @@ class _SyncedLyricsViewState extends State<SyncedLyricsView> {
 
   Widget _calibrationHud() {
     final delta = _pendingDelta;
-    final label = delta >= 0 ? '延迟' : '提前';
+    // Say what moved: the *lyrics* are early or late relative to the audio.
+    final label = delta >= 0 ? '歌词延迟' : '歌词提前';
     final seconds = delta.abs().toStringAsFixed(1);
-    // 0.0 with no sign reads as "nothing has happened yet", which is true.
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
       decoration: BoxDecoration(

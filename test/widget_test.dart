@@ -386,6 +386,7 @@ void main() {
       bool calibrating = false,
       void Function(double)? onCalibrate,
       bool autoFollow = true,
+      double offset = 0.0,
     }) {
       return MaterialApp(
         home: Scaffold(
@@ -399,6 +400,7 @@ void main() {
               calibrating: calibrating,
               onCalibrate: onCalibrate,
               autoFollow: autoFollow,
+              offset: offset,
             ),
           ),
         ),
@@ -494,6 +496,45 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(far.single, closeTo(near.single, 0.6));
+    });
+
+    testWidgets('the readout names what moved, and shows the running total',
+        (tester) async {
+      // The total, not a per-session tally: re-arming calibration must not
+      // reset the number the user is reading.
+      await tester.pumpWidget(host(
+          data: lines(), calibrating: true, onCalibrate: (_) {}, offset: 1.5));
+      await tester.pumpAndSettle();
+      expect(find.text('歌词延迟 1.5 秒'), findsOneWidget);
+
+      await tester.pumpWidget(host(
+          data: lines(), calibrating: true, onCalibrate: (_) {}, offset: -2.0));
+      await tester.pumpAndSettle();
+      expect(find.text('歌词提前 2.0 秒'), findsOneWidget);
+    });
+
+    testWidgets('a drag is worth the same wherever the highlight sits',
+        (tester) async {
+      // The active line is drawn taller than the rest. Measuring it at the
+      // ordinary height put every line below it out by that difference, and
+      // since the highlight moves with each correction, the error changed from
+      // drag to drag and piled up.
+      final early = <double>[], late = <double>[];
+      for (final (pos, sink) in [
+        (const Duration(seconds: 8), early),
+        (const Duration(seconds: 80), late),
+      ]) {
+        await tester.pumpWidget(host(
+          data: lines(),
+          position: ValueNotifier(pos),
+          calibrating: true,
+          onCalibrate: sink.add,
+        ));
+        await tester.pumpAndSettle();
+        await tester.drag(find.byType(ListView), const Offset(0, 80));
+        await tester.pumpAndSettle();
+      }
+      expect(late.single, closeTo(early.single, 0.35));
     });
 
     testWidgets('unarmed, a drag scrolls and calibrates nothing',
