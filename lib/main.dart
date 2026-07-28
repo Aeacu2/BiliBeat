@@ -37,7 +37,7 @@ void main() async {
     builder: () => BiliBeatAudioHandler(),
     config: const AudioServiceConfig(
       androidNotificationChannelId: 'com.bilibeat.channel.audio',
-      androidNotificationChannelName: 'bilibeats',
+      androidNotificationChannelName: 'BiliBeat',
       androidNotificationOngoing: true,
       androidStopForegroundOnPause: true,
       androidNotificationIcon: 'mipmap/ic_launcher',
@@ -52,7 +52,7 @@ class BiliBeatApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'bilibeats',
+      title: 'BiliBeat',
       debugShowCheckedModeBanner: false,
       theme: AppTheme.darkTheme,
       home: const MainLayout(),

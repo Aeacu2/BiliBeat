@@ -85,7 +85,7 @@ class BiliBeatAudioHandler extends BaseAudioHandler with SeekHandler {
       _currentTrackController.add(updatedTrack);
       mediaItem.add(MediaItem(
         id: updatedTrack.id,
-        album: 'bilibeats',
+        album: 'BiliBeat',
         title: updatedTrack.title,
         artist: updatedTrack.uploader,
         artUri: Uri.tryParse(updatedTrack.coverUrl),

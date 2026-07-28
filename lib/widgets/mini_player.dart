@@ -69,7 +69,7 @@ class MiniPlayer extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  Text('bilibeat',
+                  Text('BiliBeat',
                       style: TextStyle(
                           color: AppColors.textSecondary,
                           fontSize: 13,
