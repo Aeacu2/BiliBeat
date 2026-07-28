@@ -90,7 +90,7 @@ class LyricsEngine {
     return input.replaceAll(RegExp(r'[^\u4e00-\u9fa5a-zA-Z0-9]'), '').toLowerCase();
   }
 
-  static bool _isTitleMatching(String candidateName, String targetTitle) {
+  static bool isTitleMatching(String candidateName, String targetTitle) {
     final cand = _normalize(candidateName);
     final target = _normalize(targetTitle);
     if (cand.isEmpty || target.isEmpty) return false;
@@ -140,7 +140,7 @@ class LyricsEngine {
           final items = jsonDecode(body) as List? ?? [];
           for (final item in items) {
             final trackName = (item['trackName'] ?? '') as String;
-            if (_isTitleMatching(trackName, title)) {
+            if (isTitleMatching(trackName, title)) {
               final rawLrc = (item['syncedLyrics'] ?? item['plainLyrics'] ?? '') as String;
               final lines = parseLrc(rawLrc);
 
@@ -180,7 +180,7 @@ class LyricsEngine {
           final songs = json['result']?['songs'] as List? ?? [];
           for (final song in songs) {
             final songName = (song['name'] ?? '') as String;
-            if (_isTitleMatching(songName, title)) {
+            if (isTitleMatching(songName, title)) {
               final songId = song['id'];
               final lyricUrl = 'https://music.163.com/api/song/lyric?id=$songId&lv=-1&tv=-1';
 

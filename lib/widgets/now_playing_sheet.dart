@@ -186,12 +186,13 @@ class _NowPlayingSheetState extends State<NowPlayingSheet> {
 
   @override
   Widget build(BuildContext context) {
-    final screenHeight = MediaQuery.of(context).size.height;
-
-    return SizedBox(
-      height: screenHeight,
+    return Container(
+      decoration: const BoxDecoration(
+        color: Colors.transparent,
+      ),
       child: Scaffold(
         backgroundColor: Colors.transparent,
+        resizeToAvoidBottomInset: false,
         body: AmbientBackground(
           coverUrl: _displayTrack.coverUrl,
           child: SafeArea(
@@ -199,21 +200,23 @@ class _NowPlayingSheetState extends State<NowPlayingSheet> {
               children: [
                 _topBar(),
                 Expanded(
-                  child: _showLyrics && _isActive
-                      ? ValueListenableBuilder<List<LyricLine>>(
-                          valueListenable: widget.lyricsNotifier,
-                          builder: (context, lines, _) {
-                            return SyncedLyricsView(
-                              lines: lines,
-                              positionNotifier: widget.positionNotifier,
-                              onSeek: (sec) => widget.handler.seek(
-                                Duration(milliseconds: (sec * 1000).toInt()),
-                              ),
-                              onOpenEditor: widget.onOpenLyricEditor,
-                            );
-                          },
-                        )
-                      : _albumArt(),
+                  child: Center(
+                    child: _showLyrics && _isActive
+                        ? ValueListenableBuilder<List<LyricLine>>(
+                            valueListenable: widget.lyricsNotifier,
+                            builder: (context, lines, _) {
+                              return SyncedLyricsView(
+                                lines: lines,
+                                positionNotifier: widget.positionNotifier,
+                                onSeek: (sec) => widget.handler.seek(
+                                  Duration(milliseconds: (sec * 1000).toInt()),
+                                ),
+                                onOpenEditor: widget.onOpenLyricEditor,
+                              );
+                            },
+                          )
+                        : _albumArt(),
+                  ),
                 ),
                 _bottomPanel(),
               ],
@@ -267,7 +270,8 @@ class _NowPlayingSheetState extends State<NowPlayingSheet> {
   Widget _albumArt() {
     return LayoutBuilder(
       builder: (context, constraints) {
-        final size = (constraints.maxHeight * 0.78).clamp(180.0, 340.0);
+        final maxHeight = constraints.maxHeight;
+        final size = maxHeight > 0 ? (maxHeight * 0.75).clamp(150.0, 320.0) : 240.0;
         return Center(
           child: AnimatedScale(
             scale: (_isActive && _isPlaying) ? 1.0 : 0.92,

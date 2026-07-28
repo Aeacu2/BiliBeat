@@ -117,11 +117,21 @@ class _MainLayoutState extends State<MainLayout> {
           });
         }
 
-        // Fetch lyrics
+        // Fetch lyrics with stale cache validation
+        final cleanSongTitle = LyricsEngine.cleanTitle(track.title)['songTitle']!;
         final cached = await DatabaseService.getCachedLyrics(track.id);
         if (_currentTrack?.id != track.id) return;
-        if (cached != null && cached.lines.isNotEmpty) {
-          _lyricsNotifier.value = cached.lines;
+
+        bool isCacheValid = false;
+        if (cached != null && cached.lines.isNotEmpty && cached.source != 'none') {
+          final cachedTitle = cached.songTitle ?? '';
+          if (cachedTitle.isNotEmpty && LyricsEngine.isTitleMatching(cachedTitle, cleanSongTitle)) {
+            isCacheValid = true;
+          }
+        }
+
+        if (isCacheValid) {
+          _lyricsNotifier.value = cached!.lines;
         } else {
           final freshLyrics = await LyricsEngine.autoFetchLyrics(track.title);
           if (_currentTrack?.id != track.id) return;
@@ -204,15 +214,20 @@ class _MainLayoutState extends State<MainLayout> {
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
+      useSafeArea: false,
+      enableDrag: true,
       backgroundColor: Colors.transparent,
       builder: (context) {
-        return NowPlayingSheet(
-          handler: _audioHandler,
-          focusedTrack: focused,
-          positionNotifier: _positionNotifier,
-          durationNotifier: _durationNotifier,
-          lyricsNotifier: _lyricsNotifier,
-          onOpenLyricEditor: _openLyricEditor,
+        return FractionallySizedBox(
+          heightFactor: 1.0,
+          child: NowPlayingSheet(
+            handler: _audioHandler,
+            focusedTrack: focused,
+            positionNotifier: _positionNotifier,
+            durationNotifier: _durationNotifier,
+            lyricsNotifier: _lyricsNotifier,
+            onOpenLyricEditor: _openLyricEditor,
+          ),
         );
       },
     );
