@@ -348,12 +348,12 @@ class _MainLayoutState extends State<MainLayout> {
         WidgetsBinding.instance.addPostFrameCallback((_) => _updateIndicator());
       },
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 7),
         child: Text(
           label,
           style: TextStyle(
             color: active ? AppColors.textPrimary : AppColors.textMuted,
-            fontSize: 18,
+            fontSize: 23,
             fontWeight: FontWeight.w700,
             letterSpacing: -0.3,
           ),
@@ -401,32 +401,45 @@ class _MainLayoutState extends State<MainLayout> {
                   bottom: false,
                   child: Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
-                    child: Stack(
-                      key: _tabRowKey,
+                    child: Row(
                       children: [
-                        AnimatedPositioned(
-                          duration: const Duration(milliseconds: 260),
-                          curve: Curves.easeOutCubic,
-                          left: _indicatorLeft,
-                          width: _indicatorWidth,
-                          top: 0,
-                          bottom: 0,
-                          child: Container(
-                            decoration: BoxDecoration(
-                              color: AppColors.accent14,
-                              borderRadius:
-                                  BorderRadius.circular(AppRadius.pill),
-                              border: Border.all(
-                                  color: AppColors.accent30),
-                            ),
+                        Expanded(
+                          child: Stack(
+                            key: _tabRowKey,
+                            children: [
+                              AnimatedPositioned(
+                                duration: const Duration(milliseconds: 260),
+                                curve: Curves.easeOutCubic,
+                                left: _indicatorLeft,
+                                width: _indicatorWidth,
+                                top: 0,
+                                bottom: 0,
+                                child: Container(
+                                  decoration: BoxDecoration(
+                                    color: AppColors.accent14,
+                                    borderRadius:
+                                        BorderRadius.circular(AppRadius.pill),
+                                    border:
+                                        Border.all(color: AppColors.accent30),
+                                  ),
+                                ),
+                              ),
+                              Row(
+                                children: [
+                                  _tabItem(0, '聆听'),
+                                  const SizedBox(width: 8),
+                                  _tabItem(1, '搜索'),
+                                ],
+                              ),
+                            ],
                           ),
                         ),
-                        Row(
-                          children: [
-                            _tabItem(0, '聆听'),
-                            const SizedBox(width: 12),
-                            _tabItem(1, '搜索'),
-                          ],
+                        // The right-hand end of this row was dead space. The
+                        // mark closes it off and gives the header a shape,
+                        // which is what a header is for.
+                        Padding(
+                          padding: const EdgeInsets.only(left: 12),
+                          child: Image.asset('assets/logo.png', height: 38),
                         ),
                       ],
                     ),

@@ -213,6 +213,87 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
+  /// One playlist as a full-width bar. Still a [GlassCard]: a playlist *is* an
+  /// object you pick, unlike the songs inside it.
+  Widget _playlistBar(Playlist pl) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: GestureDetector(
+        onTap: () => _openPlaylist(pl),
+        onLongPress: () => _confirmDeletePlaylist(pl),
+        child: GlassCard(
+          borderRadius: AppRadius.md,
+          padding: const EdgeInsets.all(10),
+          child: Row(
+            children: [
+              Container(
+                width: 44,
+                height: 44,
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(12),
+                  gradient: const LinearGradient(
+                    colors: [Color(0xFF3A3A40), Color(0xFF232327)],
+                  ),
+                ),
+                child: const Icon(Icons.queue_music_rounded,
+                    color: AppColors.textPrimary, size: 24),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      pl.name,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                          color: AppColors.textPrimary,
+                          fontSize: 15,
+                          fontWeight: FontWeight.w600),
+                    ),
+                    const SizedBox(height: 2),
+                    Text('${pl.tracks.length} 首',
+                        style: const TextStyle(
+                            color: AppColors.textMuted, fontSize: 12.5)),
+                  ],
+                ),
+              ),
+              const Icon(Icons.chevron_right_rounded,
+                  color: AppColors.textFaint, size: 22),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _newPlaylistBar() {
+    return GestureDetector(
+      onTap: _openCreatePlaylistDialog,
+      child: Container(
+        height: 52,
+        alignment: Alignment.center,
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(AppRadius.md),
+          border: Border.all(color: AppColors.hairlineStrong),
+        ),
+        child: const Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.add_rounded, color: AppColors.accent, size: 20),
+            SizedBox(width: 8),
+            Text('新建歌单',
+                style: TextStyle(
+                    color: AppColors.textSecondary,
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600)),
+          ],
+        ),
+      ),
+    );
+  }
+
   Playlist? get _favorites {
     for (final pl in _playlists) {
       if (pl.id == 'favorites') return pl;
@@ -330,87 +411,12 @@ class _HomeScreenState extends State<HomeScreen> {
 
         const SizedBox(height: 12),
 
-        // Playlists Horizontal List
-        SizedBox(
-          height: 140,
-          child: ListView.builder(
-            scrollDirection: Axis.horizontal,
-            itemCount: otherPlaylists.length + 1,
-            itemBuilder: (context, index) {
-              if (index == otherPlaylists.length) {
-                // "New Playlist" button card
-                return GestureDetector(
-                  onTap: _openCreatePlaylistDialog,
-                  child: Container(
-                    width: 140,
-                    margin: const EdgeInsets.only(right: 14),
-                    child: const GlassCard(
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Icon(Icons.add, color: AppColors.accent, size: 36),
-                          SizedBox(height: 8),
-                          Text('新建歌单', style: TextStyle(color: AppColors.textSecondary, fontSize: 13, fontWeight: FontWeight.w600)),
-                        ],
-                      ),
-                    ),
-                  ),
-                );
-              }
-
-              final pl = otherPlaylists[index];
-
-              return GestureDetector(
-                onTap: () => _openPlaylist(pl),
-                onLongPress: () => _confirmDeletePlaylist(pl),
-                child: Container(
-                  width: 140,
-                  margin: const EdgeInsets.only(right: 14),
-                  child: GlassCard(
-                    padding: const EdgeInsets.all(14),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Container(
-                          width: 44,
-                          height: 44,
-                          decoration: BoxDecoration(
-                            borderRadius: BorderRadius.circular(12),
-                            gradient: const LinearGradient(
-                              colors: [Color(0xFF3A3A40), Color(0xFF232327)],
-                            ),
-                          ),
-                          child: const Icon(
-                            Icons.queue_music_rounded,
-                            color: AppColors.textPrimary,
-                            size: 24,
-                          ),
-                        ),
-                        Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              pl.name,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(color: AppColors.textPrimary, fontSize: 14, fontWeight: FontWeight.bold),
-                            ),
-                            const SizedBox(height: 2),
-                            Text(
-                              '${pl.tracks.length} 首',
-                              style: const TextStyle(color: AppColors.textMuted, fontSize: 12),
-                            ),
-                          ],
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              );
-            },
-          ),
-        ),
+        // Playlists: a plain vertical stack of bars, laid out by the page's
+        // own ListView. A horizontal rail hid every playlist past the second
+        // one behind a sideways scroll nobody thinks to try, on a page that
+        // already scrolls downwards.
+        ...otherPlaylists.map(_playlistBar),
+        _newPlaylistBar(),
 
         const SizedBox(height: 28),
 
