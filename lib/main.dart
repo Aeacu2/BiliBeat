@@ -95,7 +95,11 @@ class _MainLayoutState extends State<MainLayout> {
   final ValueNotifier<Duration> _durationNotifier =
       ValueNotifier(Duration.zero);
   final ValueNotifier<List<LyricLine>> _lyricsNotifier = ValueNotifier([]);
-  List<Track> _recentlyPlayed = [];
+  /// Also a notifier, and for the same reason as the player state above: the
+  /// handler writes a history entry on *every* track change, and holding this
+  /// in `setState` state rebuilt both page subtrees each time a song started —
+  /// for a change only the 最近播放 rail cares about.
+  final ValueNotifier<List<Track>> _recentlyPlayed = ValueNotifier(const []);
   Playlist? _activePlaylistSheet;
 
   late final PageController _pageController = PageController();
@@ -115,6 +119,7 @@ class _MainLayoutState extends State<MainLayout> {
       s.cancel();
     }
     _currentTrack.dispose();
+    _recentlyPlayed.dispose();
     _isPlaying.dispose();
     _positionNotifier.dispose();
     _durationNotifier.dispose();
@@ -180,11 +185,7 @@ class _MainLayoutState extends State<MainLayout> {
 
   Future<void> _loadHistory() async {
     final history = await DatabaseService.getRecentlyPlayed();
-    if (mounted) {
-      setState(() {
-        _recentlyPlayed = history;
-      });
-    }
+    if (mounted) _recentlyPlayed.value = history;
   }
 
   /// Resolve the loop/shuffle queue: a playlist/favorites passes its own
@@ -450,13 +451,16 @@ class _MainLayoutState extends State<MainLayout> {
                     },
                     children: [
                       RepaintBoundary(
-                        child: HomeScreen(
-                          recentlyPlayed: _recentlyPlayed,
-                          onSelectTrack: _onPlayTrackAndExpand,
-                          onPlayOnly: _onPlayTrackOnly,
-                          onOpenPlaylist: (pl) {
-                            setState(() => _activePlaylistSheet = pl);
-                          },
+                        child: ValueListenableBuilder<List<Track>>(
+                          valueListenable: _recentlyPlayed,
+                          builder: (context, recent, _) => HomeScreen(
+                            recentlyPlayed: recent,
+                            onSelectTrack: _onPlayTrackAndExpand,
+                            onPlayOnly: _onPlayTrackOnly,
+                            onOpenPlaylist: (pl) {
+                              setState(() => _activePlaylistSheet = pl);
+                            },
+                          ),
                         ),
                       ),
                       RepaintBoundary(

@@ -108,11 +108,29 @@ class AudioDownloadService {
     }
   }
 
+  /// Memoised answers for [isDownloadedById].
+  ///
+  /// Every row of every list asks this on build, and each answer costs three
+  /// filesystem round-trips — a screenful of search results was ~90 stat calls
+  /// for a set of files only this class ever creates or removes. It is
+  /// therefore safe to remember: the map is updated wherever the on-disk state
+  /// changes (a completed download, a delete), so it cannot go stale except by
+  /// something outside the app deleting files under us.
+  static final Map<String, bool> _downloadedMemo = {};
+
   /// True when a complete, verified audio file exists on disk for [track].
   static Future<bool> isDownloaded(Track track) => isDownloadedById(_key(track));
 
   /// String-id variant of [isDownloaded] for callers that only hold an id.
   static Future<bool> isDownloadedById(String id) async {
+    final memo = _downloadedMemo[id];
+    if (memo != null) return memo;
+    final result = await _statDownloaded(id);
+    _downloadedMemo[id] = result;
+    return result;
+  }
+
+  static Future<bool> _statDownloaded(String id) async {
     final dir = await _dir();
     final audio = File(_audioPath(dir, id));
     final ready = File(_readyPath(dir, id));
@@ -143,6 +161,7 @@ class AudioDownloadService {
         debugPrint('delete download error: $e');
       }
     }
+    _downloadedMemo[id] = false;
     return deleted;
   }
 
@@ -241,6 +260,7 @@ class AudioDownloadService {
       await tmp.rename(path);
       await File(_readyPath(dir, _key(track))).create();
       await saveTrackMetadata(track);
+      _downloadedMemo[_key(track)] = true;
 
       _emit(DownloadProgress(track.id, received, total, true, null));
       await DatabaseService.saveDownloadedTrack(track);

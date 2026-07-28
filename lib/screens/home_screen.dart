@@ -115,6 +115,8 @@ class _HomeScreenState extends State<HomeScreen> {
       ),
     );
 
+    controller.dispose();
+
     if (name != null && name.trim().isNotEmpty) {
       await DatabaseService.createPlaylist(name);
       _loadData();

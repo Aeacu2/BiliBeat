@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import '../theme/app_theme.dart';
 import '../models/track.dart';
@@ -87,6 +89,8 @@ class TrackOptionsMenu extends StatefulWidget {
                               ],
                             ),
                           );
+
+                          controller.dispose();
 
                           if (newPlName != null && newPlName.trim().isNotEmpty) {
                             final created = await DatabaseService.createPlaylist(newPlName);
@@ -190,7 +194,10 @@ class _TrackOptionsMenuState extends State<TrackOptionsMenu> {
       return;
     }
 
-    await DownloadManager.instance.startDownload(track);
+    // Not awaited: startDownload only returns when the file is on disk, so
+    // awaiting it delayed the "download started" toast until the download had
+    // already finished — minutes later, on a slow connection.
+    unawaited(DownloadManager.instance.startDownload(track));
     widget.onTrackChanged?.call();
 
     messenger.showSnackBar(

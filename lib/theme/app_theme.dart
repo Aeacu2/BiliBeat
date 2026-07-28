@@ -35,7 +35,6 @@ class AppColors {
   // Neutral ramp (cool near-black, not pure #000 — reads more refined).
   static const Color background = Color(0xFF08080A);
   static const Color backgroundElevated = Color(0xFF101014);
-  static const Color surface = Color(0x14FFFFFF); // ~8% white glass
   static const Color surfaceCard = Color(0x0AFFFFFF); // ~4% white
   static const Color surfaceHighlight = Color(0x1FFFFFFF); // ~12% white
   static const Color hairline = Color(0x14FFFFFF); // subtle borders
@@ -56,7 +55,6 @@ class AppColors {
 class AppRadius {
   static const double sm = 10;
   static const double md = 14;
-  static const double lg = 20;
   static const double xl = 28;
   static const double pill = 999;
 }

@@ -63,8 +63,6 @@ class BilibiliSdk {
           if (pic.startsWith('//')) pic = 'https:$pic';
           final owner = data['owner'] ?? {};
           final uploader = owner['name'] as String? ?? '未知UP主';
-          var uploaderFace = (owner['face'] as String? ?? '').replaceAll('http:', 'https:');
-          if (uploaderFace.startsWith('//')) uploaderFace = 'https:$uploaderFace';
           final totalDuration = data['duration'] as int? ?? 0;
           final pages = data['pages'] as List? ?? [];
 

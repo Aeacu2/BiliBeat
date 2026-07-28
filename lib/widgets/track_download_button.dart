@@ -31,6 +31,7 @@ class TrackDownloadButton extends StatefulWidget {
 
 class _TrackDownloadButtonState extends State<TrackDownloadButton> {
   StreamSubscription<void>? _sub;
+  StreamSubscription<DownloadProgress>? _finishedSub;
   bool _isDownloaded = false;
   bool _wasDownloading = false;
   double _fraction = 0.0;
@@ -52,6 +53,13 @@ class _TrackDownloadButtonState extends State<TrackDownloadButton> {
       _fraction = fraction;
       setState(() {});
     });
+    // The playback path downloads outside DownloadManager (starting a track
+    // fetches it), so a row whose track was never *explicitly* downloaded kept
+    // offering a download button for a file that was already on disk.
+    _finishedSub = AudioDownloadService.progressStream.listen((p) {
+      if (!mounted || !p.done || p.trackId != widget.track.id) return;
+      if (!_isDownloaded) setState(() => _isDownloaded = true);
+    });
   }
 
   @override
@@ -67,6 +75,7 @@ class _TrackDownloadButtonState extends State<TrackDownloadButton> {
   @override
   void dispose() {
     _sub?.cancel();
+    _finishedSub?.cancel();
     super.dispose();
   }
 

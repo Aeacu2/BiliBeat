@@ -181,6 +181,18 @@
 - **根因**：`Text` 会把外层 `DefaultTextStyle` 合并进调用方给的样式，而跑马灯的 `TextPainter` 只测量了调用方样式——量的是另一套字体/字距。滚动位移用测量值、第二份副本的位置用真实布局，两者差几个像素，一圈结束时接不上，就是那一下跳动。
 - **修复**：先解析出真正生效的样式，测量与两份 `Text` 都用它，圈长与副本间距严格相等。回归测试断言等时间步位移恒定（跨接缝也不例外）。
 
+#### 🐛 Bug #48: 「已开始下载」提示要等下载真的结束才弹
+- **根因**：`_handleDownload` 里 `await DownloadManager.instance.startDownload(track)`，而 `startDownload` 要等文件真正落盘才返回。于是「已开始下载」这句话在网速慢时几分钟后才出现，且期间没有任何反馈。
+- **修复**：改为 `unawaited(...)`，提示立即弹出，进度仍由下载环显示。
+
+#### 🐛 Bug #49: 播放触发的下载不会刷新列表里的下载按钮
+- **根因**：播放路径的下载不经过 `DownloadManager`（刻意如此），而 `TrackDownloadButton` 只订阅了 `DownloadManager`。因此「播放过、因而已落盘」的曲目，在列表里仍显示为「下载」按钮，直到该行被重建。
+- **修复**：同时订阅 `AudioDownloadService.progressStream`，收到自己这首的 `done` 事件即刷新。
+
+#### 🐛 Bug #50: 两处新建歌单对话框泄漏 `TextEditingController`
+- **根因**：`showDialog` 前就地 `TextEditingController()`，对话框关闭后从未 `dispose`，每次新建歌单泄漏一个。
+- **修复**：`await showDialog` 返回后立即释放。
+
 #### 🐛 Bug #23: 滚动标题把播放界面其余部分挤走 / 布局坍塌
 - **根因**：旧跑马灯在 post-frame 回调里测量文本并 `setState`，在布局完成之后改变自身尺寸，导致父 `Column` 中的兄弟组件被推挤。
 - **修复**：见上文「标题滚动跑马灯」。此前的临时方案（直接删掉滚动功能）已撤销，功能与修复同时保留。
@@ -269,3 +281,10 @@
 
 #### 🐛 Bug #22: 默认 Flutter 图标未替换 & Android 应用名称全小写带 s (bilibeats)
 - **彻底修复方式**：根据桌面设计图像精准裁切生成全套 Android (`mipmap`) 和 iOS (`AppIcon`) 各种尺寸分辨率图标，并修正 `AndroidManifest.xml` 中的标签为 `bilibeat`。
+
+### 已知待解决 Bug / 隐患 (Not Fixed / Open Bugs)
+
+#### ⚠️ 搜索结果的曲目 id 与视频详情页不一致（`bvid_0`）
+- **现象**：搜索接口不返回 `cid`，因此搜索结果构造出的 id 是 `bvid_0`；而通过 BV 号 / 链接走 `fetchVideoInfo` 得到的是 `bvid_<真实cid>`。同一个视频经两条路径进入库中会被视为两首歌，下载状态也各算各的。
+- **为何暂不修**：id 同时是磁盘文件名与库内主键，改动需要一次数据迁移，否则现有用户已下载的 `bvid_0` 文件会全部「消失」。播放本身不受影响（播放前会用 `cid == 0` 兜底解析真实 cid）。
+- **修的时候要做的**：迁移脚本按 `bvid` 归并，重命名音频 / `.ready` / `.json` 三件套，并合并歌单与最近播放中的重复项。

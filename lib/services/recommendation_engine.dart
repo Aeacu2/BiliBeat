@@ -171,8 +171,12 @@ class RecommendationEngine {
       if (candidates.length >= limit * 3) break;
     }
 
-    final ranked = candidates.values.toList()
-      ..sort((a, b) => profile.score(b).compareTo(profile.score(a)));
-    return ranked.take(limit).toList();
+    // Score once per candidate, not twice per comparison: `score` tokenises
+    // the title, and sorting called it O(n log n) times on the same tracks.
+    final ranked = candidates.values
+        .map((t) => (track: t, score: profile.score(t)))
+        .toList()
+      ..sort((a, b) => b.score.compareTo(a.score));
+    return ranked.take(limit).map((e) => e.track).toList();
   }
 }
