@@ -66,18 +66,23 @@ class LyricsEngine {
     title = title.replaceAll(RegExp(r'(4K|1080P|720P|60帧|高音质|无损|纯享|单曲循环|完整版|官方MV|动态歌词|LRC|P\d+|多机位|精剪|直拍|现场|Live|全场|片段|高清|超清|重置|首唱)', caseSensitive: false), ' ');
     title = title.replaceAll(RegExp(r'(Cover|翻唱|原唱|词/曲|混音|演唱|UP主)', caseSensitive: false), ' ');
 
-    // 7. Remove common noise punctuation
-    title = title.replaceAll(RegExp(r'[︱|丨~_─—\-]'), ' ');
-    title = title.trim().replaceAll(RegExp(r'\s+'), ' ');
-
-    // 8. Handle "Artist - Title" splitting if artist wasn't extracted from brackets
-    if (artist.isEmpty && title.contains('-')) {
-      final parts = title.split('-');
-      if (parts.length >= 2) {
+    // 7. Split "Artist - Title" before the punctuation strip.
+    //
+    // This used to run *after* step 8 removed every '-', so `title.contains('-')`
+    // was always false and artist extraction from "周深 - 大鱼" never happened.
+    if (artist.isEmpty) {
+      final parts = title.split(RegExp(r'\s+[-–—]\s+'));
+      if (parts.length >= 2 &&
+          parts[0].trim().isNotEmpty &&
+          parts[1].trim().isNotEmpty) {
         artist = parts[0].trim();
         title = parts[1].trim();
       }
     }
+
+    // 8. Remove common noise punctuation
+    title = title.replaceAll(RegExp(r'[︱|丨~_─—\-]'), ' ');
+    title = title.trim().replaceAll(RegExp(r'\s+'), ' ');
 
     return {
       'songTitle': title.isEmpty ? rawTitle : title,
@@ -97,27 +102,41 @@ class LyricsEngine {
     return cand.contains(target) || target.contains(cand);
   }
 
-  // Parse raw LRC text into sorted List<LyricLine>
+  /// Parses LRC text into time-sorted lines.
+  ///
+  /// Handles the two forms the old parser silently dropped, both of which are
+  /// everywhere in real .lrc files:
+  ///  * `[mm:ss]` with no fractional part — previously skipped entirely, so
+  ///    whole files could import as zero lines.
+  ///  * Several timestamps sharing one line (`[00:12.00][01:30.00]副歌`) for a
+  ///    repeated chorus — previously only the first was kept, so the chorus
+  ///    never highlighted on later passes.
+  static final RegExp _lrcTag = RegExp(r'\[(\d{1,3}):(\d{2})(?:[.:](\d{1,3}))?\]');
+
   static List<LyricLine> parseLrc(String lrcText) {
     if (lrcText.isEmpty) return [];
 
-    final lines = lrcText.split('\n');
     final result = <LyricLine>[];
-    final timeRegex = RegExp(r'\[(\d{2}):(\d{2})\.(\d{2,3})\]');
 
-    for (final line in lines) {
-      final match = timeRegex.firstMatch(line);
-      if (match != null) {
+    for (final line in lrcText.split('\n')) {
+      final matches = _lrcTag.allMatches(line).toList();
+      if (matches.isEmpty) continue;
+
+      final text = line.replaceAll(_lrcTag, '').trim();
+      if (text.isEmpty) continue;
+
+      for (final match in matches) {
         final minutes = int.parse(match.group(1)!);
         final seconds = int.parse(match.group(2)!);
-        final millisStr = match.group(3)!.padRight(3, '0').substring(0, 3);
-        final millis = int.parse(millisStr);
-        final timeSec = minutes * 60 + seconds + millis / 1000.0;
-
-        final text = line.replaceAll(RegExp(r'\[\d{2}:\d{2}\.\d{2,3}\]'), '').trim();
-        if (text.isNotEmpty) {
-          result.add(LyricLine(time: timeSec, text: text));
-        }
+        final fraction = match.group(3);
+        // "5" means .5s, "05" means .05s, "050" means .050s.
+        final millis = fraction == null
+            ? 0
+            : int.parse(fraction.padRight(3, '0').substring(0, 3));
+        result.add(LyricLine(
+          time: minutes * 60 + seconds + millis / 1000.0,
+          text: text,
+        ));
       }
     }
 
@@ -150,7 +169,6 @@ class LyricsEngine {
                   songTitle: trackName.isNotEmpty ? trackName : title,
                   artistName: item['artistName'] ?? artist,
                   lines: lines.isNotEmpty ? lines : [LyricLine(time: 0, text: rawLrc)],
-                  rawLrc: rawLrc,
                 );
               }
             }
@@ -216,7 +234,6 @@ class LyricsEngine {
                     songTitle: songName,
                     artistName: artists.isNotEmpty ? artists : artist,
                     lines: lines,
-                    rawLrc: rawLrc,
                   );
                 }
               }

@@ -142,31 +142,6 @@ class AudioDownloadService {
     return deleted;
   }
 
-  /// Total bytes currently occupied by downloaded audio.
-  static Future<int> usedBytes() async {
-    try {
-      final dir = Directory(await _dir());
-      if (!await dir.exists()) return 0;
-      var total = 0;
-      await for (final entity in dir.list()) {
-        if (entity is File && entity.path.endsWith('.m4a')) {
-          total += await entity.length();
-        }
-      }
-      return total;
-    } catch (e) {
-      debugPrint('usedBytes error: $e');
-      return 0;
-    }
-  }
-
-  /// Returns the local file path if [track] is already downloaded, else null.
-  static Future<String?> localPathIfDownloaded(Track track) async {
-    final id = _key(track);
-    if (!await isDownloadedById(id)) return null;
-    return _audioPath(await _dir(), id);
-  }
-
   /// Ensures [track]'s audio is fully downloaded and returns the local path.
   ///
   /// Idempotent and concurrency-safe: a second call for the same track while a
@@ -177,7 +152,7 @@ class AudioDownloadService {
     final path = _audioPath(dir, id);
     await saveTrackMetadata(track);
     if (await isDownloadedById(id)) {
-      await DatabaseService.saveDownloadedTrack(track, path);
+      await DatabaseService.saveDownloadedTrack(track);
       return path;
     }
 
@@ -264,8 +239,7 @@ class AudioDownloadService {
       await saveTrackMetadata(track);
 
       _emit(DownloadProgress(track.id, received, total, true, null));
-      debugPrint('Downloaded ${track.title} -> $path ($received bytes)');
-      await DatabaseService.saveDownloadedTrack(track, path);
+      await DatabaseService.saveDownloadedTrack(track);
       return path;
     } catch (e) {
       try {

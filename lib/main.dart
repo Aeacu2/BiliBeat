@@ -41,13 +41,11 @@ void main() async {
     statusBarIconBrightness: Brightness.light,
   ));
   _audioHandlerInstance = await AudioService.init(
-    builder: () => BiliBeatAudioHandler(),
+    builder: BiliBeatAudioHandler.new,
     config: const AudioServiceConfig(
       androidNotificationChannelId: 'com.bilibeat.channel.audio',
       androidNotificationChannelName: 'BiliBeat',
       androidNotificationOngoing: true,
-      androidStopForegroundOnPause: true,
-      androidNotificationIcon: 'mipmap/ic_launcher',
     ),
   );
   runApp(const BiliBeatApp());
@@ -82,8 +80,12 @@ class _MainLayoutState extends State<MainLayout> {
   double _indicatorWidth = 0;
   late final BiliBeatAudioHandler _audioHandler = audioHandlerInstance;
 
-  Track? _currentTrack;
-  bool _isPlaying = false;
+  /// Player state is held in notifiers, not State fields. It changes on every
+  /// play/pause and every track advance, and as plain `setState` state it
+  /// rebuilt the whole tree — both page subtrees included — for a change that
+  /// only the ambient backdrop and the docked bar care about.
+  final ValueNotifier<Track?> _currentTrack = ValueNotifier(null);
+  final ValueNotifier<bool> _isPlaying = ValueNotifier(false);
   final ValueNotifier<Duration> _positionNotifier =
       ValueNotifier(Duration.zero);
   final ValueNotifier<Duration> _durationNotifier =
@@ -92,7 +94,7 @@ class _MainLayoutState extends State<MainLayout> {
   List<Track> _recentlyPlayed = [];
   Playlist? _activePlaylistSheet;
 
-  late final PageController _pageController = PageController(initialPage: 0);
+  late final PageController _pageController = PageController();
   final List<StreamSubscription> _subs = [];
 
   @override
@@ -108,6 +110,8 @@ class _MainLayoutState extends State<MainLayout> {
     for (final s in _subs) {
       s.cancel();
     }
+    _currentTrack.dispose();
+    _isPlaying.dispose();
     _positionNotifier.dispose();
     _durationNotifier.dispose();
     _lyricsNotifier.dispose();
@@ -118,16 +122,17 @@ class _MainLayoutState extends State<MainLayout> {
   void _initListeners() {
     _subs.add(_audioHandler.currentTrackStream.listen((track) async {
       if (track != null) {
-        if (mounted) {
-          setState(() {
-            _currentTrack = track;
-          });
-        }
+        _currentTrack.value = track;
 
-        // Fetch lyrics with stale cache validation
+        // Fetch lyrics with stale cache validation.
+        //
+        // Every await below needs a `mounted` guard: cancelling the
+        // subscription in dispose() stops *new* events, but an event already
+        // being handled resumes after its await regardless — and writing to a
+        // disposed ValueNotifier throws.
         final cleanSongTitle = LyricsEngine.cleanTitle(track.title)['songTitle']!;
         final cached = await DatabaseService.getCachedLyrics(track.id);
-        if (_currentTrack?.id != track.id) return;
+        if (!mounted || _currentTrack.value?.id != track.id) return;
 
         bool isCacheValid = false;
         if (cached != null && cached.lines.isNotEmpty && cached.source != 'none') {
@@ -142,7 +147,7 @@ class _MainLayoutState extends State<MainLayout> {
         } else {
           _lyricsNotifier.value = const [];
           final freshLyrics = await LyricsEngine.autoFetchLyrics(track.title);
-          if (_currentTrack?.id != track.id) return;
+          if (!mounted || _currentTrack.value?.id != track.id) return;
           // A "not found" result carries placeholder lines; showing an empty
           // list instead lets the lyrics view offer its search/paste action.
           _lyricsNotifier.value =
@@ -153,11 +158,7 @@ class _MainLayoutState extends State<MainLayout> {
     }));
 
     _subs.add(_audioHandler.playerStateStream.listen((playing) {
-      if (mounted) {
-        setState(() {
-          _isPlaying = playing;
-        });
-      }
+      _isPlaying.value = playing;
     }));
 
     _subs.add(_audioHandler.positionStream.listen((pos) {
@@ -191,17 +192,13 @@ class _MainLayoutState extends State<MainLayout> {
   }
 
   void _onPlayTrackOnly(Track track, {List<Track>? queue}) async {
-    setState(() {
-      _currentTrack = track;
-    });
+    _currentTrack.value = track;
     final q = await _resolveQueue(queue);
     _audioHandler.playTrack(track, newQueue: q.isNotEmpty ? q : null);
   }
 
   void _onPlayTrackAndExpand(Track track, {List<Track>? queue}) async {
-    setState(() {
-      _currentTrack = track;
-    });
+    _currentTrack.value = track;
     _openNowPlaying(track: track, follow: true);
     final q = await _resolveQueue(queue);
     _audioHandler.playTrack(track, newQueue: q.isNotEmpty ? q : null);
@@ -223,7 +220,7 @@ class _MainLayoutState extends State<MainLayout> {
   bool _nowPlayingOpen = false;
 
   void _openNowPlaying({Track? track, bool follow = false}) {
-    final focused = track ?? _currentTrack;
+    final focused = track ?? _currentTrack.value;
     if (focused == null) return;
     // A double tap used to stack two identical full-screen routes.
     if (_nowPlayingOpen) return;
@@ -231,8 +228,6 @@ class _MainLayoutState extends State<MainLayout> {
 
     Navigator.of(context).push(
       PageRouteBuilder(
-        opaque: true,
-        transitionDuration: const Duration(milliseconds: 300),
         reverseTransitionDuration: const Duration(milliseconds: 250),
         pageBuilder: (context, animation, secondaryAnimation) {
           return SlideTransition(
@@ -262,7 +257,7 @@ class _MainLayoutState extends State<MainLayout> {
   /// Opens the info/lyrics editor for [track] — which is whatever the player
   /// sheet is actually showing, not necessarily the playing track.
   void _openLyricEditor(Track track, {bool lyricsTab = false}) {
-    final isCurrent = _currentTrack?.id == track.id;
+    final isCurrent = _currentTrack.value?.id == track.id;
     showDialog(
       context: context,
       builder: (context) {
@@ -283,9 +278,7 @@ class _MainLayoutState extends State<MainLayout> {
               uploader: newArtist,
               coverUrl: newCoverUrl,
             );
-            if (isCurrent && mounted) {
-              setState(() => _currentTrack = updated);
-            }
+            if (isCurrent) _currentTrack.value = updated;
             await DatabaseService.updateTrackMetadata(updated);
             _audioHandler.updateCurrentTrackMetadata(updated);
           },
@@ -341,9 +334,19 @@ class _MainLayoutState extends State<MainLayout> {
     final dockedHeight = MiniPlayer.totalHeight(context);
 
     return Scaffold(
-      body: AmbientBackground(
-        coverUrl: _currentTrack?.coverUrl,
-        child: Stack(
+      body: Stack(
+        children: [
+          // Layer 0: ambient backdrop. A sibling behind the content rather
+          // than its parent, so a cover change repaints only this layer
+          // instead of rebuilding both pages.
+          Positioned.fill(
+            child: ValueListenableBuilder<Track?>(
+              valueListenable: _currentTrack,
+              builder: (context, track, _) =>
+                  AmbientBackground(coverUrl: track?.coverUrl),
+            ),
+          ),
+          Stack(
           children: [
             // Layer 1: Content Pages
             Column(
@@ -470,25 +473,29 @@ class _MainLayoutState extends State<MainLayout> {
               left: 0,
               right: 0,
               bottom: 0,
-              child: MiniPlayer(
-                currentTrack: _currentTrack,
-                isPlaying: _isPlaying,
+              child: ListenableBuilder(
+                listenable: Listenable.merge([_currentTrack, _isPlaying]),
+                builder: (context, _) => MiniPlayer(
+                currentTrack: _currentTrack.value,
+                isPlaying: _isPlaying.value,
                 positionNotifier: _positionNotifier,
                 durationNotifier: _durationNotifier,
                 onPlayPause: () {
-                  if (_isPlaying) {
+                  if (_isPlaying.value) {
                     _audioHandler.pause();
                   } else {
                     _audioHandler.play();
                   }
                 },
-                onNext: () => _audioHandler.skipToNext(),
-                onPrevious: () => _audioHandler.skipToPrevious(),
-                onTap: () => _openNowPlaying(),
+                onNext: _audioHandler.skipToNext,
+                onPrevious: _audioHandler.skipToPrevious,
+                onTap: _openNowPlaying,
+              ),
               ),
             ),
           ],
-        ),
+          ),
+        ],
       ),
     );
   }

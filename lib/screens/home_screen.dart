@@ -170,10 +170,7 @@ class _HomeScreenState extends State<HomeScreen> {
     _openPlaylist(Playlist(
       id: 'downloaded',
       name: '已下载',
-      description: null,
       tracks: [..._downloadingTasks.map((t) => t.track), ..._downloadedTracks],
-      createdAt: DateTime.now().millisecondsSinceEpoch,
-      updatedAt: DateTime.now().millisecondsSinceEpoch,
     ));
   }
 
@@ -287,7 +284,6 @@ class _HomeScreenState extends State<HomeScreen> {
                         url: task.track.coverUrl,
                         width: 48,
                         height: 48,
-                        fit: BoxFit.cover,
                       ),
                     ),
                     const SizedBox(width: 12),
@@ -345,7 +341,6 @@ class _HomeScreenState extends State<HomeScreen> {
                     width: 140,
                     margin: const EdgeInsets.only(right: 14),
                     child: const GlassCard(
-                      borderRadius: 16,
                       child: Column(
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
@@ -368,7 +363,6 @@ class _HomeScreenState extends State<HomeScreen> {
                   width: 140,
                   margin: const EdgeInsets.only(right: 14),
                   child: GlassCard(
-                    borderRadius: 16,
                     padding: const EdgeInsets.all(14),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,

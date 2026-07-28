@@ -1,32 +1,25 @@
 import 'track.dart';
 
+/// A named, ordered set of tracks.
+///
+/// `coverUrl`, `createdAt` and `updatedAt` were carried on every playlist and
+/// persisted to disk, but nothing ever read them — no cover was rendered and
+/// nothing sorted by date. They are gone.
 class Playlist {
   final String id;
   final String name;
-  final String? description;
-  final String? coverUrl;
   final List<Track> tracks;
-  final int createdAt;
-  final int updatedAt;
 
-  Playlist({
+  const Playlist({
     required this.id,
     required this.name,
-    this.description,
-    this.coverUrl,
     required this.tracks,
-    required this.createdAt,
-    required this.updatedAt,
   });
 
   Map<String, dynamic> toMap() {
     return {
       'id': id,
       'name': name,
-      'description': description,
-      'coverUrl': coverUrl,
-      'createdAt': createdAt,
-      'updatedAt': updatedAt,
     };
   }
 
@@ -34,11 +27,7 @@ class Playlist {
     return Playlist(
       id: map['id'] ?? '',
       name: map['name'] ?? '未命名歌单',
-      description: map['description'],
-      coverUrl: map['coverUrl'],
       tracks: tracks ?? [],
-      createdAt: map['createdAt'] ?? DateTime.now().millisecondsSinceEpoch,
-      updatedAt: map['updatedAt'] ?? DateTime.now().millisecondsSinceEpoch,
     );
   }
 }

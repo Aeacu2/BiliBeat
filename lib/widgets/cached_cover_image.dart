@@ -22,7 +22,6 @@ class CachedCoverImage extends StatefulWidget {
   final double width;
   final double height;
   final BoxFit fit;
-  final Widget? fallback;
 
   const CachedCoverImage({
     super.key,
@@ -30,7 +29,6 @@ class CachedCoverImage extends StatefulWidget {
     required this.width,
     required this.height,
     this.fit = BoxFit.cover,
-    this.fallback,
   });
 
   /// Appends Bilibili CDN resize params when the host supports them.
@@ -201,7 +199,6 @@ class _CachedCoverImageState extends State<CachedCoverImage> {
           cacheWidth: cacheW > 0 ? cacheW : null,
           cacheHeight: cacheH > 0 ? cacheH : null,
           fit: widget.fit,
-          alignment: Alignment.center,
           gaplessPlayback: true,
           errorBuilder: (context, error, stackTrace) => _buildFallback(),
         );
@@ -238,8 +235,7 @@ class _CachedCoverImageState extends State<CachedCoverImage> {
   }
 
   Widget _buildFallback() {
-    return widget.fallback ??
-        Container(
+    return Container(
           width: widget.width,
           height: widget.height,
           decoration: BoxDecoration(

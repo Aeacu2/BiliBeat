@@ -20,7 +20,7 @@ class WbiSigner {
   static DateTime? _cacheTime;
 
   static String _getMixinKey(String orig) {
-    return mixinKeyEncTab.map((n) => orig[n]).join('').substring(0, 32);
+    return mixinKeyEncTab.map((n) => orig[n]).join().substring(0, 32);
   }
 
   static Future<Map<String, dynamic>> signParams(Map<String, dynamic> params) async {

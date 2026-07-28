@@ -24,8 +24,8 @@ class BilibiliSdk {
       if (res.statusCode == 200) {
         return await res.transform(utf8.decoder).join();
       } else {
-        final errorBody = await res.transform(utf8.decoder).join();
-        debugPrint('Bilibili HTTP error ${res.statusCode}: $errorBody');
+        await res.drain<void>();
+        debugPrint('Bilibili HTTP ${res.statusCode}');
       }
     } catch (e) {
       debugPrint('Bilibili HTTP fetch error: $e');
@@ -76,7 +76,6 @@ class BilibiliSdk {
                 cid: data['cid'] as int? ?? 0,
                 title: title,
                 uploader: uploader,
-                uploaderFace: uploaderFace,
                 coverUrl: pic,
                 duration: totalDuration,
               )
@@ -95,7 +94,6 @@ class BilibiliSdk {
               cid: cid,
               title: pages.length > 1 ? '$title - P$pageNo: $partTitle' : title,
               uploader: uploader,
-              uploaderFace: uploaderFace,
               coverUrl: pic,
               duration: pageDuration,
             );
@@ -120,7 +118,8 @@ class BilibiliSdk {
       }
       if (cid == 0) return null;
 
-      // Try fnval=0 for standard MP4/M4A stream first
+      // fnval=16 requests DASH; the response still carries a plain `durl`
+      // MP4/M4A stream for most videos, which we prefer for native playback.
       final rawParams = {
         'bvid': bvid,
         'cid': cid,
@@ -142,7 +141,6 @@ class BilibiliSdk {
           if (durlList.isNotEmpty) {
             final streamUrl = durlList.first['url'] as String?;
             if (streamUrl != null && streamUrl.isNotEmpty) {
-              debugPrint('Obtained standard MP4/M4A audio URL: $streamUrl');
               return {
                 'url': streamUrl.replaceAll('http:', 'https:'),
                 'quality': '高品质 AAC/M4A',
@@ -153,11 +151,10 @@ class BilibiliSdk {
           // Fallback to DASH audio list if durl empty
           final audioList = json['data']?['dash']?['audio'] as List? ?? [];
           if (audioList.isNotEmpty) {
-            audioList.sort((a, b) => ((b['bandwidth'] as int? ?? 0) - (a['bandwidth'] as int? ?? 0)));
+            audioList.sort((a, b) => (b['bandwidth'] as int? ?? 0) - (a['bandwidth'] as int? ?? 0));
             final best = audioList.first;
             final streamUrl = (best['baseUrl'] ?? best['base_url'] ?? best['backupUrl']?[0]) as String?;
             if (streamUrl != null && streamUrl.isNotEmpty) {
-              debugPrint('Obtained DASH audio URL: $streamUrl');
               return {
                 'url': streamUrl.replaceAll('http:', 'https:'),
                 'quality': '320k DASH',
@@ -202,8 +199,6 @@ class BilibiliSdk {
       final queryStr = signed.entries.map((e) => '${e.key}=${Uri.encodeComponent(e.value.toString())}').join('&');
       final searchUrl = '$_baseUrl/x/web-interface/wbi/search/type?$queryStr';
 
-      debugPrint('Search URL: $searchUrl');
-      debugPrint('Search cookies: $cookieStr');
 
       var body = await _httpGet(searchUrl, cookies: cookieStr);
       if (body == null || body.contains('"code":-352') || body.contains('"code":412')) {
@@ -214,9 +209,8 @@ class BilibiliSdk {
 
       if (body != null) {
         final json = jsonDecode(body);
-        debugPrint('Search response code: ${json['code']}, message: ${json['message']}');
 
-        dynamic rawResult = json['data']?['result'];
+        final dynamic rawResult = json['data']?['result'];
         List? resultsList;
         if (rawResult is List) {
           resultsList = rawResult;
@@ -235,7 +229,6 @@ class BilibiliSdk {
             final cleanTitle = rawTitle.replaceAll(RegExp(r'<[^>]+>'), '');
             final author = item['author'] as String? ?? 'UP主';
             final pic = (item['pic'] as String? ?? '').replaceAll('http:', 'https:');
-            final upic = (item['upic'] as String? ?? '').replaceAll('http:', 'https:');
 
             int durationSec = 0;
             final durRaw = item['duration'];
@@ -256,7 +249,6 @@ class BilibiliSdk {
               cid: item['cid'] as int? ?? 0,
               title: cleanTitle,
               uploader: author,
-              uploaderFace: upic.startsWith('//') ? 'https:$upic' : upic,
               coverUrl: pic.startsWith('//') ? 'https:$pic' : pic,
               duration: durationSec,
             ));

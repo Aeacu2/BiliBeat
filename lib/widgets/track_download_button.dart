@@ -42,8 +42,7 @@ class _TrackDownloadButtonState extends State<TrackDownloadButton> {
     _sub = DownloadManager.instance.updates.listen((_) {
       if (!mounted) return;
       final task = DownloadManager.instance.taskFor(widget.track.id);
-      final downloading = task != null &&
-          task.status == DownloadStatus.downloading;
+      final downloading = task != null;
       final fraction = task?.fraction ?? 0.0;
       // The manager broadcasts for *every* download in flight; a row that is
       // not involved must not rebuild.
@@ -79,7 +78,7 @@ class _TrackDownloadButtonState extends State<TrackDownloadButton> {
   @override
   Widget build(BuildContext context) {
     final task = DownloadManager.instance.taskFor(widget.track.id);
-    if (task != null && task.status == DownloadStatus.downloading) {
+    if (task != null) {
       return SizedBox(
         width: widget.size + 14,
         height: widget.size + 14,
@@ -87,7 +86,6 @@ class _TrackDownloadButtonState extends State<TrackDownloadButton> {
           child: ProgressRing(
             fraction: task.fraction,
             size: widget.size + 4,
-            strokeWidth: 2.5,
             child: Icon(
               Icons.arrow_downward,
               color: AppColors.textSecondary,

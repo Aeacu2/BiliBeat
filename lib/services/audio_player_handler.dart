@@ -53,8 +53,6 @@ class BiliBeatAudioHandler extends BaseAudioHandler with SeekHandler {
 
   final StreamController<Track?> _currentTrackController =
       StreamController<Track?>.broadcast();
-  final StreamController<List<Track>> _queueController =
-      StreamController<List<Track>>.broadcast();
   final StreamController<bool> _playerStateController =
       StreamController<bool>.broadcast();
   final StreamController<Duration> _positionController =
@@ -71,7 +69,6 @@ class BiliBeatAudioHandler extends BaseAudioHandler with SeekHandler {
   Duration _duration = Duration.zero;
 
   Stream<Track?> get currentTrackStream => _currentTrackController.stream;
-  Stream<List<Track>> get queueStream => _queueController.stream;
   Stream<bool> get playerStateStream => _playerStateController.stream;
   Stream<Duration> get positionStream => _positionController.stream;
   Stream<Duration> get durationStream => _durationController.stream;
@@ -86,7 +83,6 @@ class BiliBeatAudioHandler extends BaseAudioHandler with SeekHandler {
   bool get isPlaying => _isPlaying;
   LoopMode get loopMode => _loopMode;
   bool get isShuffle => _isShuffle;
-  List<Track> get playlist => List.unmodifiable(_playlist);
 
   BiliBeatAudioHandler() {
     _initAudioPlayerListeners();
@@ -106,7 +102,6 @@ class BiliBeatAudioHandler extends BaseAudioHandler with SeekHandler {
       _currentTrackController.add(updatedTrack);
       _updateMediaItem(updatedTrack);
     }
-    _queueController.add(List.of(_playlist));
   }
 
   /// Current playback volume (0.0 – 1.0).
@@ -124,9 +119,7 @@ class BiliBeatAudioHandler extends BaseAudioHandler with SeekHandler {
     // playback state here: pushing a PlaybackState to audio_service on every
     // tick causes notification/MediaSession churn. The system UI interpolates
     // the notification position from the last state + speed.
-    _player.positionStream.listen((pos) {
-      _positionController.add(pos);
-    });
+    _player.positionStream.listen(_positionController.add);
 
     _player.durationStream.listen((dur) {
       if (dur != null && dur > Duration.zero) {
@@ -183,12 +176,10 @@ class BiliBeatAudioHandler extends BaseAudioHandler with SeekHandler {
         ..clear()
         ..addAll(newQueue);
       if (_isShuffle) _applyShuffleOrder(pinned: track);
-      _queueController.add(List.of(_playlist));
     }
     if (!_playlist.any((t) => t.id == track.id)) {
       _playlist.insert(0, track);
       _naturalOrder.insert(0, track);
-      _queueController.add(List.of(_playlist));
     }
 
     var index = _playlist.indexWhere((t) => t.id == track.id);
@@ -368,7 +359,6 @@ class BiliBeatAudioHandler extends BaseAudioHandler with SeekHandler {
     final playerIndex = _player.currentIndex ?? 0;
     _queueBaseIndex = _currentIndex - playerIndex;
     await _trimQueueAfterCurrent();
-    _queueController.add(List.of(_playlist));
     unawaited(_prefetchNext());
   }
 
@@ -464,15 +454,15 @@ class BiliBeatAudioHandler extends BaseAudioHandler with SeekHandler {
     final next = _playlist[nextIndex];
     if (_prefetchingId == next.id) return;
 
-    final lastLogicalInQueue = _queueBaseIndex + (_queueSource.length - 1);
-    if (_currentIndex != lastLogicalInQueue) return;
+    // Only append when the current track is the last thing queued, so player
+    // index stays a simple offset from the logical index.
+    if (_currentIndex != _queueBaseIndex + _queueSource.length - 1) return;
 
     _prefetchingId = next.id;
     try {
       final path = await AudioDownloadService.ensureDownloaded(next);
-      // Re-validate the slot: the user may have navigated while downloading.
-      if (_currentIndex == lastLogicalInQueue &&
-          _queueBaseIndex + _queueSource.length - 1 == _currentIndex) {
+      // Re-validate after the download: the user may have navigated meanwhile.
+      if (_currentIndex == _queueBaseIndex + _queueSource.length - 1) {
         await _queueSource.add(ja.AudioSource.file(path, tag: next));
       }
     } catch (e) {
@@ -550,17 +540,5 @@ class BiliBeatAudioHandler extends BaseAudioHandler with SeekHandler {
       artUri: track.coverUrl.isEmpty ? null : Uri.tryParse(track.coverUrl),
     );
     mediaItem.add(item);
-  }
-
-  Future<void> disposePlayer() async {
-    await _player.dispose();
-    await _currentTrackController.close();
-    await _queueController.close();
-    await _playerStateController.close();
-    await _positionController.close();
-    await _durationController.close();
-    await _shuffleController.close();
-    await _loopModeController.close();
-    await _volumeController.close();
   }
 }

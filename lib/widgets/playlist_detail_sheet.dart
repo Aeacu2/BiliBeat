@@ -272,7 +272,6 @@ class _PlaylistDetailSheetState extends State<PlaylistDetailSheet> {
                                       url: track.coverUrl,
                                       width: 48,
                                       height: 48,
-                                      fit: BoxFit.cover,
                                     ),
                                   ),
                                   const SizedBox(width: 12),
@@ -361,8 +360,8 @@ class _PlaylistDetailSheetState extends State<PlaylistDetailSheet> {
         backgroundColor: AppColors.backgroundElevated,
         title: const Text('删除本地音频',
             style: TextStyle(color: AppColors.textPrimary)),
-        content: Text('将删除本地音频，可重新下载。',
-            style: const TextStyle(color: AppColors.textSecondary)),
+        content: const Text('将删除本地音频，可重新下载。',
+            style: TextStyle(color: AppColors.textSecondary)),
         actions: [
           TextButton(
               onPressed: () => Navigator.pop(ctx, false),

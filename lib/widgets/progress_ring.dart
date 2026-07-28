@@ -8,7 +8,6 @@ class ProgressRing extends StatelessWidget {
   final double fraction; // 0..1
   final double size;
   final double strokeWidth;
-  final Color? color;
   final Color trackColor;
   final Widget? child;
 
@@ -17,14 +16,12 @@ class ProgressRing extends StatelessWidget {
     required this.fraction,
     this.size = 24,
     this.strokeWidth = 2.5,
-    this.color,
     this.trackColor = const Color(0x33FFFFFF),
     this.child,
   });
 
   @override
   Widget build(BuildContext context) {
-    final c = color ?? AppColors.accent;
     return SizedBox(
       width: size,
       height: size,
@@ -38,7 +35,7 @@ class ProgressRing extends StatelessWidget {
               value: fraction.clamp(0.0, 1.0),
               strokeWidth: strokeWidth,
               backgroundColor: trackColor,
-              valueColor: AlwaysStoppedAnimation<Color>(c),
+              valueColor: const AlwaysStoppedAnimation<Color>(AppColors.accent),
             ),
           ),
           if (child != null) child!,

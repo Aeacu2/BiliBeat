@@ -43,7 +43,6 @@ class FingerprintService {
         _buvid3 = json['data']['b_3'] as String? ?? '';
         _buvid4 = json['data']['b_4'] as String? ?? '';
         _cacheTime = now;
-        debugPrint('FingerprintService: obtained buvid3=$_buvid3');
         return {'buvid3': _buvid3, 'buvid4': _buvid4};
       }
     } catch (e) {
@@ -55,7 +54,6 @@ class FingerprintService {
       _buvid3 = _generateRandomBuvid3();
       _buvid4 = '';
       _cacheTime = now;
-      debugPrint('FingerprintService: using generated buvid3=$_buvid3');
     }
 
     return {'buvid3': _buvid3, 'buvid4': _buvid4};

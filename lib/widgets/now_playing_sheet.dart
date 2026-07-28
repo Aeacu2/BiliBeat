@@ -116,12 +116,7 @@ class _NowPlayingSheetState extends State<NowPlayingSheet> {
     }));
   }
 
-  DownloadTask? _liveTaskFor(String id) {
-    final task = DownloadManager.instance.taskFor(id);
-    return (task != null && task.status == DownloadStatus.downloading)
-        ? task
-        : null;
-  }
+  DownloadTask? _liveTaskFor(String id) => DownloadManager.instance.taskFor(id);
 
   @override
   void dispose() {
@@ -546,7 +541,7 @@ class _NowPlayingSheetState extends State<NowPlayingSheet> {
         color: filled ? null : AppColors.surfaceHighlight,
         border: filled
             ? null
-            : Border.all(color: AppColors.hairlineStrong, width: 1),
+            : Border.all(color: AppColors.hairlineStrong),
         boxShadow: filled
             ? const [
                 BoxShadow(

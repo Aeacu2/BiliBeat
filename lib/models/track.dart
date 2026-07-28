@@ -1,32 +1,30 @@
+/// One playable Bilibili audio part.
+///
+/// Deliberately narrow: fields that were written but never read (uploaderFace,
+/// quality, localFilePath, addedAt, and an `isDownloaded` flag that duplicated
+/// — and could contradict — what is actually on disk) have been removed.
+/// Download state has exactly one source of truth: [AudioDownloadService].
 class Track {
+  /// `bvid_cid`, uniquely naming one part of one video. This is the identity
+  /// used for equality, de-duplication and on-disk file naming.
   final String id;
   final String bvid;
   final int cid;
   final String title;
   final String uploader;
-  final String? uploaderFace;
   final String coverUrl;
   final int duration; // in seconds
   final String? audioUrl;
-  final String? quality;
-  final bool isDownloaded;
-  final String? localFilePath;
-  final int? addedAt;
 
-  Track({
+  const Track({
     required this.id,
     required this.bvid,
     required this.cid,
     required this.title,
     required this.uploader,
-    this.uploaderFace,
     required this.coverUrl,
     required this.duration,
     this.audioUrl,
-    this.quality,
-    this.isDownloaded = false,
-    this.localFilePath,
-    this.addedAt,
   });
 
   Map<String, dynamic> toMap() {
@@ -36,17 +34,14 @@ class Track {
       'cid': cid,
       'title': title,
       'uploader': uploader,
-      'uploaderFace': uploaderFace,
       'coverUrl': coverUrl,
       'duration': duration,
       'audioUrl': audioUrl,
-      'quality': quality,
-      'isDownloaded': isDownloaded ? 1 : 0,
-      'localFilePath': localFilePath,
-      'addedAt': addedAt ?? DateTime.now().millisecondsSinceEpoch,
     };
   }
 
+  /// Tolerates both older files carrying extra keys and newer ones missing
+  /// them, so a version change never orphans a library.
   factory Track.fromMap(Map<String, dynamic> map) {
     return Track(
       id: map['id'] ?? '',
@@ -54,52 +49,34 @@ class Track {
       cid: map['cid'] ?? 0,
       title: map['title'] ?? '未知曲目',
       uploader: map['uploader'] ?? '未知UP主',
-      uploaderFace: map['uploaderFace'],
       coverUrl: map['coverUrl'] ?? '',
       duration: map['duration'] ?? 0,
       audioUrl: map['audioUrl'],
-      quality: map['quality'],
-      isDownloaded: (map['isDownloaded'] ?? 0) == 1,
-      localFilePath: map['localFilePath'],
-      addedAt: map['addedAt'],
     );
   }
 
   Track copyWith({
-    String? id,
-    String? bvid,
-    int? cid,
     String? title,
     String? uploader,
-    String? uploaderFace,
     String? coverUrl,
     int? duration,
     String? audioUrl,
-    String? quality,
-    bool? isDownloaded,
-    String? localFilePath,
-    int? addedAt,
   }) {
     return Track(
-      id: id ?? this.id,
-      bvid: bvid ?? this.bvid,
-      cid: cid ?? this.cid,
+      id: id,
+      bvid: bvid,
+      cid: cid,
       title: title ?? this.title,
       uploader: uploader ?? this.uploader,
-      uploaderFace: uploaderFace ?? this.uploaderFace,
       coverUrl: coverUrl ?? this.coverUrl,
       duration: duration ?? this.duration,
       audioUrl: audioUrl ?? this.audioUrl,
-      quality: quality ?? this.quality,
-      isDownloaded: isDownloaded ?? this.isDownloaded,
-      localFilePath: localFilePath ?? this.localFilePath,
-      addedAt: addedAt ?? this.addedAt,
     );
   }
 
-  /// Identity is the track id (`bvid_cid`), which uniquely names one playable
-  /// part. Two `Track` objects for the same part — one from search, one
-  /// rehydrated from disk — must compare equal so list lookups behave.
+  /// Identity is the track id. Two `Track` objects for the same part — one
+  /// from search, one rehydrated from disk — must compare equal so list
+  /// lookups behave.
   @override
   bool operator ==(Object other) => other is Track && other.id == id;
 

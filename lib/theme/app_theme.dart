@@ -23,18 +23,14 @@ class AppColors {
   static const Color accent04 = Color(0x0AFF3366);   // accent 4%
   static const Color accent12 = Color(0x1FFF3366);   // accent 12%
   static const Color accent50 = Color(0x80FF3366);   // accent 50%
-  static const Color accent55 = Color(0x8CFF3366);   // accent 55%
   static const Color success12 = Color(0x1F34C77B);  // success 12%
   static const Color success50 = Color(0x8034C77B);  // success 50%
   static const Color black30 = Color(0x4D000000);     // black 30%
-  static const Color black35 = Color(0x59000000);     // black 35%
   static const Color black45 = Color(0x73000000);     // black 45%
   static const Color black50 = Color(0x80000000);     // black 50%
   static const Color black55 = Color(0x8C000000);     // black 55%
   static const Color white06 = Color(0x0FFFFFFF);     // white 6%
   static const Color white05 = Color(0x0DFFFFFF);     // white 5%
-  static const Color white35 = Color(0x59FFFFFF);     // white 35%
-  static const Color textPrimary35 = Color(0x59F5F5F7); // textPrimary 35%
 
   // Neutral ramp (cool near-black, not pure #000 — reads more refined).
   static const Color background = Color(0xFF08080A);
@@ -53,18 +49,7 @@ class AppColors {
 
   // Semantic
   static const Color success = Color(0xFF34C77B);
-  static const Color warning = Color(0xFFFFB020);
   static const Color danger = Color(0xFFFF453A);
-}
-
-/// Spacing scale (4pt grid).
-class AppSpacing {
-  static const double xs = 4;
-  static const double sm = 8;
-  static const double md = 12;
-  static const double lg = 16;
-  static const double xl = 24;
-  static const double xxl = 32;
 }
 
 /// Corner-radius scale.
@@ -147,7 +132,6 @@ class AppTheme {
         primary: AppColors.accent,
         secondary: AppColors.accent,
         surface: AppColors.backgroundElevated,
-        onSurface: AppColors.textPrimary,
         onPrimary: Colors.white,
       ),
       splashFactory: InkSparkle.splashFactory,

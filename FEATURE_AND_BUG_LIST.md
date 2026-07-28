@@ -40,6 +40,14 @@
   - 架构上「未下载即不可播放」，因此播放页主按钮按真实状态切换：**未下载 → 下载按钮**；**下载中 → 圆环进度条**（与列表中 `TrackDownloadButton` 同一视觉）；**已下载 → 播放/暂停**。
   - 移除播放页的「已下载 ✓」指示与顶部音源行：能播放本身即代表已下载，再标注是冗余。
   - handler 自身的下载不经过 `DownloadManager`，故播放开始时会复查一次落盘状态，避免按钮卡在「下载」。
+- [x] **代码瘦身与渲染优化 (Dead-Code Purge & Render Optimisation)**
+  - **播放状态改为 Notifier**：`_currentTrack` / `_isPlaying` 此前是 `setState` 状态，每次播放/暂停、每次切歌都会重建整棵树（含两个页面子树），而真正关心它们的只有氛围背景与底部播放条。现改为 `ValueNotifier`，并把氛围背景从「内容的父节点」改为「内容的兄弟层」，切歌只重绘背景层。
+  - **删除无人订阅的 `queueStream`**：每次队列变化都在做 `List.of(_playlist)` 全量拷贝，却没有任何监听者。
+  - **模型瘦身**：`Track` 去掉 `uploaderFace / quality / isDownloaded / localFilePath / addedAt`（只写不读；其中 `isDownloaded` 还与磁盘真实状态存在冲突风险——下载状态的唯一真相是 `AudioDownloadService`）；`Playlist` 去掉 `coverUrl / createdAt / updatedAt`；`LyricsResult` 去掉 `rawLrc`。`fromMap` 对多余/缺失字段均容错，旧数据不受影响。
+  - **删除死状态机**：`DownloadStatus.failed` 从未被赋值，所有 `status == downloading` 判断都是恒真；连同 `DownloadTask.received / total`（从未被读取）一并移除。
+  - 其余移除：`AudioDownloadService.localPathIfDownloaded / usedBytes`、`handler.disposePlayer / playlist`、`DownloadManager.downloadingCount`、`AppSpacing` 整个类、5 个未使用颜色常量，以及 `GlassCard.margin`、`ProgressRing.color`、`CachedCoverImage.fallback`、`EmptyState.medallionSize/padding` 等无人传入的参数。
+  - **MarqueeText** 不再每帧注册 post-frame 回调，仅在动画目标状态真正变化时注册。
+  - **静态检查加严**：`analysis_options.yaml` 将 `unused_element / unused_field / unused_local_variable / dead_code` 提升为 **error**，并启用 `cancel_subscriptions`、`close_sinks`、`prefer_const_*` 等规则，防止死代码再次堆积。
 - [x] **仅 64 位发布 (64-bit Only, Permanent)**
   - 构建脚本 `--target-platform android-arm64` ＋ `android/app/build.gradle` 中按 **release** variant 过滤 jniLibs，`armeabi-v7a` / `x86` / `x86_64` 永久移除。ARM 笔记本（Apple Silicon、Windows on ARM、ARM Chromebook）本就使用 arm64-v8a，同一个包即可覆盖。
   - **⚠️ `ndk { abiFilters }` 单独使用是不够的**：它不会剔除插件 AAR 里预编译的 .so。`jni` 包为每个 ABI 提供 `libdartjni.so`，仅凭它的存在，APK 就会声明 `native-code: 'arm64-v8a' 'armeabi-v7a' 'x86_64'`——32 位设备会认为可以安装，然后因为缺少 arm64 以外的 `libflutter.so`/`libapp.so` 而在启动时崩溃。**必须在打包阶段 exclude**，并用 `aapt2 dump badging` 核对 `native-code` 只剩 arm64-v8a。
@@ -152,6 +160,26 @@
 #### 🐛 Bug #35: 歌词编辑器对话框在小屏 / 键盘弹出时溢出
 - **根因**：`height: 580` 硬编码。
 - **修复**：按 `screenHeight - viewInsets.bottom` 自适应并 clamp 到 320–620。
+
+#### 🐛 Bug #37: 「歌手 - 歌名」永远无法拆分（死分支）
+- **根因**：`cleanTitle` 第 7 步先把所有 `-` 替换成空格，第 8 步才判断 `title.contains('-')`——恒为 false，歌手提取从未执行。
+- **修复**：拆分提前到标点清理之前，并要求两侧非空。回归测试已覆盖。
+
+#### 🐛 Bug #38: LRC 解析丢行
+- **根因**：正则强制要求毫秒段（`[mm:ss]` 直接跳过，整份歌词可能解析为 0 行），且只取每行第一个时间戳（副歌复用行只在第一次高亮）。
+- **修复**：毫秒段改为可选、按位数解释（`.5`→0.5s、`.05`→0.05s），并对一行多个时间戳逐个展开。5 条回归测试覆盖。
+
+#### 🐛 Bug #39: 签名 CDN 链接与设备指纹被写入日志
+- **根因**：`debugPrint` 在 **release 构建中依然输出**，而代码打印了 `Search cookies`（buvid 设备指纹）、完整签名音源 URL 与本地文件路径。任何能读 logcat 的进程都可获取。
+- **修复**：仅保留错误级日志，去掉全部 URL / Cookie / 路径打印。
+
+#### 🐛 Bug #40: 快速连点下载可能重复下载
+- **根因**：`startDownload` 先 `await isDownloaded()` 再登记任务，两次点击可在该 await 期间同时通过判断。
+- **修复**：先同步占位再 await。
+
+#### 🐛 Bug #41: 异步回调在 dispose 之后写入 Notifier / setState
+- **根因**：取消订阅只能阻止**新**事件；已进入的回调在 await 之后仍会继续执行。`main` 的歌词回调与搜索页 `_performSearch` 都缺 `mounted` 判断。
+- **修复**：每个 await 之后补 `mounted` 判断。
 
 #### 🐛 Bug #36: 歌词预览每次 rebuild 都新建 `ValueNotifier`
 - **根因**：`positionNotifier ?? ValueNotifier(Duration.zero)` 写在 `build` 里，每帧换一个 notifier 且从不 dispose。

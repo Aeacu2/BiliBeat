@@ -108,6 +108,9 @@ class _SearchScreenState extends State<SearchScreen> {
 
     await DatabaseService.addSearchHistory(trimmed);
     final history = await DatabaseService.getSearchHistory();
+    // Leaving the tab during those awaits would otherwise unfocus a disposed
+    // FocusNode and setState on a dead State.
+    if (!mounted) return;
 
     _focusNode.unfocus();
     setState(() {
@@ -171,7 +174,6 @@ class _SearchScreenState extends State<SearchScreen> {
           borderRadius: 20,
           padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
           child: Row(
-            crossAxisAlignment: CrossAxisAlignment.center,
             children: [
               const Icon(Icons.search, color: AppColors.textMuted, size: 20),
               const SizedBox(width: 10),

@@ -27,18 +27,16 @@ class LyricLine {
 }
 
 class LyricsResult {
-  final String source; // 'lrclib' | 'netease' | 'user' | 'none'
+  final String source; // 'lrclib' | 'netease' | 'user' | 'current' | 'none'
   final String? songTitle;
   final String? artistName;
   final List<LyricLine> lines;
-  final String? rawLrc;
 
-  LyricsResult({
+  const LyricsResult({
     required this.source,
     this.songTitle,
     this.artistName,
     required this.lines,
-    this.rawLrc,
   });
 
   Map<String, dynamic> toMap() {
@@ -47,7 +45,6 @@ class LyricsResult {
       'songTitle': songTitle,
       'artistName': artistName,
       'lines': lines.map((l) => l.toMap()).toList(),
-      'rawLrc': rawLrc,
     };
   }
 
@@ -60,7 +57,6 @@ class LyricsResult {
       lines: rawLines
           .map((l) => LyricLine.fromMap(Map<String, dynamic>.from(l as Map)))
           .toList(),
-      rawLrc: map['rawLrc'] as String?,
     );
   }
 }

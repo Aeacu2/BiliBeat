@@ -8,29 +8,27 @@ class EmptyState extends StatelessWidget {
   final IconData icon;
   final String title;
   final String? subtitle;
-  final double medallionSize;
-  final EdgeInsetsGeometry padding;
+
+  static const double _medallion = 84;
 
   const EmptyState({
     super.key,
     required this.icon,
     required this.title,
     this.subtitle,
-    this.medallionSize = 84,
-    this.padding = const EdgeInsets.symmetric(vertical: 32),
   });
 
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: padding,
+      padding: const EdgeInsets.symmetric(vertical: 32),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
           Container(
-            width: medallionSize,
-            height: medallionSize,
+            width: _medallion,
+            height: _medallion,
             decoration: BoxDecoration(
               shape: BoxShape.circle,
               gradient: const RadialGradient(
@@ -43,7 +41,7 @@ class EmptyState extends StatelessWidget {
             ),
             child: Icon(
               icon,
-              size: medallionSize * 0.42,
+              size: _medallion * 0.42,
               color: AppColors.accent,
             ),
           ),

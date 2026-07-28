@@ -209,8 +209,6 @@ class _MarqueeTextState extends State<MarqueeText>
             shaderCallback: (rect) {
               final fadeStop = (12.0 / rect.width).clamp(0.0, 0.25);
               return LinearGradient(
-                begin: Alignment.centerLeft,
-                end: Alignment.centerRight,
                 colors: const [
                   Color(0x00FFFFFF),
                   Color(0xFFFFFFFF),
@@ -229,7 +227,16 @@ class _MarqueeTextState extends State<MarqueeText>
     );
   }
 
+  bool? _syncedRun;
+  Duration? _syncedCycle;
+
+  /// Only queues a post-frame callback when the desired animation state has
+  /// actually changed. The mini player rebuilds on every play/pause and track
+  /// change; scheduling a callback each time was pure churn.
   void _scheduleSync({required bool shouldRun, required Duration cycle}) {
+    if (_syncedRun == shouldRun && _syncedCycle == cycle) return;
+    _syncedRun = shouldRun;
+    _syncedCycle = cycle;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _syncController(shouldRun: shouldRun, cycle: cycle);
     });

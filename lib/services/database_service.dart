@@ -32,14 +32,7 @@ class DatabaseService {
   static const int _maxLyricsCacheEntries = 200;
 
   static final List<Playlist> _playlists = [
-    Playlist(
-      id: 'favorites',
-      name: '收藏',
-      description: null,
-      tracks: [],
-      createdAt: DateTime.now().millisecondsSinceEpoch,
-      updatedAt: DateTime.now().millisecondsSinceEpoch,
-    )
+    const Playlist(id: 'favorites', name: '收藏', tracks: [])
   ];
 
   static Future<void> _ensureLoaded() => _loadFuture ??= _load();
@@ -113,14 +106,7 @@ class DatabaseService {
           _playlists.add(Playlist.fromMap(map, tracks: tracks));
         }
         if (!_playlists.any((p) => p.id == 'favorites')) {
-          _playlists.insert(0, Playlist(
-            id: 'favorites',
-            name: '收藏',
-            description: null,
-            tracks: [],
-            createdAt: DateTime.now().millisecondsSinceEpoch,
-            updatedAt: DateTime.now().millisecondsSinceEpoch,
-          ));
+          _playlists.insert(0, const Playlist(id: 'favorites', name: '收藏', tracks: []));
         }
       }
       // Load Search History
@@ -263,15 +249,12 @@ class DatabaseService {
     );
   }
 
-  static Future<Playlist> createPlaylist(String name, {String? description}) async {
+  static Future<Playlist> createPlaylist(String name) async {
     await _ensureLoaded();
     final newPlaylist = Playlist(
-      id: 'pl_${DateTime.now().millisecondsSinceEpoch}',
+      id: 'pl_\${DateTime.now().millisecondsSinceEpoch}',
       name: name.trim().isEmpty ? '新建歌单' : name.trim(),
-      description: description,
       tracks: [],
-      createdAt: DateTime.now().millisecondsSinceEpoch,
-      updatedAt: DateTime.now().millisecondsSinceEpoch,
     );
     _playlists.add(newPlaylist);
     await _persistPlaylists();
@@ -348,7 +331,7 @@ class DatabaseService {
     return List<Track>.from(_recentlyPlayed);
   }
 
-  static Future<void> saveDownloadedTrack(Track track, String filePath) async {
+  static Future<void> saveDownloadedTrack(Track track) async {
     await _ensureLoaded();
     final existing = _downloadedTracks.indexWhere((t) => t.id == track.id);
     // Playback calls this on every start; skip the rewrite + notify when

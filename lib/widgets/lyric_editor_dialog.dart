@@ -134,7 +134,6 @@ class _LyricEditorDialogState extends State<LyricEditorDialog> with SingleTicker
         songTitle: widget.songTitle,
         artistName: widget.artistName,
         lines: current,
-        rawLrc: '',
       ));
     }
     for (final p in _pastedResults) {
@@ -188,7 +187,6 @@ class _LyricEditorDialogState extends State<LyricEditorDialog> with SingleTicker
       songTitle: res.songTitle,
       artistName: res.artistName,
       lines: adjustedLines,
-      rawLrc: res.rawLrc,
     );
 
     widget.onApplyLyrics(finalResult);
@@ -205,7 +203,6 @@ class _LyricEditorDialogState extends State<LyricEditorDialog> with SingleTicker
       songTitle: '粘贴歌词',
       artistName: _artistController.text.trim().isNotEmpty ? _artistController.text.trim() : '自定义',
       lines: lines.isNotEmpty ? lines : [LyricLine(time: 0, text: text)],
-      rawLrc: text,
     );
 
     setState(() {
@@ -396,7 +393,6 @@ class _LyricEditorDialogState extends State<LyricEditorDialog> with SingleTicker
                                   url: _coverUrlController.text.trim(),
                                   width: 96,
                                   height: 96,
-                                  fit: BoxFit.cover,
                                 ),
                               ),
                               const SizedBox(height: 10),
@@ -697,7 +693,7 @@ class _LyricEditorDialogState extends State<LyricEditorDialog> with SingleTicker
                             const SizedBox(height: 8),
 
                             // Bottom Option: Paste .lrc Text Section
-                            Container(
+                            DecoratedBox(
                               decoration: BoxDecoration(
                                 color: AppColors.white05,
                                 borderRadius: BorderRadius.circular(14),

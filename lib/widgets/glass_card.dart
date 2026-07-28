@@ -12,14 +12,12 @@ import '../theme/app_theme.dart';
 class GlassCard extends StatelessWidget {
   final Widget child;
   final EdgeInsetsGeometry? padding;
-  final EdgeInsetsGeometry? margin;
   final double borderRadius;
 
   const GlassCard({
     super.key,
     required this.child,
     this.padding,
-    this.margin,
     this.borderRadius = 16.0,
   });
 
@@ -27,7 +25,6 @@ class GlassCard extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       padding: padding ?? const EdgeInsets.all(12),
-      margin: margin,
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(borderRadius),
         gradient: const LinearGradient(
@@ -35,7 +32,7 @@ class GlassCard extends StatelessWidget {
           end: Alignment.bottomCenter,
           colors: [AppColors.surfaceHighlight, AppColors.surfaceCard],
         ),
-        border: Border.all(color: AppColors.hairline, width: 1),
+        border: Border.all(color: AppColors.hairline),
       ),
       child: child,
     );

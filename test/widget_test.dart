@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:bilibeats/models/lyric_line.dart';
+import 'package:bilibeats/services/lyrics_engine.dart';
 import 'package:bilibeats/models/track.dart';
 import 'package:bilibeats/widgets/marquee_text.dart';
 import 'package:bilibeats/widgets/mini_player.dart';
@@ -32,6 +33,62 @@ Widget _host(String text, {double width = 160, bool scrolling = true}) {
 }
 
 void main() {
+  group('LyricsEngine.parseLrc', () {
+    test('accepts [mm:ss] with no fractional part', () {
+      final lines = LyricsEngine.parseLrc('[00:12]第一句\n[01:05]第二句');
+      expect(lines.map((l) => l.time), [12.0, 65.0]);
+      expect(lines.first.text, '第一句');
+    });
+
+    test('expands a line carrying several timestamps', () {
+      // A repeated chorus. Only the first stamp used to survive, so the line
+      // never highlighted on later passes.
+      final lines = LyricsEngine.parseLrc('[00:10.00][01:30.50]副歌');
+      expect(lines.length, 2);
+      expect(lines.map((l) => l.time), [10.0, 90.5]);
+      expect(lines.every((l) => l.text == '副歌'), isTrue);
+    });
+
+    test('reads fractional digits by position, not magnitude', () {
+      expect(LyricsEngine.parseLrc('[00:01.5]x').first.time, 1.5);
+      expect(LyricsEngine.parseLrc('[00:01.05]x').first.time, 1.05);
+      expect(LyricsEngine.parseLrc('[00:01.050]x').first.time, 1.05);
+    });
+
+    test('skips metadata tags and blank lyrics', () {
+      final lines = LyricsEngine.parseLrc('[ar:周深]\n[00:03.00]\n[00:04.00]词');
+      expect(lines.length, 1);
+      expect(lines.single.text, '词');
+    });
+
+    test('sorts out-of-order stamps', () {
+      final lines = LyricsEngine.parseLrc('[00:20.00]b\n[00:05.00]a');
+      expect(lines.map((l) => l.text), ['a', 'b']);
+    });
+  });
+
+  group('LyricsEngine.cleanTitle', () {
+    test('splits "Artist - Title"', () {
+      // The dash strip used to run first, so this never matched.
+      final r = LyricsEngine.cleanTitle('周深 - 大鱼');
+      expect(r['artist'], '周深');
+      expect(r['songTitle'], '大鱼');
+    });
+
+    test('prefers an artist already found in brackets', () {
+      final r = LyricsEngine.cleanTitle('【周深】大鱼');
+      expect(r['artist'], '周深');
+    });
+
+    test('《》 names the song exactly', () {
+      expect(LyricsEngine.cleanTitle('周深演唱《大鱼》现场')['songTitle'], '大鱼');
+    });
+
+    test('never returns an empty title', () {
+      expect(LyricsEngine.cleanTitle('4K 1080P Live')['songTitle'], isNotEmpty);
+    });
+  });
+
   group('MarqueeText', () {
     testWidgets('overflowing text keeps a single-line height', (tester) async {
       await tester.pumpWidget(_host('short'));
@@ -172,7 +229,7 @@ void main() {
     testWidgets('shows the track and toggles play', (tester) async {
       var toggled = false;
       await tester.pumpWidget(wrap(MiniPlayer(
-        currentTrack: Track(
+        currentTrack: const Track(
           id: 'BV1_1',
           bvid: 'BV1',
           cid: 1,

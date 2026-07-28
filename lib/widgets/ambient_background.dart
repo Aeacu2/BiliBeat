@@ -19,13 +19,8 @@ import 'cached_cover_image.dart';
 ///    repaints, then it is static. The frosted overlay is built once.
 class AmbientBackground extends StatefulWidget {
   final String? coverUrl;
-  final Widget child;
 
-  const AmbientBackground({
-    super.key,
-    this.coverUrl,
-    required this.child,
-  });
+  const AmbientBackground({super.key, this.coverUrl});
 
   @override
   State<AmbientBackground> createState() => _AmbientBackgroundState();
@@ -240,9 +235,6 @@ class _AmbientBackgroundState extends State<AmbientBackground> {
             ),
           ),
         ),
-
-        // Foreground content.
-        Positioned.fill(child: widget.child),
       ],
     );
   }

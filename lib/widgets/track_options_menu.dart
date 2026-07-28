@@ -181,10 +181,10 @@ class _TrackOptionsMenuState extends State<TrackOptionsMenu> {
       await DatabaseService.removeDownloadedTrack(track);
       widget.onTrackChanged?.call();
       messenger.showSnackBar(
-        SnackBar(
-          content: const Text('已删除本地音频'),
+        const SnackBar(
+          content: Text('已删除本地音频'),
           backgroundColor: AppColors.backgroundElevated,
-          duration: const Duration(seconds: 2),
+          duration: Duration(seconds: 2),
         ),
       );
       return;
@@ -194,10 +194,10 @@ class _TrackOptionsMenuState extends State<TrackOptionsMenu> {
     widget.onTrackChanged?.call();
 
     messenger.showSnackBar(
-      SnackBar(
+      const SnackBar(
         content: Text('已开始下载'),
         backgroundColor: AppColors.accent,
-        duration: const Duration(seconds: 2),
+        duration: Duration(seconds: 2),
       ),
     );
   }
