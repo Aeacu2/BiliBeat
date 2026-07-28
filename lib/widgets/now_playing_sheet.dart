@@ -10,19 +10,12 @@ import '../services/audio_download_service.dart';
 import '../services/download_manager.dart';
 import '../theme/app_theme.dart';
 import '../theme/haptics.dart';
-import 'ambient_background.dart';
 import 'cached_cover_image.dart';
 import 'marquee_text.dart';
 import 'progress_ring.dart';
 import 'synced_lyrics_view.dart';
 
 /// Full-screen "now playing" surface.
-///
-/// It can display a [focusedTrack] that is not yet downloaded (e.g. tapped from
-/// search). In that case the center control is a download button (Apple
-/// Music–style ring while downloading); favoriting also starts the download.
-/// Once the track is playable it behaves like a normal player and follows the
-/// handler through prev/next/auto-advance.
 class NowPlayingSheet extends StatefulWidget {
   final BiliBeatAudioHandler handler;
   final Track focusedTrack;
@@ -173,7 +166,6 @@ class _NowPlayingSheetState extends State<NowPlayingSheet> {
     Haptics.light();
     final nowFav = await DatabaseService.toggleFavorite(_displayTrack);
     if (mounted) setState(() => _isFavorite = nowFav);
-    // Favoriting a track that isn't local yet kicks off its download too.
     if (nowFav && !_isDownloaded) {
       _startDownload();
     }
@@ -188,37 +180,33 @@ class _NowPlayingSheetState extends State<NowPlayingSheet> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.transparent,
-      resizeToAvoidBottomInset: false,
-      body: AmbientBackground(
-        coverUrl: _displayTrack.coverUrl,
-        child: SafeArea(
-          child: Column(
-            children: [
-              _topBar(),
-              Expanded(
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 12),
-                  child: _showLyrics && _isActive
-                      ? ValueListenableBuilder<List<LyricLine>>(
-                          valueListenable: widget.lyricsNotifier,
-                          builder: (context, lines, _) {
-                            return SyncedLyricsView(
-                              lines: lines,
-                              positionNotifier: widget.positionNotifier,
-                              onSeek: (sec) => widget.handler.seek(
-                                Duration(milliseconds: (sec * 1000).toInt()),
-                              ),
-                              onOpenEditor: widget.onOpenLyricEditor,
-                            );
-                          },
-                        )
-                      : _albumArt(),
-                ),
+      backgroundColor: AppColors.background,
+      body: SafeArea(
+        child: Column(
+          children: [
+            _topBar(),
+            Expanded(
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
+                child: _showLyrics && _isActive
+                    ? ValueListenableBuilder<List<LyricLine>>(
+                        valueListenable: widget.lyricsNotifier,
+                        builder: (context, lines, _) {
+                          return SyncedLyricsView(
+                            lines: lines,
+                            positionNotifier: widget.positionNotifier,
+                            onSeek: (sec) => widget.handler.seek(
+                              Duration(milliseconds: (sec * 1000).toInt()),
+                            ),
+                            onOpenEditor: widget.onOpenLyricEditor,
+                          );
+                        },
+                      )
+                    : _albumArt(),
               ),
-              _bottomPanel(),
-            ],
-          ),
+            ),
+            _bottomPanel(),
+          ],
         ),
       ),
     );
@@ -226,7 +214,7 @@ class _NowPlayingSheetState extends State<NowPlayingSheet> {
 
   Widget _topBar() {
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
       child: Row(
         children: [
           IconButton(
@@ -268,7 +256,7 @@ class _NowPlayingSheetState extends State<NowPlayingSheet> {
     return LayoutBuilder(
       builder: (context, constraints) {
         final maxHeight = constraints.maxHeight;
-        final size = maxHeight > 0 ? (maxHeight * 0.75).clamp(150.0, 320.0) : 240.0;
+        final size = maxHeight > 0 ? (maxHeight * 0.78).clamp(160.0, 320.0) : 240.0;
         return Center(
           child: AnimatedScale(
             scale: (_isActive && _isPlaying) ? 1.0 : 0.92,
@@ -282,8 +270,8 @@ class _NowPlayingSheetState extends State<NowPlayingSheet> {
                 boxShadow: const [
                   BoxShadow(
                     color: AppColors.black55,
-                    blurRadius: 40,
-                    offset: Offset(0, 18),
+                    blurRadius: 32,
+                    offset: Offset(0, 16),
                   ),
                 ],
               ),
@@ -303,8 +291,8 @@ class _NowPlayingSheetState extends State<NowPlayingSheet> {
   }
 
   Widget _bottomPanel() {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(24, 8, 24, 12),
+    return Container(
+      padding: const EdgeInsets.fromLTRB(24, 4, 24, 16),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
@@ -466,7 +454,6 @@ class _NowPlayingSheetState extends State<NowPlayingSheet> {
     );
   }
 
-  /// Center control: download → ring → play/pause, depending on download state.
   Widget _centerButton() {
     final task = _downloadTask;
     if (task != null) {
@@ -594,4 +581,3 @@ class _NowPlayingSheetState extends State<NowPlayingSheet> {
     );
   }
 }
-

@@ -213,9 +213,7 @@ class _MainLayoutState extends State<MainLayout> {
 
     Navigator.of(context).push(
       PageRouteBuilder(
-        opaque: false,
-        barrierDismissible: true,
-        barrierColor: AppColors.black55,
+        opaque: true,
         transitionDuration: const Duration(milliseconds: 300),
         reverseTransitionDuration: const Duration(milliseconds: 250),
         pageBuilder: (context, animation, secondaryAnimation) {
