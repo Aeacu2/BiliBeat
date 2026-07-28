@@ -46,6 +46,30 @@ android {
     }
 }
 
+// 64-bit only, permanently — release builds ship arm64-v8a and nothing else.
+//
+// `ndk { abiFilters "arm64-v8a" }` is NOT enough on its own: it does not strip
+// prebuilt .so files that arrive inside plugin AARs. The `jni` package ships
+// libdartjni.so for every ABI, and its presence alone made the APK advertise
+// `native-code: 'arm64-v8a' 'armeabi-v7a' 'x86_64'` — so a 32-bit device would
+// have installed it and then crashed on launch, because libflutter.so and
+// libapp.so were arm64-only. Excluding at packaging time is what actually
+// removes them.
+//
+// Scoped to the release variant on purpose: applying it to `debug` too would
+// break x86_64 emulators.
+//
+// This does not make the app faster — the arm64 binary was always arm64-only.
+// It buys one artifact instead of three, and a shorter build.
+androidComponents {
+    onVariants(selector().withBuildType("release")) { variant ->
+        variant.packaging.jniLibs.excludes.add("**/armeabi-v7a/**")
+        variant.packaging.jniLibs.excludes.add("**/armeabi/**")
+        variant.packaging.jniLibs.excludes.add("**/x86/**")
+        variant.packaging.jniLibs.excludes.add("**/x86_64/**")
+    }
+}
+
 flutter {
     source = "../.."
 }

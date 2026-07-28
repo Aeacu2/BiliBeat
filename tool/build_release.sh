@@ -1,6 +1,10 @@
 #!/usr/bin/env bash
 #
-# Builds the release APKs with Dart obfuscation.
+# Builds the arm64-only release APK with Dart obfuscation.
+#
+# 64-bit only: `--target-platform android-arm64` keeps Flutter from compiling
+# the other ABIs at all, and `abiFilters` in android/app/build.gradle is the
+# backstop so even a plain `flutter build apk` cannot ship 32-bit.
 #
 # Two things this exists to get right, because both have already bitten us:
 #
@@ -43,10 +47,18 @@ SYMBOLS_DIR="symbols/$VERSION"
 mkdir -p "$SYMBOLS_DIR"
 
 echo "==> Building $VERSION (obfuscated), symbols -> $SYMBOLS_DIR"
+# No --split-per-abi: with a single ABI there is nothing to split, and AGP
+# rejects `splits.abi` and `ndk.abiFilters` being set at the same time
+# ("Conflicting configuration ... cannot be present when splits abi filters
+# are set"). The output is a single app-release.apk containing only arm64.
 "$FLUTTER" build apk --release \
-  --split-per-abi \
+  --target-platform android-arm64 \
   --obfuscate \
   --split-debug-info="$SYMBOLS_DIR"
+
+# Publish under a name that says what it is, rather than "app-release.apk".
+OUT="build/app/outputs/flutter-apk/bilibeat-${VERSION%%+*}-arm64-v8a.apk"
+cp build/app/outputs/flutter-apk/app-release.apk "$OUT"
 
 echo
 echo "==> APKs"

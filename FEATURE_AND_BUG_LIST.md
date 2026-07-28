@@ -36,6 +36,12 @@
   - 架构上「未下载即不可播放」，因此播放页主按钮按真实状态切换：**未下载 → 下载按钮**；**下载中 → 圆环进度条**（与列表中 `TrackDownloadButton` 同一视觉）；**已下载 → 播放/暂停**。
   - 移除播放页的「已下载 ✓」指示与顶部音源行：能播放本身即代表已下载，再标注是冗余。
   - handler 自身的下载不经过 `DownloadManager`，故播放开始时会复查一次落盘状态，避免按钮卡在「下载」。
+- [x] **仅 64 位发布 (64-bit Only, Permanent)**
+  - 构建脚本 `--target-platform android-arm64` ＋ `android/app/build.gradle` 中按 **release** variant 过滤 jniLibs，`armeabi-v7a` / `x86` / `x86_64` 永久移除。ARM 笔记本（Apple Silicon、Windows on ARM、ARM Chromebook）本就使用 arm64-v8a，同一个包即可覆盖。
+  - **⚠️ `ndk { abiFilters }` 单独使用是不够的**：它不会剔除插件 AAR 里预编译的 .so。`jni` 包为每个 ABI 提供 `libdartjni.so`，仅凭它的存在，APK 就会声明 `native-code: 'arm64-v8a' 'armeabi-v7a' 'x86_64'`——32 位设备会认为可以安装，然后因为缺少 arm64 以外的 `libflutter.so`/`libapp.so` 而在启动时崩溃。**必须在打包阶段 exclude**，并用 `aapt2 dump badging` 核对 `native-code` 只剩 arm64-v8a。
+  - **刻意只作用于 release**：作用于 debug 会导致 x86_64 模拟器无法运行。
+  - **注意：这不会让 App 变快。** 拆分后的 arm64 APK 本来就只含 arm64 代码，机器码完全相同。收益是构建更快（110s → 35s）、产物从 3 个变 1 个。真正的体积收益来自混淆。
+  - 与 `--split-per-abi` 互斥：AGP 会报 `Conflicting configuration ... splits abi filters`。单 ABI 本就无需拆分。
 - [x] **发布构建混淆 (Obfuscated Release Builds)**
   - `tool/build_release.sh`：强制 JDK 21+（AGP lint 依赖 `List.removeLast()`，JDK 17 会以无关的 `NoSuchMethodError` 失败），产出混淆 APK，符号写入 `symbols/<version>/`。
   - 实测 `libapp.so` 6.36MB → 5.31MB（−16.5%），APK −0.85MB。
