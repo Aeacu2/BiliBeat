@@ -14,6 +14,7 @@ import '../widgets/empty_state.dart';
 import '../widgets/marquee_text.dart';
 import '../widgets/mini_player.dart';
 import '../widgets/track_download_button.dart';
+import '../widgets/track_row.dart';
 
 import 'dart:async';
 
@@ -233,11 +234,8 @@ class _HomeScreenState extends State<HomeScreen> {
         bottom: MiniPlayer.totalHeight(context) + 24,
       ),
       children: [
-        // Screen Header
-        const Text('聆听', style: AppTypography.display),
-
-        const SizedBox(height: 16),
-
+        // No "聆听" heading: the tab bar above already names the page, and
+        // repeating it one line below was the same word twice.
         // Quick Access Cards: Downloaded Tracks & Favorites
         Row(
           children: [
@@ -276,10 +274,9 @@ class _HomeScreenState extends State<HomeScreen> {
             (entry) {
               final index = entry.$1;
               final task = entry.$2;
-              return Container(
-              margin: const EdgeInsets.only(bottom: 8),
-              child: GlassCard(
-                padding: const EdgeInsets.all(10),
+              return Padding(
+              padding: const EdgeInsets.only(bottom: TrackRow.gap),
+              child: TrackRow(
                 child: Row(
                   children: [
                     ClipRRect(

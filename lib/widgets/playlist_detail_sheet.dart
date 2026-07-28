@@ -7,7 +7,7 @@ import '../models/track.dart';
 import '../services/database_service.dart';
 import '../services/download_manager.dart';
 import 'empty_state.dart';
-import 'glass_card.dart';
+import 'track_row.dart';
 import 'marquee_text.dart';
 import 'mini_player.dart';
 import 'track_options_menu.dart';
@@ -264,19 +264,13 @@ class _PlaylistDetailSheetState extends State<PlaylistDetailSheet> {
                         background: _removeBackground(),
                         confirmDismiss: (_) => _confirmRemove(track),
                         onDismissed: (_) => _removeTrack(track),
-                        child: Container(
-                        margin: const EdgeInsets.only(bottom: 8),
-                        child: GlassCard(
-                          borderRadius: 12,
-                          padding: EdgeInsets.zero,
-                          child: InkWell(
-                            borderRadius: BorderRadius.circular(12),
+                        child: Padding(
+                        padding: const EdgeInsets.only(bottom: TrackRow.gap),
+                        child: TrackRow(
                             onTap: isDownloading ? null : () => widget.onSelectTrack(track, queue: _playableQueue),
                             onLongPress: () => TrackOptionsMenu.show(
                                 context, track,
                                 onTrackChanged: _refresh),
-                            child: Padding(
-                              padding: const EdgeInsets.all(8),
                               child: Row(
                                 children: [
                                   ClipRRect(
@@ -334,8 +328,6 @@ class _PlaylistDetailSheetState extends State<PlaylistDetailSheet> {
                                   ),
                                 ],
                               ),
-                            ),
-                          ),
                         ),
                         ),
                       );
@@ -350,7 +342,7 @@ class _PlaylistDetailSheetState extends State<PlaylistDetailSheet> {
   /// The red "remove" affordance revealed by swiping a row left.
   Widget _removeBackground() {
     return Container(
-      margin: const EdgeInsets.only(bottom: 8),
+      margin: const EdgeInsets.only(bottom: TrackRow.gap),
       alignment: Alignment.centerRight,
       padding: const EdgeInsets.only(right: 20),
       decoration: BoxDecoration(

@@ -12,6 +12,7 @@ import '../widgets/marquee_text.dart';
 import '../widgets/mini_player.dart';
 import '../widgets/shimmer.dart';
 import '../widgets/track_download_button.dart';
+import '../widgets/track_row.dart';
 
 class SearchScreen extends StatefulWidget {
   final TrackAction onSelectTrack;
@@ -214,10 +215,8 @@ class _SearchScreenState extends State<SearchScreen> {
 
   List<Widget> _header() {
     return [
-        const Text('搜索', style: AppTypography.display),
-
-        const SizedBox(height: 16),
-
+        // No "搜索" heading: the tab bar above already says which page this is,
+        // and printing the same word twice, one line apart, was pure noise.
         // Search Input Bar with Focus Listener
         GlassCard(
           borderRadius: 20,
@@ -393,18 +392,12 @@ class _SearchScreenState extends State<SearchScreen> {
   }
 
   Widget _buildTrackTile(Track track, int index) {
-    return Container(
-      margin: const EdgeInsets.only(bottom: 10),
-      child: GlassCard(
-        borderRadius: 14,
-        padding: EdgeInsets.zero,
-        child: InkWell(
-          borderRadius: BorderRadius.circular(14),
-          // Tapping card body: Plays AND Directly Opens Full Player Sheet!
+    return Padding(
+      padding: const EdgeInsets.only(bottom: TrackRow.gap),
+      child: TrackRow(
+          // Tapping the row: plays AND opens the full player.
           onTap: () => widget.onSelectTrack(track),
-          child: Padding(
-            padding: const EdgeInsets.all(8),
-            child: Row(
+          child: Row(
               children: [
                 ClipRRect(
                   borderRadius: BorderRadius.circular(10),
@@ -471,9 +464,7 @@ class _SearchScreenState extends State<SearchScreen> {
                   },
                 ),
               ],
-            ),
           ),
-        ),
       ),
     );
   }

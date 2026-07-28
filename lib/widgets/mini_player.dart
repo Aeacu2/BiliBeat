@@ -12,9 +12,10 @@ import 'marquee_text.dart';
 /// It is deliberately built from the same parts as [NowPlayingSheet], because
 /// tapping it *becomes* that page: the card's rounded surface grows into the
 /// page, so the two must share a visual language or the morph reads as a jump
-/// cut. Concretely, the artwork uses the album-art corner radius, the primary
-/// control is the same gradient circle at a smaller size, and the surface is
-/// the same elevated near-black with the same soft shadow.
+/// cut. The artwork uses the album-art corner radius, the surface is the same
+/// elevated near-black with the same soft shadow, and the primary control keeps
+/// the page's shape and position — but not its fill. Continuity is about shape
+/// and place; a saturated pink disc shrunk onto a 68pt bar just shouts.
 ///
 /// Still no `BackdropFilter`: real-time blur over the whole page cost a full
 /// GPU layer pass every frame and was the root of the Android foreground
@@ -195,9 +196,11 @@ class MiniPlayer extends StatelessWidget {
                     ),
                   ),
                   const SizedBox(width: 8),
-                  // The page's primary control, scaled down: same gradient,
-                  // same glow, same glyph. It is the thing the eye tracks
-                  // across the morph into the full player.
+                  // Same shape and place as the page's primary control, so the
+                  // eye can track it across the morph — but quiet. A filled
+                  // pink disc is right at 68pt in the middle of the player;
+                  // shrunk onto a 68pt bar it was the loudest thing on the
+                  // screen and fought the artwork it sits next to.
                   _playButton(),
                   _iconButton(
                     Icons.skip_next_rounded,
@@ -237,13 +240,15 @@ class MiniPlayer extends StatelessWidget {
             height: 38,
             decoration: const BoxDecoration(
               shape: BoxShape.circle,
-              gradient: AppColors.primaryGradient,
-              boxShadow: [
-                BoxShadow(
-                    color: AppColors.accent30,
-                    blurRadius: 14,
-                    offset: Offset(0, 4)),
-              ],
+              // The same top-lit sheen the glass surfaces use, so the control
+              // belongs to the card instead of being pasted onto it.
+              gradient: LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                colors: [AppColors.surfaceHighlight, AppColors.surfaceCard],
+              ),
+              border: Border.fromBorderSide(
+                  BorderSide(color: AppColors.hairlineStrong)),
             ),
             child: AnimatedSwitcher(
               duration: const Duration(milliseconds: 160),
