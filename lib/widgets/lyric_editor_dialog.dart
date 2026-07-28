@@ -242,19 +242,29 @@ class _LyricEditorDialogState extends State<LyricEditorDialog> with SingleTicker
     Navigator.pop(context);
   }
 
-  void _nudgeOffset(double delta) {
+  /// Commits one drag of the lyrics. The view reports how much further the
+  /// timeline has to move *on top of* the offset it was previewing with, so
+  /// this accumulates rather than replaces.
+  void _applyDragCalibration(double delta) {
     setState(() => _previewOffset =
-        double.parse((_previewOffset + delta).toStringAsFixed(1)));
+        double.parse((_previewOffset + delta).toStringAsFixed(2)));
   }
 
-  /// Timeline calibration. A single horizontal bar with real-sized targets;
-  /// the old vertical rail of five 50px buttons squeezed the preview and was
-  /// fiddly to hit.
+  /// Timeline calibration is the drag itself — long-press the preview and pull
+  /// the line that should be singing onto the centre guide. This row only
+  /// reports the result and offers a way back to zero.
+  ///
+  /// It replaced a row of ±0.1s / ±0.5s buttons. Nudging blind is the wrong
+  /// interaction for this job: you cannot see a tenth of a second, so it was
+  /// tap-listen-tap-listen until it happened to line up. Dragging the lyrics
+  /// against the playhead *is* the correction, stated directly.
   Widget _offsetBar() {
-    final label =
-        '${_previewOffset >= 0 ? "+" : ""}${_previewOffset.toStringAsFixed(1)}s';
+    final off = _previewOffset;
+    final label = off == 0
+        ? '时间轴未调整'
+        : '${off > 0 ? "延迟" : "提前"} ${off.abs().toStringAsFixed(1)} 秒';
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+      padding: const EdgeInsets.fromLTRB(12, 8, 8, 8),
       decoration: BoxDecoration(
         color: AppColors.surfaceCard,
         borderRadius: BorderRadius.circular(AppRadius.md),
@@ -262,31 +272,26 @@ class _LyricEditorDialogState extends State<LyricEditorDialog> with SingleTicker
       ),
       child: Row(
         children: [
-          const Icon(Icons.timer_outlined, color: AppColors.accent, size: 16),
+          Icon(Icons.timer_outlined,
+              color: off == 0 ? AppColors.textFaint : AppColors.accent,
+              size: 16),
           const SizedBox(width: 8),
-          SizedBox(
-            width: 52,
-            child: Text(
-              label,
-              style: const TextStyle(
-                color: AppColors.textPrimary,
-                fontSize: 13,
-                fontWeight: FontWeight.bold,
-                fontFeatures: [FontFeature.tabularFigures()],
-              ),
+          Text(
+            label,
+            style: TextStyle(
+              color: off == 0 ? AppColors.textMuted : AppColors.textPrimary,
+              fontSize: 13,
+              fontWeight: FontWeight.w600,
+              fontFeatures: const [FontFeature.tabularFigures()],
             ),
           ),
           const Spacer(),
-          _offsetBtn('-0.5', () => _nudgeOffset(-0.5)),
-          const SizedBox(width: 6),
-          _offsetBtn('-0.1', () => _nudgeOffset(-0.1)),
-          const SizedBox(width: 6),
-          _offsetBtn('归零', () => setState(() => _previewOffset = 0.0),
-              muted: true),
-          const SizedBox(width: 6),
-          _offsetBtn('+0.1', () => _nudgeOffset(0.1)),
-          const SizedBox(width: 6),
-          _offsetBtn('+0.5', () => _nudgeOffset(0.5)),
+          if (off != 0)
+            _offsetBtn('归零', () => setState(() => _previewOffset = 0.0),
+                muted: true)
+          else
+            const Text('长按歌词拖动校准',
+                style: TextStyle(color: AppColors.textFaint, fontSize: 11.5)),
         ],
       ),
     );
@@ -298,7 +303,7 @@ class _LyricEditorDialogState extends State<LyricEditorDialog> with SingleTicker
       onTap: onPressed,
       behavior: HitTestBehavior.opaque,
       child: Container(
-        padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 10),
+        padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 12),
         decoration: BoxDecoration(
           color: AppColors.surfaceHighlight,
           borderRadius: BorderRadius.circular(AppRadius.sm),
@@ -499,6 +504,18 @@ class _LyricEditorDialogState extends State<LyricEditorDialog> with SingleTicker
                                         widget.positionNotifier ??
                                             _idlePosition,
                                     offset: _previewOffset,
+                                    // Calibrate by dragging the lyrics
+                                    // themselves against the playing
+                                    // position. For a track that is not the
+                                    // one playing there is no "now", and the
+                                    // idle clock parks the anchor at 0:00.
+                                    anchorSeconds: () =>
+                                        (widget.positionNotifier ??
+                                                    _idlePosition)
+                                                .value
+                                                .inMilliseconds /
+                                            1000.0,
+                                    onCalibrate: _applyDragCalibration,
                                   ),
                                 ),
                               ),

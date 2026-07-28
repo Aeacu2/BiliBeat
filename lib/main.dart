@@ -255,7 +255,6 @@ class _MainLayoutState extends State<MainLayout> {
             durationNotifier: _durationNotifier,
             lyricsNotifier: _lyricsNotifier,
             onOpenLyricEditor: _openLyricEditor,
-            onShiftLyrics: _shiftLyrics,
             followHandler: follow,
           );
         },
@@ -298,7 +297,10 @@ class _MainLayoutState extends State<MainLayout> {
           songTitle: track.title,
           artistName: track.uploader,
           coverUrl: track.coverUrl,
-          positionNotifier: _positionNotifier,
+          // Only the playing track has a live position; handing the
+          // editor another track's clock would drive the preview
+          // against a timeline that has nothing to do with it.
+          positionNotifier: isCurrent ? _positionNotifier : null,
           initialTabIndex: lyricsTab ? 1 : 0,
           currentLines: isCurrent ? _lyricsNotifier.value : const [],
           onApplyLyrics: (result) async {
@@ -318,18 +320,6 @@ class _MainLayoutState extends State<MainLayout> {
         );
       },
     ).whenComplete(release);
-  }
-
-  /// Shifts the whole lyric timeline of [track] by [delta] seconds and makes it
-  /// stick: the calibration the user just dragged out is baked into the cached
-  /// lines, exactly as the editor's ±0.1s buttons do.
-  Future<void> _shiftLyrics(Track track, double delta) async {
-    if (delta == 0) return;
-    final shifted = await DatabaseService.shiftCachedLyrics(track.id, delta);
-    if (!mounted || shifted == null) return;
-    if (_currentTrack.value?.id == track.id) {
-      _lyricsNotifier.value = shifted;
-    }
   }
 
   Widget _tabItem(int index, String label) {
