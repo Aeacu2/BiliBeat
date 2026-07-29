@@ -551,6 +551,7 @@ class _MainLayoutState extends State<MainLayout> {
                 },
                 onNext: _audioHandler.skipToNext,
                 onPrevious: _audioHandler.skipToPrevious,
+                onSeek: _audioHandler.seek,
                 onTap: _openNowPlaying,
               ),
               ),

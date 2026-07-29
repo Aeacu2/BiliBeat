@@ -9,13 +9,14 @@ import 'marquee_text.dart';
 /// The docked player — a compact edition of the now-playing page rather than a
 /// separate control bar.
 ///
-/// It is deliberately built from the same parts as [NowPlayingSheet], because
-/// tapping it *becomes* that page: the card's rounded surface grows into the
-/// page, so the two must share a visual language or the morph reads as a jump
-/// cut. The artwork uses the album-art corner radius, the surface is the same
-/// elevated near-black with the same soft shadow, and the primary control keeps
-/// the page's shape and position — but not its fill. Continuity is about shape
-/// and place; a saturated pink disc shrunk onto a 68pt bar just shouts.
+/// It is deliberately built from the same parts as the now-playing page,
+/// because tapping it *becomes* that page: the card's rounded surface grows
+/// into the page, so the two must share a visual language or the morph reads as
+/// a jump cut. The artwork uses the album-art corner radius, the surface is the
+/// same elevated near-black with the same soft shadow, the seek bar is the same
+/// track and the same accent, and the primary control keeps the page's shape and
+/// position — but not its fill. Continuity is about shape and place; a saturated
+/// pink disc shrunk onto a bar just shouts.
 ///
 /// Still no `BackdropFilter`: real-time blur over the whole page cost a full
 /// GPU layer pass every frame and was the root of the Android foreground
@@ -30,6 +31,9 @@ class MiniPlayer extends StatelessWidget {
   final VoidCallback? onPrevious;
   final VoidCallback onTap;
 
+  /// Seek, from dragging the card's own progress bar.
+  final ValueChanged<Duration>? onSeek;
+
   const MiniPlayer({
     super.key,
     required this.currentTrack,
@@ -40,24 +44,25 @@ class MiniPlayer extends StatelessWidget {
     required this.onNext,
     this.onPrevious,
     required this.onTap,
+    this.onSeek,
   });
 
-  /// Height of the controls themselves, above the home-indicator inset: the
-  /// row, then the progress lane under it.
-  static const double contentHeight = _rowHeight + _progressLane;
-  static const double _rowHeight = 58.0;
-  static const double _progressLane = 12.0;
+  /// Height of the card's contents, above the home-indicator inset.
+  static const double contentHeight = 82.0;
 
-  /// The card is seated on the bottom edge of the screen, so only its top
-  /// corners are rounded: there is nothing below or beside it to round against.
-  /// The radius is still the album art's, so the card reads as the page folded
-  /// down and the morph starts from the shape it ends with.
+  static const double _artSize = 54.0;
+
+  /// Height of the strip along the bottom that seeks. The bar drawn inside it
+  /// is 3pt; the rest is the touch target a 3pt line cannot be.
+  static const double _seekStrip = 22.0;
+
+  /// The album art's radius, so the card looks like the page folded down.
   static const BorderRadius cardRadius =
       BorderRadius.vertical(top: Radius.circular(AppRadius.xl));
 
   /// Space between the controls and the very bottom of the screen: the
   /// home-indicator inset, or a small margin on devices without one. It is
-  /// *inside* the card now — the card itself is flush to the edge.
+  /// *inside* the card — the card itself is flush to the edge.
   static double bottomInset(BuildContext context) {
     final inset = MediaQuery.of(context).padding.bottom;
     return inset > 0 ? inset : 6;
@@ -105,31 +110,22 @@ class MiniPlayer extends StatelessWidget {
   }
 
   Widget _emptyState() {
-    // Same row height as the active state, so the artwork slot does not move
-    // when playback starts — only the progress lane below it stays empty.
-    return const Column(
-      children: [
-        SizedBox(
-          height: _rowHeight,
-          child: Padding(
-            padding: EdgeInsets.symmetric(horizontal: 16),
-            child: Row(
-          children: [
-            _EmptyArt(),
-            SizedBox(width: 12),
-            Expanded(
-              child: Text('选一首歌开始播放',
-                  style: TextStyle(
-                      color: AppColors.textMuted,
-                      fontSize: 13.5,
-                      fontWeight: FontWeight.w500,
-                      letterSpacing: -0.1)),
-                ),
-              ],
-            ),
+    return const Padding(
+      padding: EdgeInsets.symmetric(horizontal: 16),
+      child: Row(
+        children: [
+          _EmptyArt(),
+          SizedBox(width: 12),
+          Expanded(
+            child: Text('选一首歌开始播放',
+                style: TextStyle(
+                    color: AppColors.textMuted,
+                    fontSize: 13.5,
+                    fontWeight: FontWeight.w500,
+                    letterSpacing: -0.1)),
           ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 
@@ -153,70 +149,81 @@ class MiniPlayer extends StatelessWidget {
           onPrevious!();
         }
       },
-      child: Column(
+      // The seek bar overlays the bottom of the row rather than sitting in a
+      // lane below it. A lane pushes the row upwards, and then the artwork is
+      // visibly off the card's own centre line — which is the first thing the
+      // eye checks on a bar this size.
+      child: Stack(
         children: [
-          SizedBox(
-            height: _rowHeight,
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(16, 0, 8, 0),
-              child: Row(
-                children: [
-                  ClipRRect(
-                    borderRadius: BorderRadius.circular(AppRadius.md),
-                    child: CachedCoverImage(
-                      url: track.coverUrl,
-                      width: 48,
-                      height: 48,
-                    ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 0, 8, _seekStrip - 8),
+            child: Row(
+              children: [
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(AppRadius.md),
+                  child: CachedCoverImage(
+                    url: track.coverUrl,
+                    width: _artSize,
+                    height: _artSize,
                   ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        MarqueeText(
-                          text: track.title,
-                          style: const TextStyle(
-                            color: AppColors.textPrimary,
-                            fontSize: 14.5,
-                            height: 1.3,
-                            fontWeight: FontWeight.w600,
-                            letterSpacing: -0.25,
-                          ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      MarqueeText(
+                        text: track.title,
+                        style: const TextStyle(
+                          color: AppColors.textPrimary,
+                          fontSize: 15,
+                          height: 1.3,
+                          fontWeight: FontWeight.w600,
+                          letterSpacing: -0.25,
                         ),
-                        const SizedBox(height: 1),
-                        MarqueeText(
-                          text: track.uploader,
-                          phase: 0.35,
-                          style: const TextStyle(
-                            color: AppColors.textMuted,
-                            fontSize: 12,
-                            height: 1.35,
-                          ),
+                      ),
+                      const SizedBox(height: 2),
+                      MarqueeText(
+                        text: track.uploader,
+                        phase: 0.35,
+                        style: const TextStyle(
+                          color: AppColors.textMuted,
+                          fontSize: 12.5,
+                          height: 1.35,
                         ),
-                      ],
-                    ),
+                      ),
+                    ],
                   ),
-                  const SizedBox(width: 8),
-                  // Same shape and place as the page's primary control, so the
-                  // eye can track it across the morph — but quiet. A filled
-                  // pink disc is right at 68pt in the middle of the player;
-                  // shrunk onto a bar it was the loudest thing on the screen
-                  // and fought the artwork it sits next to.
-                  _playButton(),
-                  _iconButton(
-                    Icons.skip_next_rounded,
-                    onPressed: () {
-                      Haptics.selection();
-                      onNext();
-                    },
-                  ),
-                ],
-              ),
+                ),
+                const SizedBox(width: 8),
+                // Same shape and place as the page's primary control, so the
+                // eye can track it across the morph — but quiet. A filled pink
+                // disc is right at 68pt in the middle of the player; shrunk
+                // onto a bar it was the loudest thing on the screen and fought
+                // the artwork it sits next to.
+                _playButton(),
+                _iconButton(
+                  Icons.skip_next_rounded,
+                  onPressed: () {
+                    Haptics.selection();
+                    onNext();
+                  },
+                ),
+              ],
             ),
           ),
-          Expanded(child: RepaintBoundary(child: _progressBar())),
+          Positioned(
+            left: 0,
+            right: 0,
+            bottom: 0,
+            height: _seekStrip,
+            child: _MiniSeekBar(
+              positionNotifier: positionNotifier,
+              durationNotifier: durationNotifier,
+              onSeek: onSeek,
+            ),
+          ),
         ],
       ),
     );
@@ -230,12 +237,12 @@ class MiniPlayer extends StatelessWidget {
         onPlayPause();
       },
       child: SizedBox(
-        width: 48,
-        height: 48,
+        width: 50,
+        height: 50,
         child: Center(
           child: Container(
-            width: 38,
-            height: 38,
+            width: 40,
+            height: 40,
             decoration: const BoxDecoration(
               shape: BoxShape.circle,
               // The same top-lit sheen the glass surfaces use, so the control
@@ -256,7 +263,7 @@ class MiniPlayer extends StatelessWidget {
                 isPlaying ? Icons.pause_rounded : Icons.play_arrow_rounded,
                 key: ValueKey<bool>(isPlaying),
                 color: Colors.white,
-                size: 22,
+                size: 23,
               ),
             ),
           ),
@@ -271,50 +278,154 @@ class MiniPlayer extends StatelessWidget {
       onTap: onPressed,
       child: SizedBox(
         width: 44,
-        height: 44,
+        height: 46,
         child: Center(
           child: Icon(icon, color: AppColors.textSecondary, size: 26),
         ),
       ),
     );
   }
+}
 
-  /// The page's seek bar, folded down.
-  ///
-  /// Inset and rounded like the one on the player page rather than a hairline
-  /// welded to the card's bottom edge: a full-width line floating above the
-  /// home indicator reads as a stray rule under the card, not as progress —
-  /// and the card is supposed to end at the screen edge with nothing after it.
-  Widget _progressBar() {
-    return AnimatedBuilder(
-      animation: Listenable.merge([positionNotifier, durationNotifier]),
-      builder: (context, _) {
-        final dur = durationNotifier.value.inMilliseconds;
-        final progress = dur > 0
-            ? (positionNotifier.value.inMilliseconds / dur).clamp(0.0, 1.0)
-            : 0.0;
-        return Padding(
-          padding: const EdgeInsets.fromLTRB(16, 0, 16, 6),
-          child: Align(
-            alignment: Alignment.topCenter,
-            child: ClipRRect(
-              borderRadius: BorderRadius.circular(2),
-              child: SizedBox(
-                height: 3,
-                child: Stack(
-                  children: [
-                    const Positioned.fill(
-                      child: ColoredBox(color: AppColors.hairlineStrong),
+/// The page's seek bar, folded down: same track, same accent, and draggable.
+///
+/// Stateful because a drag has to show where the finger is rather than where
+/// playback still is — otherwise the bar fights the thumb all the way across.
+class _MiniSeekBar extends StatefulWidget {
+  final ValueNotifier<Duration> positionNotifier;
+  final ValueNotifier<Duration> durationNotifier;
+  final ValueChanged<Duration>? onSeek;
+
+  const _MiniSeekBar({
+    required this.positionNotifier,
+    required this.durationNotifier,
+    this.onSeek,
+  });
+
+  @override
+  State<_MiniSeekBar> createState() => _MiniSeekBarState();
+}
+
+class _MiniSeekBarState extends State<_MiniSeekBar> {
+  double? _dragFraction;
+
+  static const double _hPad = 16.0;
+
+  double _fractionFor(double dx, double width) {
+    final usable = width - _hPad * 2;
+    if (usable <= 0) return 0.0;
+    return ((dx - _hPad) / usable).clamp(0.0, 1.0);
+  }
+
+  void _commit(double fraction) {
+    final total = widget.durationNotifier.value;
+    if (total > Duration.zero && widget.onSeek != null) {
+      widget.onSeek!(total * fraction);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final seekable = widget.onSeek != null;
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final width = constraints.maxWidth;
+        return GestureDetector(
+          // Opaque and horizontal: this strip claims the sideways drag inside
+          // its own bounds, so seeking here never reaches the card's
+          // swipe-to-change-track gesture behind it.
+          behavior: HitTestBehavior.opaque,
+          onHorizontalDragStart: seekable
+              ? (d) {
+                  Haptics.selection();
+                  setState(() =>
+                      _dragFraction = _fractionFor(d.localPosition.dx, width));
+                }
+              : null,
+          onHorizontalDragUpdate: seekable
+              ? (d) => setState(() =>
+                  _dragFraction = _fractionFor(d.localPosition.dx, width))
+              : null,
+          onHorizontalDragEnd: seekable
+              ? (_) {
+                  final f = _dragFraction;
+                  if (f != null) {
+                    Haptics.light();
+                    _commit(f);
+                  }
+                  setState(() => _dragFraction = null);
+                }
+              : null,
+          onHorizontalDragCancel:
+              seekable ? () => setState(() => _dragFraction = null) : null,
+          onTapUp: seekable
+              ? (d) {
+                  Haptics.light();
+                  _commit(_fractionFor(d.localPosition.dx, width));
+                }
+              : null,
+          child: AnimatedBuilder(
+            animation: Listenable.merge(
+                [widget.positionNotifier, widget.durationNotifier]),
+            builder: (context, _) {
+              final total = widget.durationNotifier.value.inMilliseconds;
+              final played = total > 0
+                  ? (widget.positionNotifier.value.inMilliseconds / total)
+                      .clamp(0.0, 1.0)
+                  : 0.0;
+              final fraction = _dragFraction ?? played;
+              final dragging = _dragFraction != null;
+
+              return Padding(
+                padding: const EdgeInsets.symmetric(horizontal: _hPad),
+                child: Center(
+                  child: SizedBox(
+                    // Full width, explicitly. Left to shrink-wrap, the fill
+                    // sized the track and the whole bar grew outwards from the
+                    // centre of the card.
+                    width: double.infinity,
+                    height: dragging ? 5 : 3,
+                    child: Stack(
+                      fit: StackFit.expand,
+                      clipBehavior: Clip.none,
+                      children: [
+                        ClipRRect(
+                          borderRadius: BorderRadius.circular(3),
+                          child: Stack(
+                            fit: StackFit.expand,
+                            children: [
+                              const ColoredBox(
+                                  color: AppColors.hairlineStrong),
+                              Align(
+                                alignment: Alignment.centerLeft,
+                                child: FractionallySizedBox(
+                                  widthFactor: fraction,
+                                  heightFactor: 1,
+                                  child: const ColoredBox(
+                                      color: AppColors.accent),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        if (dragging)
+                          Align(
+                            alignment: Alignment(fraction * 2 - 1, 0),
+                            child: Container(
+                              width: 11,
+                              height: 11,
+                              decoration: const BoxDecoration(
+                                shape: BoxShape.circle,
+                                color: AppColors.textPrimary,
+                              ),
+                            ),
+                          ),
+                      ],
                     ),
-                    FractionallySizedBox(
-                      widthFactor: progress,
-                      alignment: Alignment.centerLeft,
-                      child: const ColoredBox(color: AppColors.accent),
-                    ),
-                  ],
+                  ),
                 ),
-              ),
-            ),
+              );
+            },
           ),
         );
       },
@@ -330,14 +441,14 @@ class _EmptyArt extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      width: 48,
-      height: 48,
+      width: MiniPlayer._artSize,
+      height: MiniPlayer._artSize,
       decoration: BoxDecoration(
         color: AppColors.surfaceCard,
         borderRadius: BorderRadius.circular(AppRadius.md),
       ),
       child: const Icon(Icons.music_note_rounded,
-          color: AppColors.textFaint, size: 20),
+          color: AppColors.textFaint, size: 22),
     );
   }
 }

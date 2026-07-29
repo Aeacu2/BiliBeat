@@ -621,6 +621,70 @@ void main() {
       expect(tester.takeException(), isNull);
     });
 
+    const track = Track(
+      id: 'BV1_p1',
+      bvid: 'BV1',
+      cid: 1,
+      title: '一首标题非常非常长的歌曲用来触发滚动效果',
+      uploader: '某位 UP 主',
+      coverUrl: '',
+      duration: 200,
+    );
+
+    testWidgets('progress fills from the left edge, not from the middle',
+        (tester) async {
+      await tester.pumpWidget(wrap(MiniPlayer(
+        currentTrack: track,
+        isPlaying: true,
+        positionNotifier: ValueNotifier(const Duration(seconds: 50)),
+        durationNotifier: ValueNotifier(const Duration(seconds: 200)),
+        onPlayPause: () {},
+        onNext: () {},
+        onTap: () {},
+        onSeek: (_) {},
+      )));
+      await tester.pump(const Duration(milliseconds: 300));
+
+      final track_ = tester.getRect(find.byType(FractionallySizedBox));
+      final lane = tester.getRect(find.ancestor(
+          of: find.byType(FractionallySizedBox),
+          matching: find.byType(ClipRRect).last));
+
+      // Left-anchored and a quarter across. Shrink-wrapped, the fill sized its
+      // own track and the whole bar grew outwards from the centre.
+      expect(track_.left, lane.left);
+      expect(track_.width, closeTo(lane.width * 0.25, 1.0));
+    });
+
+    testWidgets('dragging the progress bar seeks', (tester) async {
+      Duration? sought;
+      await tester.pumpWidget(wrap(MiniPlayer(
+        currentTrack: track,
+        isPlaying: true,
+        positionNotifier: ValueNotifier(Duration.zero),
+        durationNotifier: ValueNotifier(const Duration(seconds: 200)),
+        onPlayPause: () {},
+        onNext: () {},
+        onTap: () {},
+        onSeek: (d) => sought = d,
+      )));
+      await tester.pump(const Duration(milliseconds: 300));
+
+      final bar = tester.getRect(find.byType(FractionallySizedBox));
+      final lane = tester.getRect(find.ancestor(
+          of: find.byType(FractionallySizedBox),
+          matching: find.byType(ClipRRect).last));
+      final gesture = await tester.startGesture(
+          Offset(lane.left + 4, bar.center.dy));
+      await gesture.moveBy(Offset(lane.width / 2, 0));
+      await tester.pump();
+      await gesture.up();
+      await tester.pumpAndSettle();
+
+      expect(sought, isNotNull);
+      expect(sought!.inSeconds, closeTo(100, 6));
+    });
+
     testWidgets('shows the track and toggles play', (tester) async {
       var toggled = false;
       await tester.pumpWidget(wrap(MiniPlayer(
