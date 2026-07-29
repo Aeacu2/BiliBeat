@@ -196,20 +196,15 @@ class _PlaylistDetailSheetState extends State<PlaylistDetailSheet> {
                           widget.onClose ?? () => Navigator.pop(context),
                     ),
                   Expanded(
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Container(
-                          width: 36,
-                          height: 4,
-                          margin: const EdgeInsets.only(bottom: 4),
-                          decoration: BoxDecoration(
-                            color: AppColors.textFaint,
-                            borderRadius: BorderRadius.circular(2),
-                          ),
+                    child: Center(
+                      child: Container(
+                        width: 36,
+                        height: 4,
+                        decoration: BoxDecoration(
+                          color: AppColors.textFaint,
+                          borderRadius: BorderRadius.circular(2),
                         ),
-                        Image.asset('assets/logo.png', height: 22),
-                      ],
+                      ),
                     ),
                   ),
                   IconButton(
