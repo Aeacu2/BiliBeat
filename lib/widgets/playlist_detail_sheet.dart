@@ -69,6 +69,8 @@ class _PlaylistDetailSheetState extends State<PlaylistDetailSheet> {
   late Playlist _currentPlaylist;
   StreamSubscription<void>? _dlSub;
   StreamSubscription<void>? _libSub;
+  bool _isEditMode = false;
+  final Set<String> _selectedTrackIds = {};
 
   /// Playback queue for this view: the playlist's tracks minus any still
   /// downloading (not yet playable).
@@ -129,196 +131,286 @@ class _PlaylistDetailSheetState extends State<PlaylistDetailSheet> {
     final isFav = _currentPlaylist.id == 'favorites';
     final dockedPlayerHeight = MiniPlayer.totalHeight(context);
 
-    return Container(
-      margin: widget.onClose != null ? EdgeInsets.zero : EdgeInsets.only(bottom: dockedPlayerHeight),
-      height: MediaQuery.of(context).size.height * 0.76,
-      decoration: const BoxDecoration(
-        color: Color(0xFF141416),
-        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-        boxShadow: [
-          BoxShadow(
-            color: AppColors.black50,
-            blurRadius: 24,
-            offset: Offset(0, -4),
-          ),
-        ],
-      ),
-      child: Column(
-        children: [
-          // Drag Handle & Top Bar
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                const SizedBox(width: 48),
-                Container(
-                  width: 36,
-                  height: 4,
-                  decoration: BoxDecoration(
-                    color: AppColors.textFaint,
-                    borderRadius: BorderRadius.circular(2),
-                  ),
-                ),
-                IconButton(
-                  icon: const Icon(Icons.close, color: AppColors.textSecondary),
-                  onPressed: widget.onClose ?? () => Navigator.pop(context),
-                ),
-              ],
+    return GestureDetector(
+      onVerticalDragEnd: (details) {
+        if ((details.primaryVelocity ?? 0) > 320) {
+          Haptics.selection();
+          if (widget.onClose != null) {
+            widget.onClose!();
+          } else {
+            Navigator.pop(context);
+          }
+        }
+      },
+      child: Container(
+        margin: widget.onClose != null
+            ? EdgeInsets.zero
+            : EdgeInsets.only(bottom: dockedPlayerHeight),
+        height: MediaQuery.of(context).size.height * 0.76,
+        decoration: const BoxDecoration(
+          color: Color(0xFF141416),
+          borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+          boxShadow: [
+            BoxShadow(
+              color: AppColors.black50,
+              blurRadius: 24,
+              offset: Offset(0, -4),
             ),
-          ),
-
-          // Header
-          Padding(
-            padding: const EdgeInsets.only(left: 20, right: 16),
-            child: Row(
-              children: [
-                _headerArtwork(isFav),
-                const SizedBox(width: 16),
-                Expanded(
-                  child: GestureDetector(
-                    behavior: HitTestBehavior.opaque,
-                    onDoubleTap: !_isVirtualDownloads ? _editPlaylistName : null,
+          ],
+        ),
+        child: Column(
+          children: [
+            // Drag Handle & Top Bar
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              child: Row(
+                children: [
+                  if (_isEditMode)
+                    TextButton(
+                      onPressed: () {
+                        setState(() {
+                          if (_selectedTrackIds.length ==
+                              _currentPlaylist.tracks.length) {
+                            _selectedTrackIds.clear();
+                          } else {
+                            _selectedTrackIds.addAll(
+                                _currentPlaylist.tracks.map((t) => t.id));
+                          }
+                        });
+                      },
+                      child: Text(
+                        _selectedTrackIds.length ==
+                                _currentPlaylist.tracks.length
+                            ? '取消全选'
+                            : '全选',
+                        style: const TextStyle(
+                            color: AppColors.accent, fontSize: 14),
+                      ),
+                    )
+                  else
+                    IconButton(
+                      icon: const Icon(Icons.keyboard_arrow_down_rounded,
+                          color: AppColors.textSecondary, size: 28),
+                      tooltip: '收起',
+                      onPressed:
+                          widget.onClose ?? () => Navigator.pop(context),
+                    ),
+                  Expanded(
                     child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
                       children: [
-                        Text(
-                          _currentPlaylist.name,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
-                            color: AppColors.textPrimary,
-                            fontSize: 22,
-                            fontWeight: FontWeight.bold,
+                        Container(
+                          width: 36,
+                          height: 4,
+                          margin: const EdgeInsets.only(bottom: 4),
+                          decoration: BoxDecoration(
+                            color: AppColors.textFaint,
+                            borderRadius: BorderRadius.circular(2),
                           ),
                         ),
-                        const SizedBox(height: 4),
-                        Text(
-                          '${_currentPlaylist.tracks.length} 首',
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(color: AppColors.textMuted, fontSize: 13),
-                        ),
+                        Image.asset('assets/logo.png', height: 22),
                       ],
                     ),
                   ),
-                ),
-                if (!_isVirtualDownloads)
                   IconButton(
-                    icon: const Icon(Icons.image_outlined, color: AppColors.textSecondary),
-                    tooltip: '更换封面',
-                    onPressed: _pickCover,
+                    icon: Icon(
+                      _isEditMode ? Icons.done_rounded : Icons.edit_outlined,
+                      color: _isEditMode
+                          ? AppColors.accent
+                          : AppColors.textSecondary,
+                      size: 22,
+                    ),
+                    tooltip: _isEditMode ? '完成' : '编辑',
+                    onPressed: () {
+                      Haptics.light();
+                      setState(() {
+                        _isEditMode = !_isEditMode;
+                        _selectedTrackIds.clear();
+                      });
+                    },
                   ),
-              ],
-            ),
-          ),
-
-          const SizedBox(height: 16),
-
-          if (_currentPlaylist.tracks.isNotEmpty)
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
-              child: ElevatedButton.icon(
-                // Starting on a track that is still downloading would be
-                // dropped from the queue immediately — the queue is the
-                // playable subset.
-                onPressed: _playableQueue.isEmpty
-                    ? null
-                    : () {
-                        Haptics.medium();
-                        widget.onPlayCollection?.call(_playableQueue,
-                            shuffle: true);
-                      },
-                icon: const Icon(Icons.shuffle_rounded, size: 22),
-                label: const Text('随机播放', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: AppColors.accent,
-                  foregroundColor: AppColors.textPrimary,
-                  minimumSize: const Size.fromHeight(44),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-                ),
+                ],
               ),
             ),
 
-          const SizedBox(height: 8),
+            // Header
+            Padding(
+              padding: const EdgeInsets.only(left: 20, right: 16),
+              child: Row(
+                children: [
+                  _headerArtwork(isFav),
+                  const SizedBox(width: 16),
+                  Expanded(
+                    child: GestureDetector(
+                      behavior: HitTestBehavior.opaque,
+                      onDoubleTap:
+                          !_isVirtualDownloads ? _editPlaylistName : null,
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            _currentPlaylist.name,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              color: AppColors.textPrimary,
+                              fontSize: 22,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            '${_currentPlaylist.tracks.length} 首',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                                color: AppColors.textMuted, fontSize: 13),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                  if (!_isVirtualDownloads && !_isEditMode) ...[
+                    IconButton(
+                      icon: const Icon(Icons.image_outlined,
+                          color: AppColors.textSecondary, size: 22),
+                      tooltip: '更换封面',
+                      onPressed: _pickCover,
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.add_rounded,
+                          color: AppColors.textSecondary, size: 24),
+                      tooltip: '添加本地曲目',
+                      onPressed: _openAddLocalTracksSheet,
+                    ),
+                  ],
+                ],
+              ),
+            ),
 
-          // Track List
-          Expanded(
-            child: _currentPlaylist.tracks.isEmpty
-                ? const Center(
-                    child: EmptyState(
-                      icon: Icons.library_music_rounded,
-                      title: '暂无曲目',
-                    ),
-                  )
-                : ReorderableListView.builder(
-                    padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
-                    itemCount: _currentPlaylist.tracks.length,
-                    // No grab handles: the row is the handle, after a hold.
-                    // A dedicated handle would be a third control on a row
-                    // that already has two.
-                    buildDefaultDragHandles: false,
-                    onReorderItem: _onReorder,
-                    proxyDecorator: (child, index, animation) => Material(
-                      color: Colors.transparent,
-                      child: Opacity(opacity: 0.9, child: child),
-                    ),
-                    itemBuilder: (context, index) {
-                      final track = _currentPlaylist.tracks[index];
-                      final isDownloading =
-                          DownloadManager.instance.isDownloading(track.id);
-                      return ReorderableDelayedDragStartListener(
-                        key: ValueKey(track.id),
-                        index: index,
-                        child: Dismissible(
-                        key: ValueKey('d_${track.id}'),
-                        direction: DismissDirection.endToStart,
-                        background: _removeBackground(),
-                        confirmDismiss: (_) => _confirmRemove(track),
-                        onDismissed: (_) => _removeTrack(track),
-                        child: Padding(
-                        padding: const EdgeInsets.only(bottom: TrackRow.gap),
-                        child: TrackRow(
-                            // No onLongPress here: holding a row now picks it
-                            // up to reorder. The options menu is still on the
-                            // same track's row in 聆听 / 搜索.
-                            onTap: isDownloading ? null : () => widget.onSelectTrack(track, queue: _playableQueue),
-                              child: Row(
-                                children: [
-                                  ClipRRect(
-                                    borderRadius: BorderRadius.circular(8),
-                                    child: CachedCoverImage(
-                                      url: track.coverUrl,
-                                      width: 48,
-                                      height: 48,
-                                    ),
+            const SizedBox(height: 16),
+
+            if (_currentPlaylist.tracks.isNotEmpty && !_isEditMode)
+              Padding(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+                child: ElevatedButton.icon(
+                  onPressed: _playableQueue.isEmpty
+                      ? null
+                      : () {
+                          Haptics.medium();
+                          widget.onPlayCollection?.call(_playableQueue,
+                              shuffle: true);
+                        },
+                  icon: const Icon(Icons.shuffle_rounded, size: 22),
+                  label: const Text('随机播放',
+                      style: TextStyle(
+                          fontSize: 16, fontWeight: FontWeight.bold)),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppColors.accent,
+                    foregroundColor: AppColors.textPrimary,
+                    minimumSize: const Size.fromHeight(44),
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(14)),
+                  ),
+                ),
+              ),
+
+            const SizedBox(height: 8),
+
+            // Track List
+            Expanded(
+              child: _currentPlaylist.tracks.isEmpty
+                  ? const Center(
+                      child: EmptyState(
+                        icon: Icons.library_music_rounded,
+                        title: '暂无曲目',
+                      ),
+                    )
+                  : ReorderableListView.builder(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 20, vertical: 8),
+                      itemCount: _currentPlaylist.tracks.length,
+                      buildDefaultDragHandles: false,
+                      onReorderItem: _onReorder,
+                      proxyDecorator: (child, index, animation) => Material(
+                        color: Colors.transparent,
+                        child: Opacity(opacity: 0.9, child: child),
+                      ),
+                      itemBuilder: (context, index) {
+                        final track = _currentPlaylist.tracks[index];
+                        final isDownloading =
+                            DownloadManager.instance.isDownloading(track.id);
+                        final isSelected =
+                            _selectedTrackIds.contains(track.id);
+
+                        final rowContent = Padding(
+                          padding:
+                              const EdgeInsets.only(bottom: TrackRow.gap),
+                          child: TrackRow(
+                            onTap: _isEditMode
+                                ? () {
+                                    setState(() {
+                                      if (isSelected) {
+                                        _selectedTrackIds.remove(track.id);
+                                      } else {
+                                        _selectedTrackIds.add(track.id);
+                                      }
+                                    });
+                                  }
+                                : (isDownloading
+                                    ? null
+                                    : () => widget.onSelectTrack(track,
+                                        queue: _playableQueue)),
+                            child: Row(
+                              children: [
+                                if (_isEditMode) ...[
+                                  Icon(
+                                    isSelected
+                                        ? Icons.check_circle_rounded
+                                        : Icons.radio_button_unchecked_rounded,
+                                    color: isSelected
+                                        ? AppColors.accent
+                                        : AppColors.textFaint,
+                                    size: 22,
                                   ),
                                   const SizedBox(width: 12),
-                                  Expanded(
-                                    child: Column(
-                                      crossAxisAlignment: CrossAxisAlignment.start,
-                                      children: [
-                                        RepaintBoundary(
-                                          child: MarqueeText(
-                                            text: track.title,
-                                            phase: (index % 5) / 5,
-                                            style: const TextStyle(
-                                                color: AppColors.textPrimary,
-                                                fontWeight: FontWeight.w600,
-                                                fontSize: 14,
-                                                height: 1.3),
-                                          ),
-                                        ),
-                                        Text(
-                                          track.uploader,
-                                          style: const TextStyle(color: AppColors.textMuted, fontSize: 12),
-                                        ),
-                                      ],
-                                    ),
+                                ],
+                                ClipRRect(
+                                  borderRadius: BorderRadius.circular(8),
+                                  child: CachedCoverImage(
+                                    url: track.coverUrl,
+                                    width: 48,
+                                    height: 48,
                                   ),
-                                  // Nudged right, with the gap taken from the
-                                  // padding after the last button rather than
-                                  // from the title's width.
+                                ),
+                                const SizedBox(width: 12),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      RepaintBoundary(
+                                        child: MarqueeText(
+                                          text: track.title,
+                                          phase: (index % 5) / 5,
+                                          style: const TextStyle(
+                                              color: AppColors.textPrimary,
+                                              fontWeight: FontWeight.w600,
+                                              fontSize: 14,
+                                              height: 1.3),
+                                        ),
+                                      ),
+                                      Text(
+                                        track.uploader,
+                                        style: const TextStyle(
+                                            color: AppColors.textMuted,
+                                            fontSize: 12),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                                if (!_isEditMode) ...[
                                   const SizedBox(width: 8),
                                   TrackDownloadButton(
                                     track: track,
@@ -333,27 +425,116 @@ class _PlaylistDetailSheetState extends State<PlaylistDetailSheet> {
                                       }
                                     },
                                   ),
-                                  // Plus sign button (+) to Add to Playlist
                                   IconButton(
-                                    icon: const Icon(Icons.add, color: AppColors.textSecondary, size: 22),
+                                    icon: const Icon(Icons.add,
+                                        color: AppColors.textSecondary,
+                                        size: 22),
                                     tooltip: '添加至歌单',
                                     padding: EdgeInsets.zero,
                                     constraints: const BoxConstraints(
                                         minWidth: 40, minHeight: 40),
                                     onPressed: () {
-                                      TrackOptionsMenu.showAddToPlaylist(context, track, onTrackChanged: _refresh);
+                                      TrackOptionsMenu.showAddToPlaylist(
+                                          context, track,
+                                          onTrackChanged: _refresh);
                                     },
                                   ),
                                 ],
-                              ),
+                              ],
+                            ),
+                          ),
+                        );
+
+                        if (_isEditMode) {
+                          return Container(
+                            key: ValueKey('e_${track.id}'),
+                            child: rowContent,
+                          );
+                        }
+
+                        return ReorderableDelayedDragStartListener(
+                          key: ValueKey(track.id),
+                          index: index,
+                          child: Dismissible(
+                            key: ValueKey('d_${track.id}'),
+                            direction: DismissDirection.endToStart,
+                            background: _removeBackground(),
+                            confirmDismiss: (_) => _confirmRemove(track),
+                            onDismissed: (_) => _removeTrack(track),
+                            child: rowContent,
+                          ),
+                        );
+                      },
+                    ),
+            ),
+
+            if (_isEditMode)
+              Container(
+                padding: const EdgeInsets.symmetric(
+                    horizontal: 20, vertical: 12),
+                decoration: const BoxDecoration(
+                  color: AppColors.backgroundElevated,
+                  border: Border(top: BorderSide(color: AppColors.hairline)),
+                ),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: TextButton.icon(
+                        icon: const Icon(Icons.playlist_add_rounded,
+                            color: AppColors.textPrimary),
+                        label: Text(
+                          '加入歌单 (${_selectedTrackIds.length})',
+                          style: TextStyle(
+                            color: _selectedTrackIds.isEmpty
+                                ? AppColors.textFaint
+                                : AppColors.textPrimary,
+                          ),
                         ),
+                        onPressed: _selectedTrackIds.isEmpty
+                            ? null
+                            : () async {
+                                final selected = _currentPlaylist.tracks
+                                    .where((t) =>
+                                        _selectedTrackIds.contains(t.id))
+                                    .toList();
+                                await TrackOptionsMenu
+                                    .showAddToPlaylistForTracks(
+                                  context,
+                                  selected,
+                                  onTrackChanged: () {
+                                    setState(() {
+                                      _isEditMode = false;
+                                      _selectedTrackIds.clear();
+                                    });
+                                    _refresh();
+                                  },
+                                );
+                              },
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: TextButton.icon(
+                        icon: const Icon(Icons.delete_outline_rounded,
+                            color: AppColors.danger),
+                        label: Text(
+                          '删除 (${_selectedTrackIds.length})',
+                          style: TextStyle(
+                            color: _selectedTrackIds.isEmpty
+                                ? AppColors.textFaint
+                                : AppColors.danger,
+                          ),
                         ),
-                        ),
-                      );
-                    },
-                  ),
-          ),
-        ],
+                        onPressed: _selectedTrackIds.isEmpty
+                            ? null
+                            : _deleteSelectedTracks,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+          ],
+        ),
       ),
     );
   }
@@ -433,6 +614,187 @@ class _PlaylistDetailSheetState extends State<PlaylistDetailSheet> {
     } catch (e) {
       debugPrint('Playlist cover pick failed: $e');
     }
+  }
+
+  Future<void> _openAddLocalTracksSheet() async {
+    Haptics.light();
+    final downloaded = await DatabaseService.getDownloadedTracks();
+    if (!mounted) return;
+
+    if (downloaded.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('暂无本地已下载曲目，去搜索下载音乐吧'),
+          backgroundColor: AppColors.backgroundElevated,
+        ),
+      );
+      return;
+    }
+
+    final selectedIds = <String>{};
+    final existingIds = _currentPlaylist.tracks.map((t) => t.id).toSet();
+
+    await showModalBottomSheet(
+      context: context,
+      backgroundColor: AppColors.backgroundElevated,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (dialogCtx, setDialogState) {
+            return Container(
+              height: MediaQuery.of(context).size.height * 0.7,
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+              child: Column(
+                children: [
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      const Text('添加本地曲目',
+                          style: TextStyle(
+                              color: AppColors.textPrimary,
+                              fontSize: 18,
+                              fontWeight: FontWeight.bold)),
+                      TextButton(
+                        onPressed: selectedIds.isEmpty
+                            ? null
+                            : () async {
+                                final tracksToAdd = downloaded
+                                    .where((t) => selectedIds.contains(t.id))
+                                    .toList();
+                                for (final t in tracksToAdd) {
+                                  await DatabaseService.addTrackToPlaylist(
+                                      _currentPlaylist.id, t);
+                                }
+                                if (ctx.mounted) Navigator.pop(ctx);
+                                await _refresh();
+                              },
+                        child: Text('添加 (${selectedIds.length})',
+                            style: TextStyle(
+                                color: selectedIds.isEmpty
+                                    ? AppColors.textFaint
+                                    : AppColors.accent,
+                                fontWeight: FontWeight.bold)),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  Expanded(
+                    child: ListView.builder(
+                      itemCount: downloaded.length,
+                      itemBuilder: (c, idx) {
+                        final t = downloaded[idx];
+                        final isAlreadyInPlaylist = existingIds.contains(t.id);
+                        final isChecked = selectedIds.contains(t.id);
+
+                        return ListTile(
+                          enabled: !isAlreadyInPlaylist,
+                          leading: ClipRRect(
+                            borderRadius: BorderRadius.circular(6),
+                            child: CachedCoverImage(
+                                url: t.coverUrl, width: 40, height: 40),
+                          ),
+                          title: Text(t.title,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                  color: isAlreadyInPlaylist
+                                      ? AppColors.textMuted
+                                      : AppColors.textPrimary)),
+                          subtitle: Text(t.uploader,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                  color: AppColors.textMuted, fontSize: 12)),
+                          trailing: isAlreadyInPlaylist
+                              ? const Text('已在歌单',
+                                  style: TextStyle(
+                                      color: AppColors.textFaint, fontSize: 12))
+                              : Icon(
+                                  isChecked
+                                      ? Icons.check_circle_rounded
+                                      : Icons.radio_button_unchecked_rounded,
+                                  color: isChecked
+                                      ? AppColors.accent
+                                      : AppColors.textFaint,
+                                ),
+                          onTap: isAlreadyInPlaylist
+                              ? null
+                              : () {
+                                  setDialogState(() {
+                                    if (isChecked) {
+                                      selectedIds.remove(t.id);
+                                    } else {
+                                      selectedIds.add(t.id);
+                                    }
+                                  });
+                                },
+                        );
+                      },
+                    ),
+                  ),
+                ],
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Future<void> _deleteSelectedTracks() async {
+    if (_selectedTrackIds.isEmpty) return;
+    final count = _selectedTrackIds.length;
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppColors.backgroundElevated,
+        title: Text(_isVirtualDownloads ? '删除本地音频' : '从歌单移除',
+            style: const TextStyle(color: AppColors.textPrimary)),
+        content: Text(
+          _isVirtualDownloads
+              ? '确定要彻底删除选中的 $count 首本地音频吗？（本地文件将被删除）'
+              : '确定要将选中的 $count 首曲目从「${_currentPlaylist.name}」中移除吗？',
+          style: const TextStyle(color: AppColors.textSecondary),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('取消'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: Text(_isVirtualDownloads ? '彻底删除' : '移除',
+                style: const TextStyle(color: AppColors.danger)),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true) return;
+
+    final selected = _currentPlaylist.tracks
+        .where((t) => _selectedTrackIds.contains(t.id))
+        .toList();
+
+    if (_isVirtualDownloads) {
+      for (final track in selected) {
+        await DatabaseService.removeDownloadedTrack(track);
+      }
+    } else {
+      for (final track in selected) {
+        await DatabaseService.removeTrackFromPlaylist(_currentPlaylist.id, track.id);
+      }
+    }
+
+    setState(() {
+      _selectedTrackIds.clear();
+      _isEditMode = false;
+    });
+    await _refresh();
   }
 
   Future<void> _editPlaylistName() async {

@@ -325,7 +325,10 @@ class _HomeScreenState extends State<HomeScreen> {
                 ],
               ),
             ),
-            _playCollectionButton(() => pl.tracks),
+            Padding(
+              padding: const EdgeInsets.only(right: 8),
+              child: _playCollectionButton(() => pl.tracks),
+            ),
           ],
         ),
       ),

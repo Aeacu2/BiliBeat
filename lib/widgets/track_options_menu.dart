@@ -31,7 +31,12 @@ class TrackOptionsMenu extends StatefulWidget {
     );
   }
 
-  static Future<void> showAddToPlaylist(BuildContext context, Track track, {VoidCallback? onTrackChanged}) async {
+  static Future<void> showAddToPlaylist(BuildContext context, Track track, {VoidCallback? onTrackChanged}) {
+    return showAddToPlaylistForTracks(context, [track], onTrackChanged: onTrackChanged);
+  }
+
+  static Future<void> showAddToPlaylistForTracks(BuildContext context, List<Track> tracks, {VoidCallback? onTrackChanged}) async {
+    if (tracks.isEmpty) return;
     final List<Playlist> playlists = await DatabaseService.getPlaylists();
 
     if (!context.mounted) return;
@@ -55,9 +60,9 @@ class TrackOptionsMenu extends StatefulWidget {
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      const Text(
-                        '加入歌单',
-                        style: TextStyle(color: AppColors.textPrimary, fontSize: 18, fontWeight: FontWeight.bold),
+                      Text(
+                        tracks.length == 1 ? '加入歌单' : '批量加入歌单 (${tracks.length} 首)',
+                        style: const TextStyle(color: AppColors.textPrimary, fontSize: 18, fontWeight: FontWeight.bold),
                       ),
                       TextButton.icon(
                         icon: const Icon(Icons.add, color: AppColors.accent, size: 20),
@@ -94,8 +99,10 @@ class TrackOptionsMenu extends StatefulWidget {
 
                           if (newPlName != null && newPlName.trim().isNotEmpty) {
                             final created = await DatabaseService.createPlaylist(newPlName);
-                            await DatabaseService.addTrackToPlaylist(created.id, track);
-                            DownloadManager.instance.startDownload(track);
+                            for (final t in tracks) {
+                              await DatabaseService.addTrackToPlaylist(created.id, t);
+                              DownloadManager.instance.startDownload(t);
+                            }
                             if (ctx.mounted) Navigator.pop(ctx);
                             onTrackChanged?.call();
                             parentMessenger.showSnackBar(
@@ -125,8 +132,10 @@ class TrackOptionsMenu extends StatefulWidget {
                           title: Text(pl.name, style: const TextStyle(color: AppColors.textPrimary)),
                           subtitle: Text('${pl.tracks.length} 首', style: const TextStyle(color: AppColors.textMuted, fontSize: 12)),
                           onTap: () async {
-                            await DatabaseService.addTrackToPlaylist(pl.id, track);
-                            DownloadManager.instance.startDownload(track);
+                            for (final t in tracks) {
+                              await DatabaseService.addTrackToPlaylist(pl.id, t);
+                              DownloadManager.instance.startDownload(t);
+                            }
                             if (ctx.mounted) Navigator.pop(ctx);
                             onTrackChanged?.call();
                             parentMessenger.showSnackBar(
