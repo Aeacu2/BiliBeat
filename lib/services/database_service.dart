@@ -328,10 +328,9 @@ class DatabaseService {
 
   static Future<void> addTrackToPlaylist(String playlistId, Track track) async {
     await _ensureLoaded();
-    final playlist = _playlists.firstWhere(
-      (p) => p.id == playlistId,
-      orElse: () => _playlists.first,
-    );
+    final idx = _playlists.indexWhere((p) => p.id == playlistId);
+    if (idx == -1) return;
+    final playlist = _playlists[idx];
     if (!playlist.tracks.any((t) => t.id == track.id)) {
       playlist.tracks.insert(0, track);
       await _persistPlaylists();
@@ -340,10 +339,9 @@ class DatabaseService {
 
   static Future<void> removeTrackFromPlaylist(String playlistId, String trackId) async {
     await _ensureLoaded();
-    final playlist = _playlists.firstWhere(
-      (p) => p.id == playlistId,
-      orElse: () => _playlists.first,
-    );
+    final idx = _playlists.indexWhere((p) => p.id == playlistId);
+    if (idx == -1) return;
+    final playlist = _playlists[idx];
     playlist.tracks.removeWhere((t) => t.id == trackId);
     await _persistPlaylists();
   }

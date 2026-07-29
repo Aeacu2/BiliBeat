@@ -276,7 +276,7 @@ class _SyncedLyricsViewState extends State<SyncedLyricsView> {
                 ),
                 children: List.generate(
                   widget.lines.length,
-                  (index) => _lineTile(index),
+                  _lineTile,
                 ),
               ),
             ),

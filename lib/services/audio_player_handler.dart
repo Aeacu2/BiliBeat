@@ -70,8 +70,6 @@ class BiliBeatAudioHandler extends BaseAudioHandler with SeekHandler {
       StreamController<bool>.broadcast();
   final StreamController<LoopMode> _loopModeController =
       StreamController<LoopMode>.broadcast();
-  final StreamController<double> _volumeController =
-      StreamController<double>.broadcast();
 
   Duration _duration = Duration.zero;
 
@@ -81,7 +79,6 @@ class BiliBeatAudioHandler extends BaseAudioHandler with SeekHandler {
   Stream<Duration> get durationStream => _durationController.stream;
   Stream<bool> get shuffleStream => _shuffleController.stream;
   Stream<LoopMode> get loopModeStream => _loopModeController.stream;
-  Stream<double> get volumeStream => _volumeController.stream;
 
   Track? get currentTrack =>
       (_currentIndex >= 0 && _currentIndex < _playlist.length)
@@ -131,15 +128,6 @@ class BiliBeatAudioHandler extends BaseAudioHandler with SeekHandler {
     }
   }
 
-  /// Current playback volume (0.0 – 1.0).
-  double get volume => _player.volume;
-
-  /// Sets playback volume (0.0 – 1.0).
-  Future<void> setVolume(double volume) async {
-    final v = volume.clamp(0.0, 1.0);
-    await _player.setVolume(v);
-    _volumeController.add(v);
-  }
 
   void _initAudioPlayerListeners() {
     // Position is forwarded to the UI only. We deliberately do NOT broadcast

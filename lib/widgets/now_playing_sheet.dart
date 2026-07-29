@@ -58,7 +58,6 @@ class _NowPlayingSheetState extends State<NowPlayingSheet> {
   bool _isShuffle = false;
   LoopMode _loopMode = LoopMode.all;
   bool _showLyrics = false;
-  double _volume = 1.0;
   bool _isFavorite = false;
   bool _isDownloaded = false;
   DownloadTask? _downloadTask;
@@ -76,7 +75,6 @@ class _NowPlayingSheetState extends State<NowPlayingSheet> {
     _isPlaying = h.isPlaying;
     _isShuffle = h.isShuffle;
     _loopMode = h.loopMode;
-    _volume = h.volume;
     _downloadTask = _liveTaskFor(_displayTrack.id);
     _refreshTrackState();
 
@@ -102,9 +100,6 @@ class _NowPlayingSheetState extends State<NowPlayingSheet> {
     }));
     _subs.add(h.loopModeStream.listen((m) {
       if (mounted) setState(() => _loopMode = m);
-    }));
-    _subs.add(h.volumeStream.listen((v) {
-      if (mounted) setState(() => _volume = v);
     }));
     _subs.add(DownloadManager.instance.updates.listen((_) {
       if (!mounted) return;
@@ -384,8 +379,7 @@ class _NowPlayingSheetState extends State<NowPlayingSheet> {
           _seekBar(),
           const SizedBox(height: 4),
           _transportControls(),
-          const SizedBox(height: 8),
-          _volumeBar(),
+
         ],
       ),
     );
@@ -623,46 +617,4 @@ class _NowPlayingSheetState extends State<NowPlayingSheet> {
     );
   }
 
-  Widget _volumeBar() {
-    final IconData icon;
-    if (_volume <= 0.01) {
-      icon = Icons.volume_off_rounded;
-    } else if (_volume < 0.5) {
-      icon = Icons.volume_down_rounded;
-    } else {
-      icon = Icons.volume_up_rounded;
-    }
-    return Row(
-      children: [
-        IconButton(
-          icon: Icon(icon, color: AppColors.textFaint, size: 18),
-          visualDensity: VisualDensity.compact,
-          tooltip: _volume <= 0.01 ? '取消静音' : '静音',
-          onPressed: () {
-            Haptics.selection();
-            final next = _volume <= 0.01 ? 1.0 : 0.0;
-            setState(() => _volume = next);
-            widget.handler.setVolume(next);
-          },
-        ),
-        Expanded(
-          child: SliderTheme(
-            data: SliderTheme.of(context).copyWith(
-              trackHeight: 3,
-              thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 5),
-              overlayShape: const RoundSliderOverlayShape(overlayRadius: 12),
-            ),
-            child: Slider(
-              value: _volume,
-              onChanged: (v) {
-                setState(() => _volume = v);
-                widget.handler.setVolume(v);
-              },
-            ),
-          ),
-        ),
-        const SizedBox(width: 8),
-      ],
-    );
-  }
 }

@@ -877,13 +877,7 @@ class _LyricEditorDialogState extends State<LyricEditorDialog>
                     fontWeight: FontWeight.bold),
               ),
             ),
-            // Jump to LRC editor for the current preview
-            IconButton(
-              icon: const Icon(Icons.edit_outlined,
-                  color: AppColors.textMuted, size: 20),
-              tooltip: '编辑 LRC',
-              onPressed: () => _openLrcEditor(_previewingResult),
-            ),
+
           ],
         ),
         const SizedBox(height: 6),
