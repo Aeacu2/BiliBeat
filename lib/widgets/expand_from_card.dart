@@ -90,11 +90,9 @@ class _ExpandFromCardState extends State<ExpandFromCard> {
                 child: Stack(
                   fit: StackFit.expand,
                   children: [
-                    // The card's own surface, becoming the page's background.
-                    ColoredBox(
-                      color: Color.lerp(
-                          AppColors.backgroundElevated, AppColors.background, t)!,
-                    ),
+                    // One surface throughout: the card and the page are the
+                    // same near-black, so there is nothing to cross-fade.
+                    const ColoredBox(color: AppColors.background),
                     // Full-size page, clipped by the box above it. Anchored to
                     // the bottom so the transport controls — the part the card
                     // itself shows — stay put while the rest unfolds upwards.

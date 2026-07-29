@@ -13,10 +13,9 @@ import 'marquee_text.dart';
 /// because tapping it *becomes* that page: the card's rounded surface grows
 /// into the page, so the two must share a visual language or the morph reads as
 /// a jump cut. The artwork uses the album-art corner radius, the surface is the
-/// same elevated near-black with the same soft shadow, the seek bar is the same
-/// track and the same accent, and the primary control keeps the page's shape and
-/// position — but not its fill. Continuity is about shape and place; a saturated
-/// pink disc shrunk onto a bar just shouts.
+/// same near-black, the seek bar is the same track and the same accent, and the
+/// primary control is the same gradient circle at bar scale. Nothing here is
+/// "the card's own" version of anything.
 ///
 /// Still no `BackdropFilter`: real-time blur over the whole page cost a full
 /// GPU layer pass every frame and was the root of the Android foreground
@@ -93,7 +92,10 @@ class MiniPlayer extends StatelessWidget {
         borderRadius: cardRadius,
         child: DecoratedBox(
           decoration: const BoxDecoration(
-            color: AppColors.backgroundElevated,
+            // The page's background, not a lighter "elevated" surface. The
+            // card is the page folded down; a different shade makes it a
+            // different object, and the morph turns into a colour change.
+            color: AppColors.background,
             border: Border(top: BorderSide(color: AppColors.hairline)),
             borderRadius: cardRadius,
           ),
@@ -243,17 +245,18 @@ class MiniPlayer extends StatelessWidget {
           child: Container(
             width: 40,
             height: 40,
+            // The page's primary control at bar scale: same gradient, same
+            // glow, same white glyph. It is the one thing the eye tracks
+            // across the morph, so it has to be the same thing.
             decoration: const BoxDecoration(
               shape: BoxShape.circle,
-              // The same top-lit sheen the glass surfaces use, so the control
-              // belongs to the card instead of being pasted onto it.
-              gradient: LinearGradient(
-                begin: Alignment.topCenter,
-                end: Alignment.bottomCenter,
-                colors: [AppColors.surfaceHighlight, AppColors.surfaceCard],
-              ),
-              border: Border.fromBorderSide(
-                  BorderSide(color: AppColors.hairlineStrong)),
+              gradient: AppColors.primaryGradient,
+              boxShadow: [
+                BoxShadow(
+                    color: AppColors.accent30,
+                    blurRadius: 14,
+                    offset: Offset(0, 4)),
+              ],
             ),
             child: AnimatedSwitcher(
               duration: const Duration(milliseconds: 160),
@@ -263,7 +266,7 @@ class MiniPlayer extends StatelessWidget {
                 isPlaying ? Icons.pause_rounded : Icons.play_arrow_rounded,
                 key: ValueKey<bool>(isPlaying),
                 color: Colors.white,
-                size: 23,
+                size: 24,
               ),
             ),
           ),
