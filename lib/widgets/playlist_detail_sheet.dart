@@ -1,6 +1,9 @@
 import 'dart:async';
+import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:image_picker/image_picker.dart';
+import 'package:path_provider/path_provider.dart';
 import '../theme/app_theme.dart';
 import '../theme/haptics.dart';
 import '../models/playlist.dart';
@@ -170,25 +173,7 @@ class _PlaylistDetailSheetState extends State<PlaylistDetailSheet> {
             padding: const EdgeInsets.symmetric(horizontal: 20),
             child: Row(
               children: [
-                Container(
-                  width: 72,
-                  height: 72,
-                  decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(16),
-                    gradient: LinearGradient(
-                      colors: isFav
-                          ? [AppColors.accent, const Color(0xFFFF5252)]
-                          : [const Color(0xFF3A3A40), const Color(0xFF232327)],
-                    ),
-                  ),
-                  child: Center(
-                    child: Icon(
-                      isFav ? Icons.favorite : Icons.queue_music,
-                      color: AppColors.textPrimary,
-                      size: 36,
-                    ),
-                  ),
-                ),
+                _headerArtwork(isFav),
                 const SizedBox(width: 16),
                 Expanded(
                   child: Column(
@@ -257,15 +242,27 @@ class _PlaylistDetailSheetState extends State<PlaylistDetailSheet> {
                       subtitle: '在搜索页点 + 添加',
                     ),
                   )
-                : ListView.builder(
+                : ReorderableListView.builder(
                     padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
                     itemCount: _currentPlaylist.tracks.length,
+                    // No grab handles: the row is the handle, after a hold.
+                    // A dedicated handle would be a third control on a row
+                    // that already has two.
+                    buildDefaultDragHandles: false,
+                    onReorderItem: _onReorder,
+                    proxyDecorator: (child, index, animation) => Material(
+                      color: Colors.transparent,
+                      child: Opacity(opacity: 0.9, child: child),
+                    ),
                     itemBuilder: (context, index) {
                       final track = _currentPlaylist.tracks[index];
                       final isDownloading =
                           DownloadManager.instance.isDownloading(track.id);
-                      return Dismissible(
+                      return ReorderableDelayedDragStartListener(
                         key: ValueKey(track.id),
+                        index: index,
+                        child: Dismissible(
+                        key: ValueKey('d_${track.id}'),
                         direction: DismissDirection.endToStart,
                         background: _removeBackground(),
                         confirmDismiss: (_) => _confirmRemove(track),
@@ -273,10 +270,10 @@ class _PlaylistDetailSheetState extends State<PlaylistDetailSheet> {
                         child: Padding(
                         padding: const EdgeInsets.only(bottom: TrackRow.gap),
                         child: TrackRow(
+                            // No onLongPress here: holding a row now picks it
+                            // up to reorder. The options menu is still on the
+                            // same track's row in 聆听 / 搜索.
                             onTap: isDownloading ? null : () => widget.onSelectTrack(track, queue: _playableQueue),
-                            onLongPress: () => TrackOptionsMenu.show(
-                                context, track,
-                                onTrackChanged: _refresh),
                               child: Row(
                                 children: [
                                   ClipRRect(
@@ -342,6 +339,7 @@ class _PlaylistDetailSheetState extends State<PlaylistDetailSheet> {
                               ),
                         ),
                         ),
+                        ),
                       );
                     },
                   ),
@@ -371,6 +369,107 @@ class _PlaylistDetailSheetState extends State<PlaylistDetailSheet> {
   }
 
   bool get _isVirtualDownloads => _currentPlaylist.id == 'downloaded';
+
+  /// The playlist's artwork, and the way to change it. 本地 is rebuilt from
+  /// the download library on every refresh and has no row to store a cover on,
+  /// so it keeps the default badge.
+  Widget _headerArtwork(bool isFav) {
+    final cover = _currentPlaylist.coverUrl;
+    final editable = !_isVirtualDownloads;
+    return GestureDetector(
+      onTap: editable ? _pickCover : null,
+      child: SizedBox(
+        width: 72,
+        height: 72,
+        child: Stack(
+          children: [
+            Positioned.fill(
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(16),
+                child: cover != null && cover.isNotEmpty
+                    ? CachedCoverImage(url: cover, width: 72, height: 72)
+                    : DecoratedBox(
+                        decoration: BoxDecoration(
+                          gradient: LinearGradient(
+                            colors: isFav
+                                ? [AppColors.accent, const Color(0xFFFF5252)]
+                                : [
+                                    const Color(0xFF3A3A40),
+                                    const Color(0xFF232327)
+                                  ],
+                          ),
+                        ),
+                        child: Center(
+                          child: Icon(
+                            isFav ? Icons.favorite : Icons.queue_music,
+                            color: AppColors.textPrimary,
+                            size: 36,
+                          ),
+                        ),
+                      ),
+              ),
+            ),
+            if (editable)
+              Positioned(
+                right: 0,
+                bottom: 0,
+                child: Container(
+                  width: 24,
+                  height: 24,
+                  decoration: const BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: AppColors.backgroundElevated,
+                    border: Border.fromBorderSide(
+                        BorderSide(color: AppColors.hairlineStrong)),
+                  ),
+                  child: const Icon(Icons.photo_camera_rounded,
+                      color: AppColors.textSecondary, size: 13),
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _pickCover() async {
+    Haptics.light();
+    try {
+      final image =
+          await ImagePicker().pickImage(source: ImageSource.gallery);
+      if (image == null) return;
+      final docs = await getApplicationDocumentsDirectory();
+      final dir = Directory('${docs.path}/bilibeat_covers');
+      if (!await dir.exists()) await dir.create(recursive: true);
+      final ext = image.path.split('.').last;
+      final saved = File(
+          '${dir.path}/playlist_${_currentPlaylist.id}_'
+          '${DateTime.now().millisecondsSinceEpoch}.$ext');
+      await File(image.path).copy(saved.path);
+      await DatabaseService.setPlaylistCover(_currentPlaylist.id, saved.path);
+      await _refresh();
+    } catch (e) {
+      debugPrint('Playlist cover pick failed: $e');
+    }
+  }
+
+  Future<void> _onReorder(int oldIndex, int newIndex) async {
+    Haptics.selection();
+    // Reorder locally first so the list does not flash back to the old order
+    // while the store round-trips.
+    setState(() {
+      final tracks = _currentPlaylist.tracks;
+      final track = tracks.removeAt(oldIndex);
+      tracks.insert(newIndex.clamp(0, tracks.length), track);
+    });
+    if (_isVirtualDownloads) {
+      await DatabaseService.reorderDownloaded(oldIndex, newIndex);
+    } else {
+      await DatabaseService.reorderPlaylist(
+          _currentPlaylist.id, oldIndex, newIndex);
+    }
+    widget.onPlaylistUpdated?.call();
+  }
 
   Future<bool> _confirmRemove(Track track) async {
     // Removing from a playlist is trivially reversible; deleting the audio

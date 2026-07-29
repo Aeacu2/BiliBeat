@@ -2,12 +2,15 @@ import 'track.dart';
 
 /// A named, ordered set of tracks.
 ///
-/// `coverUrl`, `createdAt` and `updatedAt` were carried on every playlist and
-/// persisted to disk, but nothing ever read them — no cover was rendered and
-/// nothing sorted by date. They are gone.
+/// `createdAt` and `updatedAt` were carried on every playlist and persisted to
+/// disk, but nothing ever read them — nothing sorted by date. They are gone.
 class Playlist {
   final String id;
   final String name;
+
+  /// A local image path the user picked for this playlist, or null for the
+  /// default artwork.
+  final String? coverUrl;
 
   /// Mutated in place by the database layer (add/remove/metadata edits), so it
   /// must always be growable.
@@ -22,12 +25,14 @@ class Playlist {
     required this.id,
     required this.name,
     required List<Track> tracks,
+    this.coverUrl,
   }) : tracks = List<Track>.of(tracks);
 
   Map<String, dynamic> toMap() {
     return {
       'id': id,
       'name': name,
+      if (coverUrl != null) 'coverUrl': coverUrl,
     };
   }
 
@@ -35,6 +40,7 @@ class Playlist {
     return Playlist(
       id: map['id'] ?? '',
       name: map['name'] ?? '未命名歌单',
+      coverUrl: map['coverUrl'] as String?,
       tracks: tracks ?? [],
     );
   }

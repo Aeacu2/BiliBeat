@@ -192,6 +192,7 @@ class _HomeScreenState extends State<HomeScreen> {
     required String subtitle,
     required VoidCallback onTap,
     required List<Track> Function() tracks,
+    String? cover,
   }) {
     return GestureDetector(
       onTap: onTap,
@@ -204,14 +205,19 @@ class _HomeScreenState extends State<HomeScreen> {
             Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Container(
-                  width: 40,
-                  height: 40,
-                  decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(12),
-                    gradient: LinearGradient(colors: gradient),
-                  ),
-                  child: Icon(icon, color: AppColors.textPrimary, size: 22),
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(12),
+                  child: cover != null && cover.isNotEmpty
+                      ? CachedCoverImage(url: cover, width: 40, height: 40)
+                      : Container(
+                          width: 40,
+                          height: 40,
+                          decoration: BoxDecoration(
+                            gradient: LinearGradient(colors: gradient),
+                          ),
+                          child:
+                              Icon(icon, color: AppColors.textPrimary, size: 22),
+                        ),
                 ),
                 const Spacer(),
                 // Opposite corner from the icon: tapping the card opens the
@@ -281,17 +287,21 @@ class _HomeScreenState extends State<HomeScreen> {
         onLongPress: () => _confirmDeletePlaylist(pl),
         child: Row(
           children: [
-            Container(
-              width: 54,
-              height: 54,
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(AppRadius.sm),
-                gradient: const LinearGradient(
-                  colors: [Color(0xFF3A3A40), Color(0xFF232327)],
-                ),
-              ),
-              child: const Icon(Icons.queue_music_rounded,
-                  color: AppColors.textPrimary, size: 26),
+            ClipRRect(
+              borderRadius: BorderRadius.circular(AppRadius.sm),
+              child: pl.coverUrl != null && pl.coverUrl!.isNotEmpty
+                  ? CachedCoverImage(url: pl.coverUrl!, width: 54, height: 54)
+                  : Container(
+                      width: 54,
+                      height: 54,
+                      decoration: const BoxDecoration(
+                        gradient: LinearGradient(
+                          colors: [Color(0xFF3A3A40), Color(0xFF232327)],
+                        ),
+                      ),
+                      child: const Icon(Icons.queue_music_rounded,
+                          color: AppColors.textPrimary, size: 26),
+                    ),
             ),
             const SizedBox(width: 12),
             Expanded(
@@ -398,6 +408,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   if (fav != null) _openPlaylist(fav);
                 },
                 tracks: () => _favorites?.tracks ?? const [],
+                cover: _favorites?.coverUrl,
               ),
             ),
           ],

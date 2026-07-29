@@ -7,6 +7,10 @@ import 'wbi_signer.dart';
 
 class BilibiliSdk {
   static const String _baseUrl = 'https://api.bilibili.com';
+
+  /// 音乐 partition. Covers 原创音乐 / 翻唱 / 演奏 / VOCALOID / 音乐现场 / MV /
+  /// 音乐综合 — everything a music player has any business showing.
+  static const int _musicZoneId = 3;
   static final HttpClient _httpClient = HttpClient()
     ..idleTimeout = const Duration(seconds: 30)
     ..maxConnectionsPerHost = 10;
@@ -172,11 +176,23 @@ class BilibiliSdk {
   static Future<List<Track>> search(String query) async {
     if (query.trim().isEmpty) return [];
 
+    // A BV number or a link never goes through the keyword search: asking for
+    // something by id means you want exactly it, whatever zone it lives in.
     final directId = extractBvOrAvId(query);
     if (directId != null) {
       return await fetchVideoInfo(directId);
     }
 
+    // Music zone first. If that comes back empty — no matches there, or an API
+    // that quietly rejects the filter — fall back to an unfiltered search
+    // rather than telling the user their song does not exist.
+    final musical = await _searchOnce(query, musicOnly: true);
+    if (musical.isNotEmpty) return musical;
+    return _searchOnce(query, musicOnly: false);
+  }
+
+  static Future<List<Track>> _searchOnce(String query,
+      {required bool musicOnly}) async {
     try {
       // Obtain buvid3/buvid4 device fingerprint (required by B站 anti-bot)
       final cookieStr = await FingerprintService.getCookieString();
@@ -189,6 +205,9 @@ class BilibiliSdk {
         'keyword': query.trim(),
         'page': 1,
         'order': 'totalrank',
+        // This is a music player: a keyword search that returns lectures,
+        // gameplay and news is noise.
+        if (musicOnly) 'tids': _musicZoneId,
         // dm_img 风控参数 — 缺少会导致 -352 / 412
         ...dmParams,
       };
@@ -201,7 +220,10 @@ class BilibiliSdk {
       var body = await _httpGet(searchUrl, cookies: cookieStr);
       if (body == null || body.contains('"code":-352') || body.contains('"code":412')) {
         // Fallback: standard web search API
-        final fallbackUrl = '$_baseUrl/x/web-interface/search/type?search_type=video&keyword=${Uri.encodeComponent(query.trim())}';
+        final fallbackUrl = '$_baseUrl/x/web-interface/search/type'
+            '?search_type=video'
+            '${musicOnly ? "&tids=$_musicZoneId" : ""}'
+            '&keyword=${Uri.encodeComponent(query.trim())}';
         body = await _httpGet(fallbackUrl, cookies: cookieStr);
       }
 

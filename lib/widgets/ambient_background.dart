@@ -40,10 +40,10 @@ class _AmbientBackgroundState extends State<AmbientBackground> {
   static const Color _fallback = AppColors.accent;
 
   /// How far above the top edge the aura's centre sits, and how tall it is,
-  /// both as fractions of the screen. Tuned so the colour is gone by the time
-  /// the first row of content begins — roughly the top third.
+  /// both as fractions of the screen. Tuned so the colour is gone about one
+  /// song row below where the first row of content begins.
   static const double _auraTop = 0.30;
-  static const double _auraHeight = 0.62;
+  static const double _auraHeight = 0.74;
 
   Color _color = _fallback;
   int _token = 0;
@@ -199,8 +199,8 @@ class _AmbientBackgroundState extends State<AmbientBackground> {
                   decoration: BoxDecoration(
                     gradient: RadialGradient(
                       colors: [
-                        c.withValues(alpha: 0.55),
-                        c.withValues(alpha: 0.22),
+                        c.withValues(alpha: 0.40),
+                        c.withValues(alpha: 0.15),
                         Colors.transparent,
                       ],
                       stops: const [0.0, 0.55, 1.0],
@@ -218,7 +218,7 @@ class _AmbientBackgroundState extends State<AmbientBackground> {
           top: 0,
           left: 0,
           right: 0,
-          height: size.height * 0.5,
+          height: size.height * 0.62,
           child: const IgnorePointer(
             child: DecoratedBox(
               decoration: BoxDecoration(
@@ -226,7 +226,7 @@ class _AmbientBackgroundState extends State<AmbientBackground> {
                   begin: Alignment.topCenter,
                   end: Alignment.bottomCenter,
                   colors: [Colors.transparent, AppColors.background],
-                  stops: [0.45, 0.95],
+                  stops: [0.5, 0.98],
                 ),
               ),
             ),

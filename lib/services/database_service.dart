@@ -262,6 +262,48 @@ class DatabaseService {
     return newPlaylist;
   }
 
+  /// Sets (or clears, with null) a playlist's cover image.
+  static Future<void> setPlaylistCover(String playlistId, String? path) async {
+    await _ensureLoaded();
+    final idx = _playlists.indexWhere((p) => p.id == playlistId);
+    if (idx == -1) return;
+    final old = _playlists[idx];
+    _playlists[idx] = Playlist(
+      id: old.id,
+      name: old.name,
+      coverUrl: path,
+      tracks: old.tracks,
+    );
+    await _persistPlaylists();
+  }
+
+  /// Moves a track within a playlist. Both indices are final positions —
+  /// `onReorderItem` already accounts for the removal, unlike the deprecated
+  /// `onReorder`, whose newIndex needed adjusting by hand.
+  static Future<void> reorderPlaylist(
+      String playlistId, int oldIndex, int newIndex) async {
+    await _ensureLoaded();
+    final pl = _playlists.firstWhere((p) => p.id == playlistId,
+        orElse: () => Playlist(id: '', name: '', tracks: []));
+    if (pl.id.isEmpty) return;
+    _moveWithin(pl.tracks, oldIndex, newIndex);
+    await _persistPlaylists();
+  }
+
+  /// The same, for the 本地 library, which is a list rather than a playlist.
+  static Future<void> reorderDownloaded(int oldIndex, int newIndex) async {
+    await _ensureLoaded();
+    _moveWithin(_downloadedTracks, oldIndex, newIndex);
+    await _persistDownloaded();
+    _libraryUpdateController.add(null);
+  }
+
+  static void _moveWithin(List<Track> list, int oldIndex, int newIndex) {
+    if (oldIndex < 0 || oldIndex >= list.length) return;
+    final track = list.removeAt(oldIndex);
+    list.insert(newIndex.clamp(0, list.length), track);
+  }
+
   static Future<void> deletePlaylist(String playlistId) async {
     await _ensureLoaded();
     if (playlistId == 'favorites') return;
