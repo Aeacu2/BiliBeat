@@ -403,12 +403,16 @@ class DatabaseService {
     _libraryUpdateController.add(null);
   }
 
-  /// Deletes the local audio for [track] and forgets it from the library.
+  /// Deletes the local audio for [track] and forgets it from the library & playlists.
   static Future<void> removeDownloadedTrack(Track track) async {
     await _ensureLoaded();
     await AudioDownloadService.delete(track);
     _downloadedTracks.removeWhere((t) => t.id == track.id);
     await _persistDownloaded();
+    for (final pl in _playlists) {
+      pl.tracks.removeWhere((t) => t.id == track.id);
+    }
+    await _persistPlaylists();
     _libraryUpdateController.add(null);
   }
 

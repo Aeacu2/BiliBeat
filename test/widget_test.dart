@@ -44,7 +44,7 @@ void main() {
       // const list, so adding to 收藏 threw at runtime.
       final pl = Playlist(id: 'favorites', name: '收藏', tracks: const []);
       expect(
-        () => pl.tracks.add(Track(
+        () => pl.tracks.add(const Track(
             id: 'a', bvid: 'a', cid: 1, title: 't', uploader: 'u',
             coverUrl: '', duration: 1)),
         returnsNormally,
@@ -55,7 +55,7 @@ void main() {
     test('does not alias the list it was given', () {
       final source = <Track>[];
       final pl = Playlist(id: 'p', name: 'n', tracks: source);
-      pl.tracks.add(Track(
+      pl.tracks.add(const Track(
           id: 'a', bvid: 'a', cid: 1, title: 't', uploader: 'u',
           coverUrl: '', duration: 1));
       expect(source, isEmpty);
@@ -64,7 +64,7 @@ void main() {
 
   group('Track', () {
     test('copyWith preserves identity and only changes what is passed', () {
-      final original = Track(
+      const original = Track(
           id: 'BV1_2', bvid: 'BV1', cid: 2, title: '旧标题',
           uploader: '旧UP', coverUrl: 'c', duration: 100);
       final edited = original.copyWith(title: '新标题', uploader: '新UP');
@@ -81,7 +81,7 @@ void main() {
     });
 
     test('survives a round trip through fromMap/toMap', () {
-      final t = Track(
+      const t = Track(
           id: 'BV1_2', bvid: 'BV1', cid: 2, title: '标题',
           uploader: 'UP', coverUrl: 'http://x', duration: 42);
       final back = Track.fromMap(t.toMap());
