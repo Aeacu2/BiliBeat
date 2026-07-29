@@ -2,9 +2,45 @@
 
 A Flutter music player for Bilibili audio with synced LRC lyrics and offline caching.
 
-## Downloads
+## Downloads & Installation Guide
 
-- [Latest Release](https://github.com/Aeacu2/BiliBeat/releases/latest)
+- 📦 **[Latest Release (v3.5.2)](https://github.com/Aeacu2/BiliBeat/releases/latest)**
+
+---
+
+### 📱 iOS 安装与试用指南 (iOS Installation Guide)
+
+由于本项目未提交至苹果 App Store，构建产物为未签名的 `.ipa` 文件（`bilibeat-x.x.x-unsigned.ipa`）。你可以通过以下两种安全便捷的个人签名方式安装至 iPhone（支持 iOS 13+）：
+
+#### 方案一：AltStore 安装（推荐，支持 Wi-Fi 无线自动续签）
+
+1. **安装 AltServer**：在电脑（Mac 或 Windows）访问 [AltStore 官网](https://altstore.io) 下载并运行 AltServer。
+2. **安装 AltStore 到手机**：
+   - 用数据线将 iPhone 连接至电脑，并确保电脑信任手机。
+   - 点击电脑顶部/任务栏的 AltServer 图标，选择 `Install AltStore` 并选择你的 iPhone。
+   - 输入你的 Apple ID 邮箱及密码（仅用于向苹果服务器申请免费测试签名），等待手机出现 AltStore 图标。
+3. **手机端信任证书**：在 iPhone 打开 **设置 -> 通用 -> VPN 与设备管理**，找到你的 Apple ID 并点击 **信任**。
+4. **安装 BiliBeat**：
+   - 在 iPhone 的 Safari 浏览器中下载最新版 `bilibeat-x.x.x-unsigned.ipa`。
+   - 打开 iPhone 上的 **AltStore** 应用，切换到 `My Apps` 标签页，点击左上角的 **`+`** 按钮。
+   - 选择下载好的 IPA 文件即可完成安装。
+   - *自动续期*：只要手机与电脑连在同一 Wi-Fi 环境下，AltStore 会在后台自动为您刷新 7 天证书，无需重复插电脑。
+
+#### 方案二：Sideloadly 安装（简易单次拖拽安装）
+
+1. **下载 Sideloadly**：电脑访问 [Sideloadly 官网](https://sideloadly.io) 下载并安装软件。
+2. **一键拖拽安装**：
+   - 用 USB 数据线将 iPhone 连接电脑。
+   - 打开 Sideloadly，将下载好的 `bilibeat-x.x.x-unsigned.ipa` 文件直接拖拽至软件窗口中。
+   - 在 `Apple Account` 输入框填入你的 Apple ID 邮箱，点击 **Start** 启动安装。
+3. **手机信任证书**：安装完成后在 **设置 -> 通用 -> VPN 与设备管理** 中信任你的证书，即可从桌面启动应用。
+
+---
+
+### 🤖 Android 安装指南 (Android Installation Guide)
+
+- **下载文件**：请从 Release 页面下载 `bilibeat-x.x.x-arm64-v8a.apk` 文件。
+- **直接安装**：在 Android 设备上点击下载的 APK 文件，若提示“允许安装来自未知来源的应用”，开启允许后即可直接安装使用（支持 Android 6.0+）。
 
 ## Signing (Android)
 
