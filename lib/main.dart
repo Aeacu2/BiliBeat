@@ -454,8 +454,8 @@ class _MainLayoutState extends State<MainLayout> {
                         // mark closes it off and gives the header a shape,
                         // which is what a header is for.
                         Padding(
-                          padding: const EdgeInsets.only(left: 12),
-                          child: Image.asset('assets/logo.png', height: 38),
+                          padding: const EdgeInsets.only(left: 12, right: 14),
+                          child: Image.asset('assets/logo.png', height: 36),
                         ),
                       ],
                     ),
