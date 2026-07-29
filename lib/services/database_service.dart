@@ -262,6 +262,21 @@ class DatabaseService {
     return newPlaylist;
   }
 
+  /// Renames a playlist.
+  static Future<void> renamePlaylist(String playlistId, String newName) async {
+    await _ensureLoaded();
+    final idx = _playlists.indexWhere((p) => p.id == playlistId);
+    if (idx == -1) return;
+    final old = _playlists[idx];
+    _playlists[idx] = Playlist(
+      id: old.id,
+      name: newName.trim().isEmpty ? old.name : newName.trim(),
+      coverUrl: old.coverUrl,
+      tracks: old.tracks,
+    );
+    await _persistPlaylists();
+  }
+
   /// Sets (or clears, with null) a playlist's cover image.
   static Future<void> setPlaylistCover(String playlistId, String? path) async {
     await _ensureLoaded();

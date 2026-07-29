@@ -176,29 +176,41 @@ class _PlaylistDetailSheetState extends State<PlaylistDetailSheet> {
                 _headerArtwork(isFav),
                 const SizedBox(width: 16),
                 Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        _currentPlaylist.name,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          color: AppColors.textPrimary,
-                          fontSize: 22,
-                          fontWeight: FontWeight.bold,
+                  child: GestureDetector(
+                    behavior: HitTestBehavior.opaque,
+                    onDoubleTap: !_isVirtualDownloads ? _editPlaylistName : null,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          _currentPlaylist.name,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            color: AppColors.textPrimary,
+                            fontSize: 22,
+                            fontWeight: FontWeight.bold,
+                          ),
                         ),
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        '${_currentPlaylist.tracks.length} 首',
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(color: AppColors.textMuted, fontSize: 13),
-                      ),
-                    ],
+                        const SizedBox(height: 4),
+                        Text(
+                          '${_currentPlaylist.tracks.length} 首',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(color: AppColors.textMuted, fontSize: 13),
+                        ),
+                      ],
+                    ),
                   ),
                 ),
+                if (!_isVirtualDownloads)
+                  IconButton(
+                    icon: const Icon(Icons.image_outlined, color: AppColors.textSecondary, size: 22),
+                    tooltip: '更换封面',
+                    padding: EdgeInsets.zero,
+                    constraints: const BoxConstraints(minWidth: 40, minHeight: 40),
+                    onPressed: _pickCover,
+                  ),
               ],
             ),
           ),
@@ -238,8 +250,7 @@ class _PlaylistDetailSheetState extends State<PlaylistDetailSheet> {
                 ? const Center(
                     child: EmptyState(
                       icon: Icons.library_music_rounded,
-                      title: '歌单暂无曲目',
-                      subtitle: '在搜索页点 + 添加',
+                      title: '暂无曲目',
                     ),
                   )
                 : ReorderableListView.builder(
@@ -370,64 +381,37 @@ class _PlaylistDetailSheetState extends State<PlaylistDetailSheet> {
 
   bool get _isVirtualDownloads => _currentPlaylist.id == 'downloaded';
 
-  /// The playlist's artwork, and the way to change it. 本地 is rebuilt from
+  /// The playlist's artwork. 本地 is rebuilt from
   /// the download library on every refresh and has no row to store a cover on,
   /// so it keeps the default badge.
   Widget _headerArtwork(bool isFav) {
     final cover = _currentPlaylist.coverUrl;
-    final editable = !_isVirtualDownloads;
-    return GestureDetector(
-      onTap: editable ? _pickCover : null,
-      child: SizedBox(
-        width: 72,
-        height: 72,
-        child: Stack(
-          children: [
-            Positioned.fill(
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(16),
-                child: cover != null && cover.isNotEmpty
-                    ? CachedCoverImage(url: cover, width: 72, height: 72)
-                    : DecoratedBox(
-                        decoration: BoxDecoration(
-                          gradient: LinearGradient(
-                            colors: isFav
-                                ? [AppColors.accent, const Color(0xFFFF5252)]
-                                : [
-                                    const Color(0xFF3A3A40),
-                                    const Color(0xFF232327)
-                                  ],
-                          ),
-                        ),
-                        child: Center(
-                          child: Icon(
-                            isFav ? Icons.favorite : Icons.queue_music,
-                            color: AppColors.textPrimary,
-                            size: 36,
-                          ),
-                        ),
-                      ),
-              ),
-            ),
-            if (editable)
-              Positioned(
-                right: 0,
-                bottom: 0,
-                child: Container(
-                  width: 24,
-                  height: 24,
-                  decoration: const BoxDecoration(
-                    shape: BoxShape.circle,
-                    color: AppColors.backgroundElevated,
-                    border: Border.fromBorderSide(
-                        BorderSide(color: AppColors.hairlineStrong)),
+    return SizedBox(
+      width: 72,
+      height: 72,
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(16),
+        child: cover != null && cover.isNotEmpty
+            ? CachedCoverImage(url: cover, width: 72, height: 72)
+            : DecoratedBox(
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    colors: isFav
+                        ? [AppColors.accent, const Color(0xFFFF5252)]
+                        : [
+                            const Color(0xFF3A3A40),
+                            const Color(0xFF232327)
+                          ],
                   ),
-                  child: const Icon(Icons.photo_camera_rounded,
-                      color: AppColors.textSecondary, size: 13),
+                ),
+                child: Center(
+                  child: Icon(
+                    isFav ? Icons.favorite : Icons.queue_music,
+                    color: AppColors.textPrimary,
+                    size: 36,
+                  ),
                 ),
               ),
-          ],
-        ),
       ),
     );
   }
@@ -450,6 +434,43 @@ class _PlaylistDetailSheetState extends State<PlaylistDetailSheet> {
       await _refresh();
     } catch (e) {
       debugPrint('Playlist cover pick failed: $e');
+    }
+  }
+
+  Future<void> _editPlaylistName() async {
+    Haptics.light();
+    final controller = TextEditingController(text: _currentPlaylist.name);
+    final newName = await showDialog<String>(
+      context: context,
+      builder: (dCtx) => AlertDialog(
+        backgroundColor: AppColors.backgroundElevated,
+        title: const Text('重命名歌单', style: TextStyle(color: AppColors.textPrimary)),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          style: const TextStyle(color: AppColors.textPrimary),
+          decoration: const InputDecoration(
+            hintText: '歌单名称',
+            hintStyle: TextStyle(color: AppColors.textFaint),
+          ),
+        ),
+        actions: [
+          TextButton(
+            child: const Text('取消'),
+            onPressed: () => Navigator.pop(dCtx),
+          ),
+          TextButton(
+            child: const Text('保存', style: TextStyle(color: AppColors.accent)),
+            onPressed: () => Navigator.pop(dCtx, controller.text),
+          ),
+        ],
+      ),
+    );
+    controller.dispose();
+
+    if (newName != null && newName.trim().isNotEmpty && newName.trim() != _currentPlaylist.name) {
+      await DatabaseService.renamePlaylist(_currentPlaylist.id, newName.trim());
+      await _refresh();
     }
   }
 

@@ -11,6 +11,7 @@ import 'package:bilibeats/widgets/marquee_text.dart';
 import 'package:bilibeats/widgets/expand_from_card.dart';
 import 'package:bilibeats/widgets/mini_player.dart';
 import 'package:bilibeats/widgets/synced_lyrics_view.dart';
+import 'package:bilibeats/widgets/playlist_detail_sheet.dart';
 
 const _style = TextStyle(fontSize: 14, height: 1.25);
 
@@ -710,6 +711,25 @@ void main() {
       await tester.tap(find.byIcon(Icons.pause_rounded));
       expect(toggled, isTrue);
       expect(tester.takeException(), isNull);
+    });
+  });
+
+  group('PlaylistDetailSheet', () {
+    testWidgets('renders empty state title as 暂无曲目 without subtitle and cover button on right', (tester) async {
+      await tester.pumpWidget(MaterialApp(
+        home: Scaffold(
+          body: PlaylistDetailSheet(
+            playlist: Playlist(id: 'test_pl', name: '测试歌单', tracks: []),
+            onSelectTrack: (_, {queue}) {},
+          ),
+        ),
+      ));
+      await tester.pumpAndSettle();
+
+      expect(find.text('暂无曲目'), findsOneWidget);
+      expect(find.text('歌单暂无曲目'), findsNothing);
+      expect(find.text('在搜索页点 + 添加'), findsNothing);
+      expect(find.byIcon(Icons.image_outlined), findsOneWidget);
     });
   });
 }
