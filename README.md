@@ -8,6 +8,13 @@ A Flutter music player for Bilibili audio with synced LRC lyrics and offline cac
 
 ---
 
+### 🤖 Android 安装指南 (Android Installation Guide)
+
+- **下载文件**：请从 Release 页面下载 `bilibeat-x.x.x-arm64-v8a.apk` 文件。
+- **直接安装**：在 Android 设备上点击下载的 APK 文件，若提示“允许安装来自未知来源的应用”，开启允许后即可直接安装使用（支持 Android 6.0+）。
+
+---
+
 ### 📱 iOS 安装与试用指南 (iOS Installation Guide)
 
 由于本项目未提交至苹果 App Store，构建产物为未签名的 `.ipa` 文件（`bilibeat-x.x.x-unsigned.ipa`）。你可以通过以下两种安全便捷的个人签名方式安装至 iPhone（支持 iOS 13+）：
@@ -34,13 +41,6 @@ A Flutter music player for Bilibili audio with synced LRC lyrics and offline cac
    - 打开 Sideloadly，将下载好的 `bilibeat-x.x.x-unsigned.ipa` 文件直接拖拽至软件窗口中。
    - 在 `Apple Account` 输入框填入你的 Apple ID 邮箱，点击 **Start** 启动安装。
 3. **手机信任证书**：安装完成后在 **设置 -> 通用 -> VPN 与设备管理** 中信任你的证书，即可从桌面启动应用。
-
----
-
-### 🤖 Android 安装指南 (Android Installation Guide)
-
-- **下载文件**：请从 Release 页面下载 `bilibeat-x.x.x-arm64-v8a.apk` 文件。
-- **直接安装**：在 Android 设备上点击下载的 APK 文件，若提示“允许安装来自未知来源的应用”，开启允许后即可直接安装使用（支持 Android 6.0+）。
 
 ## Signing (Android)
 
