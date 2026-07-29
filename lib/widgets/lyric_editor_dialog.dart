@@ -283,47 +283,12 @@ class _LyricEditorDialogState extends State<LyricEditorDialog>
   // ---------------------------------------------------------------------------
 
   Widget _offsetBar() {
-    final off = _previewOffset;
-    final label = off == 0
-        ? '时间轴未调整'
-        : '${off > 0 ? "歌词延迟" : "歌词提前"} ${off.abs().toStringAsFixed(1)} 秒';
-    return Container(
-      padding: const EdgeInsets.fromLTRB(12, 8, 8, 8),
-      decoration: BoxDecoration(
-        color: AppColors.surfaceCard,
-        borderRadius: BorderRadius.circular(AppRadius.md),
-        border: Border.all(
-            color: _calibrating ? AppColors.accent30 : AppColors.hairline),
-      ),
-      child: Row(
-        children: [
-          Icon(Icons.timer_outlined,
-              color: off == 0 && !_calibrating
-                  ? AppColors.textFaint
-                  : AppColors.accent,
-              size: 16),
-          const SizedBox(width: 8),
-          Text(
-            label,
-            style: TextStyle(
-              color: off == 0 ? AppColors.textMuted : AppColors.textPrimary,
-              fontSize: 13,
-              fontWeight: FontWeight.w600,
-              fontFeatures: const [FontFeature.tabularFigures()],
-            ),
-          ),
-          const Spacer(),
-          if (off != 0) ...[
-            _offsetBtn('重置', () => setState(() => _previewOffset = 0.0),
-                muted: true),
-            const SizedBox(width: 6),
-          ],
-          _offsetBtn(
-            _calibrating ? '完成' : '校准',
-            () => setState(() => _calibrating = !_calibrating),
-            highlighted: _calibrating,
-          ),
-        ],
+    return Align(
+      alignment: Alignment.centerRight,
+      child: _offsetBtn(
+        _calibrating ? '完成' : '校准',
+        () => setState(() => _calibrating = !_calibrating),
+        highlighted: _calibrating,
       ),
     );
   }
