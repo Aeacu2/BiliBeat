@@ -17,8 +17,7 @@ class LyricEditorDialog extends StatefulWidget {
   final Function(LyricsResult) onApplyLyrics;
   final Function(String title, String artist, String coverUrl)? onUpdateMetadata;
 
-  /// Which tab to land on: 0 = 信息, 1 = 歌词. Opening from the lyrics view's
-  /// "search or paste" action should go straight to the lyrics tab.
+  /// Which tab to land on: 0 = 信息, 1 = 歌词.
   final int initialTabIndex;
 
   const LyricEditorDialog({
@@ -37,18 +36,16 @@ class LyricEditorDialog extends StatefulWidget {
   State<LyricEditorDialog> createState() => _LyricEditorDialogState();
 }
 
-class _LyricEditorDialogState extends State<LyricEditorDialog> with SingleTickerProviderStateMixin {
+class _LyricEditorDialogState extends State<LyricEditorDialog>
+    with SingleTickerProviderStateMixin {
   late TabController _tabController;
   late TextEditingController _titleController;
   late TextEditingController _artistController;
   late TextEditingController _coverUrlController;
 
   final TextEditingController _searchController = TextEditingController();
-  final TextEditingController _importController = TextEditingController();
+  final TextEditingController _lrcController = TextEditingController();
 
-  /// Stand-in clock for the preview when the caller has no live position.
-  /// This used to be constructed inline inside `build`, which handed the
-  /// preview a brand-new notifier on every rebuild and leaked its listener.
   final ValueNotifier<Duration> _idlePosition = ValueNotifier(Duration.zero);
 
   List<LyricsResult> _searchResults = [];
@@ -58,7 +55,9 @@ class _LyricEditorDialogState extends State<LyricEditorDialog> with SingleTicker
   double _previewOffset = 0.0;
   bool _calibrating = false;
   bool _isSearching = false;
-  bool _showPasteLrcSection = false;
+
+  /// True while the full-screen LRC text editor is showing.
+  bool _inLrcEditor = false;
 
   @override
   void initState() {
@@ -81,10 +80,14 @@ class _LyricEditorDialogState extends State<LyricEditorDialog> with SingleTicker
     _artistController.dispose();
     _coverUrlController.dispose();
     _searchController.dispose();
-    _importController.dispose();
+    _lrcController.dispose();
     _idlePosition.dispose();
     super.dispose();
   }
+
+  // ---------------------------------------------------------------------------
+  // Cover picker
+  // ---------------------------------------------------------------------------
 
   Future<void> _pickLocalCoverImage() async {
     try {
@@ -97,13 +100,12 @@ class _LyricEditorDialogState extends State<LyricEditorDialog> with SingleTicker
           await coversDir.create(recursive: true);
         }
         final ext = image.path.split('.').last;
-        final savedFile = File('${coversDir.path}/cover_${DateTime.now().millisecondsSinceEpoch}.$ext');
+        final savedFile = File(
+            '${coversDir.path}/cover_${DateTime.now().millisecondsSinceEpoch}.$ext');
         await File(image.path).copy(savedFile.path);
 
         if (mounted) {
-          setState(() {
-            _coverUrlController.text = savedFile.path;
-          });
+          setState(() => _coverUrlController.text = savedFile.path);
         }
       }
     } catch (e) {
@@ -111,7 +113,10 @@ class _LyricEditorDialogState extends State<LyricEditorDialog> with SingleTicker
     }
   }
 
-  /// Fingerprint used to compare lyric contents (ignores timing/whitespace).
+  // ---------------------------------------------------------------------------
+  // Search & results
+  // ---------------------------------------------------------------------------
+
   String _fingerprint(List<LyricLine> lines) => lines
       .map((l) => l.text.trim())
       .where((t) => t.isNotEmpty)
@@ -123,9 +128,6 @@ class _LyricEditorDialogState extends State<LyricEditorDialog> with SingleTicker
     return _fingerprint(r.lines) == _fingerprint(current);
   }
 
-  /// Items always pinned to the top of the result list, in order: the
-  /// currently-used lyrics first, then any user-pasted lyrics that differ from
-  /// the current one. Search results come after these.
   List<LyricsResult> _pinnedResults() {
     final pinned = <LyricsResult>[];
     final current = widget.currentLines;
@@ -155,14 +157,11 @@ class _LyricEditorDialogState extends State<LyricEditorDialog> with SingleTicker
       _previewingResult = null;
     });
 
-    // Pinned items (current + user-pasted) always come first.
     final results = <LyricsResult>[..._pinnedResults()];
 
-    // NetEase
     final netease = await LyricsEngine.fetchFromNetEase(query);
     if (netease != null) results.add(netease);
 
-    // LRCLIB
     final lrclib = await LyricsEngine.fetchFromLRCLIB(query);
     if (lrclib != null) results.add(lrclib);
 
@@ -174,59 +173,95 @@ class _LyricEditorDialogState extends State<LyricEditorDialog> with SingleTicker
     }
   }
 
+  String _snippet(LyricsResult res) {
+    final texts = res.lines
+        .map((l) => l.text.trim())
+        .where((t) => t.isNotEmpty)
+        .take(2)
+        .join(' / ');
+    return texts.isEmpty ? '无文本' : texts;
+  }
+
+  // ---------------------------------------------------------------------------
+  // Apply / calibration
+  // ---------------------------------------------------------------------------
+
   void _applyLyricResult(LyricsResult res, {double offset = 0.0}) {
     final adjustedLines = offset == 0.0
         ? res.lines
-        : res.lines.map((l) => LyricLine(
-            time: (l.time + offset).clamp(0.0, 99999.0),
-            text: l.text,
-            translation: l.translation,
-          )).toList();
+        : res.lines
+            .map((l) => LyricLine(
+                  time: (l.time + offset).clamp(0.0, 99999.0),
+                  text: l.text,
+                  translation: l.translation,
+                ))
+            .toList();
 
-    final finalResult = LyricsResult(
+    widget.onApplyLyrics(LyricsResult(
       source: res.source,
       songTitle: res.songTitle,
       artistName: res.artistName,
       lines: adjustedLines,
-    );
-
-    widget.onApplyLyrics(finalResult);
+    ));
     Navigator.pop(context);
   }
 
-  void _importPastedLrcText() {
-    final text = _importController.text.trim();
+  void _applyTapCalibration(double offset) {
+    setState(() => _previewOffset = offset);
+  }
+
+  // ---------------------------------------------------------------------------
+  // LRC text editor
+  // ---------------------------------------------------------------------------
+
+  /// Opens the LRC editor. If [res] is given its lines are serialised into
+  /// the text field for editing; otherwise the field starts empty (paste).
+  void _openLrcEditor(LyricsResult? res) {
+    _lrcController.text =
+        (res != null && res.lines.isNotEmpty) ? LyricsEngine.toLrc(res.lines) : '';
+    setState(() {
+      _inLrcEditor = true;
+      _previewingResult = null;
+      _calibrating = false;
+    });
+  }
+
+  /// Parses the editor text and jumps to preview/calibration.
+  void _confirmLrcEdit() {
+    final text = _lrcController.text.trim();
     if (text.isEmpty) return;
 
     final lines = LyricsEngine.parseLrc(text);
-    final userResult = LyricsResult(
+    final result = LyricsResult(
       source: 'user',
-      songTitle: '粘贴歌词',
-      artistName: _artistController.text.trim().isNotEmpty ? _artistController.text.trim() : '自定义',
+      songTitle: '自定义歌词',
+      artistName: _artistController.text.trim().isNotEmpty
+          ? _artistController.text.trim()
+          : '自定义',
       lines: lines.isNotEmpty ? lines : [LyricLine(time: 0, text: text)],
     );
 
+    // Keep it in the pasted list so it shows up in future searches.
+    _pastedResults.removeWhere(
+        (r) => _fingerprint(r.lines) == _fingerprint(result.lines));
+    _pastedResults.add(result);
+
     setState(() {
-      _pastedResults.removeWhere(
-          (r) => _fingerprint(r.lines) == _fingerprint(userResult.lines));
-      _pastedResults.add(userResult);
+      _inLrcEditor = false;
+      _previewingResult = result;
+      _previewOffset = 0.0;
+      _calibrating = false;
+      // Refresh list so the new paste is pinned.
       final searchOnly = _searchResults
           .where((r) => r.source != 'user' && r.source != 'current')
           .toList();
       _searchResults = [..._pinnedResults(), ...searchOnly];
-      _selectedIndex = null;
-      _showPasteLrcSection = false;
     });
-
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('已置顶，可点击校准'),
-        backgroundColor: AppColors.success,
-        behavior: SnackBarBehavior.floating,
-        duration: Duration(seconds: 2),
-      ),
-    );
   }
+
+  // ---------------------------------------------------------------------------
+  // Metadata
+  // ---------------------------------------------------------------------------
 
   void _saveMetadata() {
     final newTitle = _titleController.text.trim();
@@ -243,20 +278,10 @@ class _LyricEditorDialogState extends State<LyricEditorDialog> with SingleTicker
     Navigator.pop(context);
   }
 
-  /// Commits one calibration drag. The view reports the seconds that drag was
-  /// worth, so this accumulates rather than replaces.
-  void _applyDragCalibration(double delta) {
-    setState(() => _previewOffset =
-        double.parse((_previewOffset + delta).toStringAsFixed(2)));
-  }
+  // ---------------------------------------------------------------------------
+  // Offset bar (calibration controls)
+  // ---------------------------------------------------------------------------
 
-  /// Timeline calibration: arm 校准, then drag the lyrics until the line that
-  /// should be singing sits on the guide.
-  ///
-  /// It replaced a row of ±0.1s / ±0.5s buttons. Nudging blind is the wrong
-  /// interaction for this job: you cannot see a tenth of a second, so it was
-  /// tap-listen-tap-listen until it happened to line up. Dragging the lyrics
-  /// against the guide *is* the correction, stated directly.
   Widget _offsetBar() {
     final off = _previewOffset;
     final label = off == 0
@@ -288,9 +313,6 @@ class _LyricEditorDialogState extends State<LyricEditorDialog> with SingleTicker
             ),
           ),
           const Spacer(),
-          // Reset sits next to 完成 rather than replacing it: after a few
-          // drags the quickest way out of a mess is to start over, and that
-          // is exactly when calibration is still armed.
           if (off != 0) ...[
             _offsetBtn('重置', () => setState(() => _previewOffset = 0.0),
                 muted: true),
@@ -314,8 +336,7 @@ class _LyricEditorDialogState extends State<LyricEditorDialog> with SingleTicker
       child: Container(
         padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 12),
         decoration: BoxDecoration(
-          color:
-              highlighted ? AppColors.accent22 : AppColors.surfaceHighlight,
+          color: highlighted ? AppColors.accent22 : AppColors.surfaceHighlight,
           borderRadius: BorderRadius.circular(AppRadius.sm),
           border: Border.all(
               color: highlighted ? AppColors.accent30 : AppColors.hairline),
@@ -334,22 +355,13 @@ class _LyricEditorDialogState extends State<LyricEditorDialog> with SingleTicker
     );
   }
 
-  /// First couple of lines, so candidates are distinguishable at a glance
-  /// instead of all reading "NETEASE • 42 行歌词".
-  String _snippet(LyricsResult res) {
-    final texts = res.lines
-        .map((l) => l.text.trim())
-        .where((t) => t.isNotEmpty)
-        .take(2)
-        .join(' / ');
-    return texts.isEmpty ? '无文本' : texts;
-  }
+  // ---------------------------------------------------------------------------
+  // Build
+  // ---------------------------------------------------------------------------
 
   @override
   Widget build(BuildContext context) {
     final media = MediaQuery.of(context);
-    // A hardcoded 580 overflowed short phones outright, and overflowed every
-    // phone once the keyboard came up. Fit to what is actually available.
     final available = media.size.height - media.viewInsets.bottom - 80;
     final height = available.clamp(320.0, 620.0);
 
@@ -365,13 +377,15 @@ class _LyricEditorDialogState extends State<LyricEditorDialog> with SingleTicker
         height: height,
         child: Column(
           children: [
-            // Header bar
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
                 const Text(
                   '信息与歌词',
-                  style: TextStyle(color: AppColors.textPrimary, fontSize: 18, fontWeight: FontWeight.bold),
+                  style: TextStyle(
+                      color: AppColors.textPrimary,
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold),
                 ),
                 IconButton(
                   icon: const Icon(Icons.close, color: AppColors.textMuted),
@@ -379,440 +393,545 @@ class _LyricEditorDialogState extends State<LyricEditorDialog> with SingleTicker
                 ),
               ],
             ),
-
             TabBar(
               controller: _tabController,
               indicatorColor: AppColors.accent,
               labelColor: AppColors.accent,
               unselectedLabelColor: AppColors.textMuted,
-              tabs: const [
-                Tab(text: '信息'),
-                Tab(text: '歌词'),
-              ],
+              tabs: const [Tab(text: '信息'), Tab(text: '歌词')],
             ),
-
             const SizedBox(height: 16),
-
             Expanded(
               child: TabBarView(
                 controller: _tabController,
                 children: [
-                  // Tab 1: Information Tab (Title, Artist, Cover Photo)
-                  SingleChildScrollView(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Center(
-                          child: Column(
-                            children: [
-                              ClipRRect(
-                                borderRadius: BorderRadius.circular(16),
-                                child: CachedCoverImage(
-                                  url: _coverUrlController.text.trim(),
-                                  width: 96,
-                                  height: 96,
-                                ),
-                              ),
-                              const SizedBox(height: 10),
-                              OutlinedButton.icon(
-                                onPressed: _pickLocalCoverImage,
-                                icon: const Icon(Icons.photo_library, size: 18, color: AppColors.accent),
-                                label: const Text('选择封面', style: TextStyle(color: AppColors.textSecondary, fontSize: 13)),
-                                style: OutlinedButton.styleFrom(
-                                  side: const BorderSide(color: Colors.white24),
-                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                        const SizedBox(height: 16),
-
-                        const Text('歌名', style: TextStyle(color: AppColors.textSecondary, fontSize: 12, fontWeight: FontWeight.w600)),
-                        const SizedBox(height: 6),
-                        TextField(
-                          controller: _titleController,
-                          style: const TextStyle(color: AppColors.textPrimary, fontSize: 14),
-                          decoration: InputDecoration(
-                            hintText: '歌曲名称',
-                            hintStyle: const TextStyle(color: AppColors.textFaint),
-                            filled: true,
-                            fillColor: Colors.white10,
-                            border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
-                            contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-                          ),
-                        ),
-
-                        const SizedBox(height: 12),
-
-                        const Text('歌手 / UP主', style: TextStyle(color: AppColors.textSecondary, fontSize: 12, fontWeight: FontWeight.w600)),
-                        const SizedBox(height: 6),
-                        TextField(
-                          controller: _artistController,
-                          style: const TextStyle(color: AppColors.textPrimary, fontSize: 14),
-                          decoration: InputDecoration(
-                            hintText: '歌手 / UP主',
-                            hintStyle: const TextStyle(color: AppColors.textFaint),
-                            filled: true,
-                            fillColor: Colors.white10,
-                            border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
-                            contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-                          ),
-                        ),
-
-                        const SizedBox(height: 20),
-
-                        SizedBox(
-                          width: double.infinity,
-                          height: 44,
-                          child: ElevatedButton(
-                            onPressed: _saveMetadata,
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: AppColors.accent,
-                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                            ),
-                            child: const Text('保存', style: TextStyle(color: AppColors.textPrimary, fontWeight: FontWeight.bold, fontSize: 15)),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-
-                  // Tab 2: Lyrics Tab
-                  _previewingResult != null
-                      ? Column(
-                          children: [
-                            // Header bar for live preview
-                            Row(
-                              children: [
-                                IconButton(
-                                  icon: const Icon(Icons.arrow_back, color: AppColors.textPrimary),
-                                  onPressed: () => setState(() {
-                                    _previewingResult = null;
-                                    _calibrating = false;
-                                  }),
-                                ),
-                                Expanded(
-                                  child: Text(
-                                    _previewingResult!.songTitle ??
-                                        widget.songTitle,
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: const TextStyle(color: AppColors.textPrimary, fontSize: 14, fontWeight: FontWeight.bold),
-                                  ),
-                                ),
-                              ],
-                            ),
-                            const SizedBox(height: 6),
-
-                            // Live preview gets the full width; calibration
-                            // sits beneath it.
-                            Expanded(
-                              child: ClipRRect(
-                                borderRadius: BorderRadius.circular(16),
-                                child: Container(
-                                  color: Colors.black26,
-                                  padding: const EdgeInsets.symmetric(
-                                      horizontal: 12),
-                                  child: SyncedLyricsView(
-                                    lines: _previewingResult!.lines,
-                                    positionNotifier:
-                                        widget.positionNotifier ??
-                                            _idlePosition,
-                                    offset: _previewOffset,
-                                    calibrating: _calibrating,
-                                    onCalibrate: _applyDragCalibration,
-                                    // A preview of a track that is not playing
-                                    // has a clock frozen at 0:00; following it
-                                    // would drag the list back to the first
-                                    // line a few seconds after every scroll.
-                                    autoFollow: widget.positionNotifier != null,
-                                  ),
-                                ),
-                              ),
-                            ),
-                            const SizedBox(height: 10),
-                            _offsetBar(),
-                            const SizedBox(height: 10),
-                            // Apply Button for Live Preview
-                            SizedBox(
-                              width: double.infinity,
-                              height: 44,
-                              child: ElevatedButton.icon(
-                                onPressed: () => _applyLyricResult(_previewingResult!, offset: _previewOffset),
-                                icon: const Icon(Icons.check_circle, color: AppColors.textPrimary, size: 20),
-                                label: const Text('应用', style: TextStyle(color: AppColors.textPrimary, fontWeight: FontWeight.bold, fontSize: 15)),
-                                style: ElevatedButton.styleFrom(
-                                  backgroundColor: AppColors.accent,
-                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                                ),
-                              ),
-                            ),
-                          ],
-                        )
-                      : Column(
-                          children: [
-                            // Search bar
-                            TextField(
-                              controller: _searchController,
-                              style: const TextStyle(color: AppColors.textPrimary, fontSize: 14),
-                              onSubmitted: (_) => _performSearch(),
-                              decoration: InputDecoration(
-                                hintText: '搜索歌曲或歌手',
-                                hintStyle: const TextStyle(color: AppColors.textFaint),
-                                suffixIcon: _isSearching
-                                    ? const Padding(
-                                        padding: EdgeInsets.all(12),
-                                        child: CircularProgressIndicator(
-                                            strokeWidth: 2, color: AppColors.accent),
-                                      )
-                                    : IconButton(
-                                        icon: const Icon(Icons.search, color: AppColors.accent),
-                                        onPressed: _performSearch,
-                                      ),
-                                filled: true,
-                                fillColor: Colors.white10,
-                                border: OutlineInputBorder(
-                                  borderRadius: BorderRadius.circular(12),
-                                  borderSide: BorderSide.none,
-                                ),
-                              ),
-                            ),
-                            const SizedBox(height: 10),
-
-                            // Search results list
-                            Expanded(
-                              child: (_isSearching && _searchResults.isEmpty)
-                                  ? const Center(child: CircularProgressIndicator(color: AppColors.accent))
-                                  : _searchResults.isEmpty
-                                      ? const Center(child: Text('无结果', style: TextStyle(color: AppColors.textFaint)))
-                                      : ListView.builder(
-                                          itemCount: _searchResults.length,
-                                          itemBuilder: (context, index) {
-                                            final res = _searchResults[index];
-                                            final isSelected = _selectedIndex == index;
-                                            final isUserPasted = res.source == 'user';
-                                            final isCurrent = res.source == 'current';
-
-                                            return Container(
-                                              margin: const EdgeInsets.only(bottom: 8),
-                                              decoration: BoxDecoration(
-                                                color: isCurrent
-                                                    ? AppColors.success12
-                                                    : (isUserPasted
-                                                        ? AppColors.accent12
-                                                        : AppColors.white06),
-                                                borderRadius: BorderRadius.circular(16),
-                                                border: Border.all(
-                                                  color: isSelected
-                                                      ? AppColors.accent
-                                                      : (isCurrent
-                                                          ? AppColors.success50
-                                                          : (isUserPasted ? AppColors.accent50 : Colors.white12)),
-                                                  width: isSelected || isUserPasted || isCurrent ? 1.5 : 1.0,
-                                                ),
-                                              ),
-                                              child: Row(
-                                                children: [
-                                                  // Card Body (Tap to Enter Live Preview & Timing Calibration)
-                                                  Expanded(
-                                                    child: InkWell(
-                                                      borderRadius: const BorderRadius.horizontal(left: Radius.circular(16)),
-                                                      onTap: () {
-                                                        setState(() {
-                                                          _selectedIndex = index;
-                                                          _previewingResult = res;
-                                                          _previewOffset = 0.0;
-                                                        });
-                                                      },
-                                                      child: Padding(
-                                                        padding: const EdgeInsets.all(12),
-                                                        child: Column(
-                                                          crossAxisAlignment: CrossAxisAlignment.start,
-                                                          children: [
-                                                            Row(
-                                                              children: [
-                                                                Expanded(
-                                                                  child: Text(
-                                                                    isCurrent
-                                                                        ? '当前歌词'
-                                                                        : (isUserPasted ? '粘贴歌词' : (res.songTitle ?? '未知歌曲')),
-                                                                    maxLines: 1,
-                                                                    overflow: TextOverflow.ellipsis,
-                                                                    style: TextStyle(
-                                                                      color: isCurrent
-                                                                          ? AppColors.success
-                                                                          : (isUserPasted ? AppColors.pinkStart : AppColors.textPrimary),
-                                                                      fontWeight: FontWeight.bold,
-                                                                      fontSize: 14,
-                                                                    ),
-                                                                  ),
-                                                                ),
-                                                              ],
-                                                            ),
-                                                            const SizedBox(height: 5),
-                                                            // The actual words: without this every
-                                                            // candidate looked identical.
-                                                            Text(
-                                                              _snippet(res),
-                                                              maxLines: 2,
-                                                              overflow: TextOverflow.ellipsis,
-                                                              style: const TextStyle(
-                                                                color: AppColors.textSecondary,
-                                                                fontSize: 12.5,
-                                                                height: 1.35,
-                                                              ),
-                                                            ),
-                                                            const SizedBox(height: 6),
-                                                            Row(
-                                                              children: [
-                                                                Text(
-                                                                  isCurrent
-                                                                      ? '当前使用'
-                                                                      : res.source.toUpperCase(),
-                                                                  style: const TextStyle(
-                                                                      color: AppColors.textFaint,
-                                                                      fontSize: 11,
-                                                                      fontWeight: FontWeight.w700,
-                                                                      letterSpacing: 0.6),
-                                                                ),
-                                                                const SizedBox(width: 8),
-                                                                Text(
-                                                                  '${res.lines.length} 行',
-                                                                  style: const TextStyle(
-                                                                      color: AppColors.textFaint,
-                                                                      fontSize: 11),
-                                                                ),
-                                                              ],
-                                                            ),
-                                                          ],
-                                                        ),
-                                                      ),
-                                                    ),
-                                                  ),
-
-                                                  // Right Circle Icon (Tap directly to Select & Apply)
-                                                  IconButton(
-                                                    icon: Icon(
-                                                      isCurrent
-                                                          ? Icons.check_circle
-                                                          : (isSelected ? Icons.check_circle : Icons.radio_button_unchecked),
-                                                      color: isCurrent
-                                                          ? AppColors.success
-                                                          : (isSelected ? AppColors.accent : AppColors.textFaint),
-                                                      size: 24,
-                                                    ),
-                                                    onPressed: isCurrent
-                                                        ? null
-                                                        : () {
-                                                            setState(() => _selectedIndex = index);
-                                                            _applyLyricResult(res);
-                                                          },
-                                                    tooltip: isCurrent ? '当前歌词' : '应用',
-                                                  ),
-                                                  const SizedBox(width: 4),
-                                                ],
-                                              ),
-                                            );
-                                          },
-                                        ),
-                            ),
-
-                            const SizedBox(height: 8),
-
-                            // Bottom Option: Paste .lrc Text Section
-                            DecoratedBox(
-                              decoration: BoxDecoration(
-                                color: AppColors.white05,
-                                borderRadius: BorderRadius.circular(14),
-                                border: Border.all(color: Colors.white12),
-                              ),
-                              child: Column(
-                                children: [
-                                  InkWell(
-                                    borderRadius: BorderRadius.circular(14),
-                                    onTap: () {
-                                      setState(() {
-                                        _showPasteLrcSection = !_showPasteLrcSection;
-                                      });
-                                    },
-                                    child: Padding(
-                                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                                      child: Row(
-                                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                        children: [
-                                          const Row(
-                                            children: [
-                                              Icon(Icons.content_paste, color: AppColors.accent, size: 18),
-                                              SizedBox(width: 8),
-                                              Text(
-                                                '粘贴 LRC',
-                                                style: TextStyle(color: AppColors.textPrimary, fontSize: 13, fontWeight: FontWeight.w600),
-                                              ),
-                                            ],
-                                          ),
-                                          Icon(
-                                            _showPasteLrcSection ? Icons.keyboard_arrow_up : Icons.keyboard_arrow_down,
-                                            color: AppColors.textMuted,
-                                            size: 20,
-                                          ),
-                                        ],
-                                      ),
-                                    ),
-                                  ),
-                                  if (_showPasteLrcSection) ...[
-                                    Padding(
-                                      padding: const EdgeInsets.only(left: 12, right: 12, bottom: 12),
-                                      child: Column(
-                                        children: [
-                                          SizedBox(
-                                            height: 90,
-                                            child: TextField(
-                                              controller: _importController,
-                                              maxLines: null,
-                                              expands: true,
-                                              style: const TextStyle(color: AppColors.textPrimary, fontSize: 12, fontFamily: 'monospace'),
-                                              decoration: InputDecoration(
-                                                hintText: '粘贴 LRC 文本，如 [00:12.34]歌词',
-                                                hintStyle: const TextStyle(color: AppColors.textFaint, fontSize: 12),
-                                                filled: true,
-                                                fillColor: Colors.white10,
-                                                border: OutlineInputBorder(
-                                                  borderRadius: BorderRadius.circular(10),
-                                                  borderSide: BorderSide.none,
-                                                ),
-                                                contentPadding: const EdgeInsets.all(10),
-                                              ),
-                                            ),
-                                          ),
-                                          const SizedBox(height: 8),
-                                          SizedBox(
-                                            width: double.infinity,
-                                            height: 38,
-                                            child: ElevatedButton(
-                                              onPressed: _importPastedLrcText,
-                                              style: ElevatedButton.styleFrom(
-                                                backgroundColor: AppColors.accent,
-                                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                                              ),
-                                              child: const Text('导入', style: TextStyle(color: AppColors.textPrimary, fontWeight: FontWeight.bold, fontSize: 13)),
-                                            ),
-                                          ),
-                                        ],
-                                      ),
-                                    ),
-                                  ],
-                                ],
-                              ),
-                            ),
-                          ],
-                        ),
+                  _buildInfoTab(),
+                  _buildLyricsTab(),
                 ],
               ),
             ),
           ],
         ),
       ),
+    );
+  }
+
+  // ---------------------------------------------------------------------------
+  // Tab 1: Info
+  // ---------------------------------------------------------------------------
+
+  Widget _buildInfoTab() {
+    return SingleChildScrollView(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Center(
+            child: Column(
+              children: [
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(16),
+                  child: CachedCoverImage(
+                    url: _coverUrlController.text.trim(),
+                    width: 96,
+                    height: 96,
+                  ),
+                ),
+                const SizedBox(height: 10),
+                OutlinedButton.icon(
+                  onPressed: _pickLocalCoverImage,
+                  icon: const Icon(Icons.photo_library,
+                      size: 18, color: AppColors.accent),
+                  label: const Text('选择封面',
+                      style: TextStyle(
+                          color: AppColors.textSecondary, fontSize: 13)),
+                  style: OutlinedButton.styleFrom(
+                    side: const BorderSide(color: Colors.white24),
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(20)),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 16),
+          const Text('歌名',
+              style: TextStyle(
+                  color: AppColors.textSecondary,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600)),
+          const SizedBox(height: 6),
+          TextField(
+            controller: _titleController,
+            style: const TextStyle(color: AppColors.textPrimary, fontSize: 14),
+            decoration: InputDecoration(
+              hintText: '歌曲名称',
+              hintStyle: const TextStyle(color: AppColors.textFaint),
+              filled: true,
+              fillColor: Colors.white10,
+              border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: BorderSide.none),
+              contentPadding:
+                  const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+            ),
+          ),
+          const SizedBox(height: 12),
+          const Text('歌手 / UP主',
+              style: TextStyle(
+                  color: AppColors.textSecondary,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600)),
+          const SizedBox(height: 6),
+          TextField(
+            controller: _artistController,
+            style: const TextStyle(color: AppColors.textPrimary, fontSize: 14),
+            decoration: InputDecoration(
+              hintText: '歌手或UP主名称',
+              hintStyle: const TextStyle(color: AppColors.textFaint),
+              filled: true,
+              fillColor: Colors.white10,
+              border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: BorderSide.none),
+              contentPadding:
+                  const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+            ),
+          ),
+          const SizedBox(height: 12),
+          const Text('封面 URL / 本地路径',
+              style: TextStyle(
+                  color: AppColors.textSecondary,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600)),
+          const SizedBox(height: 6),
+          TextField(
+            controller: _coverUrlController,
+            style: const TextStyle(color: AppColors.textPrimary, fontSize: 14),
+            decoration: InputDecoration(
+              hintText: 'https:// 或本地路径',
+              hintStyle: const TextStyle(color: AppColors.textFaint),
+              filled: true,
+              fillColor: Colors.white10,
+              border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: BorderSide.none),
+              contentPadding:
+                  const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+            ),
+          ),
+          const SizedBox(height: 20),
+          SizedBox(
+            width: double.infinity,
+            height: 44,
+            child: ElevatedButton(
+              onPressed: _saveMetadata,
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppColors.accent,
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12)),
+              ),
+              child: const Text('保存',
+                  style: TextStyle(
+                      color: AppColors.textPrimary,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 15)),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ---------------------------------------------------------------------------
+  // Tab 2: Lyrics (three states: list → LRC editor → preview)
+  // ---------------------------------------------------------------------------
+
+  Widget _buildLyricsTab() {
+    if (_previewingResult != null) return _buildPreview();
+    if (_inLrcEditor) return _buildLrcEditor();
+    return _buildResultList();
+  }
+
+  // --- State A: search results + paste card ---
+
+  Widget _buildResultList() {
+    return Column(
+      children: [
+        // Search bar
+        TextField(
+          controller: _searchController,
+          style: const TextStyle(color: AppColors.textPrimary, fontSize: 14),
+          onSubmitted: (_) => _performSearch(),
+          decoration: InputDecoration(
+            hintText: '搜索歌曲或歌手',
+            hintStyle: const TextStyle(color: AppColors.textFaint),
+            suffixIcon: _isSearching
+                ? const Padding(
+                    padding: EdgeInsets.all(12),
+                    child: SizedBox(
+                        width: 20,
+                        height: 20,
+                        child: CircularProgressIndicator(
+                            strokeWidth: 2, color: AppColors.accent)),
+                  )
+                : IconButton(
+                    icon: const Icon(Icons.search, color: AppColors.accent),
+                    onPressed: _performSearch,
+                  ),
+            filled: true,
+            fillColor: Colors.white10,
+            border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+                borderSide: BorderSide.none),
+            contentPadding:
+                const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+          ),
+        ),
+        const SizedBox(height: 10),
+
+        // Results
+        Expanded(
+          child: (_isSearching && _searchResults.isEmpty)
+              ? const Center(
+                  child: CircularProgressIndicator(color: AppColors.accent))
+              : _searchResults.isEmpty
+                  ? const Center(
+                      child: Text('无结果',
+                          style: TextStyle(color: AppColors.textFaint)))
+                  : ListView.builder(
+                      itemCount: _searchResults.length + 1, // +1 for paste card
+                      itemBuilder: (context, index) {
+                        // Last item: paste / edit LRC card
+                        if (index == _searchResults.length) {
+                          return _pasteCard();
+                        }
+                        return _resultRow(_searchResults[index], index);
+                      },
+                    ),
+        ),
+      ],
+    );
+  }
+
+  Widget _resultRow(LyricsResult res, int index) {
+    final isSelected = _selectedIndex == index;
+    final isUserPasted = res.source == 'user';
+    final isCurrent = res.source == 'current';
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      decoration: BoxDecoration(
+        color: isCurrent
+            ? AppColors.success12
+            : (isUserPasted ? AppColors.accent12 : AppColors.white06),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: isSelected
+              ? AppColors.accent
+              : (isCurrent
+                  ? AppColors.success50
+                  : (isUserPasted ? AppColors.accent50 : Colors.white12)),
+          width: isSelected || isUserPasted || isCurrent ? 1.5 : 1.0,
+        ),
+      ),
+      child: Row(
+        children: [
+          // Body → preview
+          Expanded(
+            child: InkWell(
+              borderRadius:
+                  const BorderRadius.horizontal(left: Radius.circular(16)),
+              onTap: () {
+                setState(() {
+                  _selectedIndex = index;
+                  _previewingResult = res;
+                  _previewOffset = 0.0;
+                  _calibrating = false;
+                });
+              },
+              child: Padding(
+                padding: const EdgeInsets.all(12),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      isCurrent
+                          ? '当前歌词'
+                          : (isUserPasted
+                              ? '粘贴歌词'
+                              : (res.songTitle ?? '未知歌曲')),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: isCurrent
+                            ? AppColors.success
+                            : (isUserPasted
+                                ? AppColors.pinkStart
+                                : AppColors.textPrimary),
+                        fontWeight: FontWeight.bold,
+                        fontSize: 14,
+                      ),
+                    ),
+                    const SizedBox(height: 5),
+                    Text(
+                      _snippet(res),
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: AppColors.textSecondary,
+                        fontSize: 12.5,
+                        height: 1.35,
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    Row(
+                      children: [
+                        Text(
+                          isCurrent ? '当前使用' : res.source.toUpperCase(),
+                          style: const TextStyle(
+                              color: AppColors.textFaint,
+                              fontSize: 11,
+                              fontWeight: FontWeight.w700,
+                              letterSpacing: 0.6),
+                        ),
+                        const SizedBox(width: 8),
+                        Text('${res.lines.length} 行',
+                            style: const TextStyle(
+                                color: AppColors.textFaint, fontSize: 11)),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+
+          // Edit button → LRC editor
+          IconButton(
+            icon: const Icon(Icons.edit_outlined, size: 20),
+            color: AppColors.textMuted,
+            tooltip: '编辑 LRC',
+            onPressed: () => _openLrcEditor(res),
+          ),
+
+          // Apply button
+          IconButton(
+            icon: Icon(
+              isCurrent
+                  ? Icons.check_circle
+                  : (isSelected
+                      ? Icons.check_circle
+                      : Icons.radio_button_unchecked),
+              color: isCurrent
+                  ? AppColors.success
+                  : (isSelected ? AppColors.accent : AppColors.textFaint),
+              size: 24,
+            ),
+            onPressed: isCurrent
+                ? null
+                : () {
+                    setState(() => _selectedIndex = index);
+                    _applyLyricResult(res);
+                  },
+            tooltip: isCurrent ? '当前歌词' : '应用',
+          ),
+          const SizedBox(width: 4),
+        ],
+      ),
+    );
+  }
+
+  /// "粘贴 / 编辑 LRC" card at the bottom of the results list.
+  Widget _pasteCard() {
+    return InkWell(
+      borderRadius: BorderRadius.circular(14),
+      onTap: () => _openLrcEditor(null),
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 8),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+        decoration: BoxDecoration(
+          color: AppColors.white05,
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: Colors.white12),
+        ),
+        child: const Row(
+          children: [
+            Icon(Icons.content_paste, color: AppColors.accent, size: 18),
+            SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                '粘贴 / 编辑 LRC 文本',
+                style: TextStyle(
+                    color: AppColors.textPrimary,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600),
+              ),
+            ),
+            Icon(Icons.arrow_forward_ios, color: AppColors.textFaint, size: 14),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // --- State B: LRC text editor ---
+
+  Widget _buildLrcEditor() {
+    return Column(
+      children: [
+        // Header
+        Row(
+          children: [
+            IconButton(
+              icon: const Icon(Icons.arrow_back, color: AppColors.textPrimary),
+              onPressed: () => setState(() => _inLrcEditor = false),
+            ),
+            const Expanded(
+              child: Text(
+                '编辑 LRC',
+                style: TextStyle(
+                    color: AppColors.textPrimary,
+                    fontSize: 14,
+                    fontWeight: FontWeight.bold),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 8),
+
+        // Editor
+        Expanded(
+          child: TextField(
+            controller: _lrcController,
+            maxLines: null,
+            expands: true,
+            autofocus: true,
+            style: const TextStyle(
+              color: AppColors.textPrimary,
+              fontSize: 13,
+              fontFamily: 'monospace',
+              height: 1.5,
+            ),
+            decoration: InputDecoration(
+              hintText: '[00:12.34]歌词内容\n[00:16.00]下一行\n\n粘贴或编辑 LRC 文本',
+              hintStyle: const TextStyle(color: AppColors.textFaint, fontSize: 13),
+              filled: true,
+              fillColor: Colors.white10,
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+                borderSide: BorderSide.none,
+              ),
+              contentPadding: const EdgeInsets.all(14),
+              alignLabelWithHint: true,
+            ),
+          ),
+        ),
+        const SizedBox(height: 12),
+
+        // Confirm → preview
+        SizedBox(
+          width: double.infinity,
+          height: 44,
+          child: ElevatedButton.icon(
+            onPressed: _confirmLrcEdit,
+            icon: const Icon(Icons.preview, color: AppColors.textPrimary, size: 20),
+            label: const Text('预览并校准',
+                style: TextStyle(
+                    color: AppColors.textPrimary,
+                    fontWeight: FontWeight.bold,
+                    fontSize: 15)),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppColors.accent,
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12)),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  // --- State C: preview + calibration ---
+
+  Widget _buildPreview() {
+    return Column(
+      children: [
+        // Header
+        Row(
+          children: [
+            IconButton(
+              icon: const Icon(Icons.arrow_back, color: AppColors.textPrimary),
+              onPressed: () => setState(() {
+                _previewingResult = null;
+                _calibrating = false;
+              }),
+            ),
+            Expanded(
+              child: Text(
+                _previewingResult!.songTitle ?? widget.songTitle,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                    color: AppColors.textPrimary,
+                    fontSize: 14,
+                    fontWeight: FontWeight.bold),
+              ),
+            ),
+            // Jump to LRC editor for the current preview
+            IconButton(
+              icon: const Icon(Icons.edit_outlined,
+                  color: AppColors.textMuted, size: 20),
+              tooltip: '编辑 LRC',
+              onPressed: () => _openLrcEditor(_previewingResult),
+            ),
+          ],
+        ),
+        const SizedBox(height: 6),
+
+        // Synced preview
+        Expanded(
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(16),
+            child: Container(
+              color: Colors.black26,
+              padding: const EdgeInsets.symmetric(horizontal: 12),
+              child: SyncedLyricsView(
+                lines: _previewingResult!.lines,
+                positionNotifier: widget.positionNotifier ?? _idlePosition,
+                offset: _previewOffset,
+                calibrating: _calibrating,
+                onCalibrateTap: _applyTapCalibration,
+                autoFollow: widget.positionNotifier != null,
+              ),
+            ),
+          ),
+        ),
+        const SizedBox(height: 10),
+        _offsetBar(),
+        const SizedBox(height: 10),
+
+        // Apply
+        SizedBox(
+          width: double.infinity,
+          height: 44,
+          child: ElevatedButton.icon(
+            onPressed: () =>
+                _applyLyricResult(_previewingResult!, offset: _previewOffset),
+            icon: const Icon(Icons.check_circle,
+                color: AppColors.textPrimary, size: 20),
+            label: const Text('应用',
+                style: TextStyle(
+                    color: AppColors.textPrimary,
+                    fontWeight: FontWeight.bold,
+                    fontSize: 15)),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppColors.accent,
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12)),
+            ),
+          ),
+        ),
+      ],
     );
   }
 }

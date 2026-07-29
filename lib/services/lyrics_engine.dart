@@ -144,6 +144,22 @@ class LyricsEngine {
     return result;
   }
 
+  /// Serialises lines back to LRC text (inverse of [parseLrc]).
+  static String toLrc(List<LyricLine> lines) {
+    final sb = StringBuffer();
+    for (final line in lines) {
+      final min = (line.time / 60).floor();
+      final sec = line.time - min * 60;
+      final tag =
+          '[${min.toString().padLeft(2, '0')}:${sec.toStringAsFixed(2).padLeft(5, '0')}]';
+      sb.writeln('$tag${line.text}');
+      if (line.translation != null && line.translation!.isNotEmpty) {
+        sb.writeln('$tag${line.translation}');
+      }
+    }
+    return sb.toString();
+  }
+
   // 1. LRCLIB Provider
   static Future<LyricsResult?> fetchFromLRCLIB(String title, {String? artist}) async {
     final queries = [
