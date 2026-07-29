@@ -326,7 +326,7 @@ class _TrackOptionsMenuState extends State<TrackOptionsMenu> {
           // Action Items
           ListTile(
             leading: Icon(
-              _isDownloaded ? Icons.delete_outline_rounded : Icons.download,
+              _isDownloaded ? Icons.delete_outline_rounded : Icons.download_rounded,
               color: _isDownloaded ? AppColors.danger : AppColors.textPrimary,
             ),
             title: Text(

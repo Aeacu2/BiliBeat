@@ -84,45 +84,66 @@ class _TrackDownloadButtonState extends State<TrackDownloadButton> {
     if (mounted) setState(() => _isDownloaded = downloaded);
   }
 
+  /// One box, one glyph, one place.
+  ///
+  /// The three states used to be built from different widgets — an IconButton
+  /// when idle (with its own 48pt minimum and padding) and a bare SizedBox
+  /// while downloading — so the control jumped sideways the moment you tapped
+  /// it, and the glyph changed from a download arrow to a different download
+  /// arrow on the way. Same footprint, same glyph, always: starting a download
+  /// only draws a ring around it, exactly as the player page's primary control
+  /// does.
+  static const double _box = 44.0;
+
   @override
   Widget build(BuildContext context) {
     final task = DownloadManager.instance.taskFor(widget.track.id);
+
+    final Widget glyph;
+    final VoidCallback? onTap;
+    final String tooltip;
     if (task != null) {
-      return SizedBox(
-        width: widget.size + 14,
-        height: widget.size + 14,
-        child: Center(
-          child: ProgressRing(
-            fraction: task.fraction,
-            size: widget.size + 4,
-            child: Icon(
-              Icons.arrow_downward,
-              color: AppColors.textSecondary,
-              size: widget.size * 0.55,
-            ),
-          ),
-        ),
-      );
-    }
-    if (_isDownloaded) {
-      return IconButton(
-        icon: Icon(Icons.play_circle_fill,
-            color: AppColors.accent, size: widget.size + 4),
-        tooltip: '播放',
-        onPressed: () {
-          Haptics.light();
-          widget.onPlay?.call();
-        },
-      );
-    }
-    return IconButton(
-      icon: Icon(Icons.download_rounded,
-          color: AppColors.textSecondary, size: widget.size),
-      tooltip: '下载',
-      onPressed: () {
+      glyph = Icon(Icons.download_rounded,
+          color: AppColors.textSecondary, size: widget.size);
+      onTap = null;
+      tooltip = '下载中';
+    } else if (_isDownloaded) {
+      glyph = Icon(Icons.play_circle_fill,
+          color: AppColors.accent, size: widget.size + 4);
+      onTap = () {
+        Haptics.light();
+        widget.onPlay?.call();
+      };
+      tooltip = '播放';
+    } else {
+      glyph = Icon(Icons.download_rounded,
+          color: AppColors.textSecondary, size: widget.size);
+      onTap = () {
         Haptics.light();
         DownloadManager.instance.startDownload(widget.track);
-      },
+      };
+      tooltip = '下载';
+    }
+
+    return Tooltip(
+      message: tooltip,
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: onTap,
+        child: SizedBox(
+          width: _box,
+          height: _box,
+          child: Center(
+            child: task == null
+                ? glyph
+                : ProgressRing(
+                    fraction: task.fraction,
+                    size: widget.size + 12,
+                    child: glyph,
+                  ),
+          ),
+        ),
+      ),
     );
   }
 }
