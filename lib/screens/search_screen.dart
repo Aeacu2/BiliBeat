@@ -440,7 +440,10 @@ class _SearchScreenState extends State<SearchScreen> {
                   ),
                 ),
 
-                // Download / play button with live progress ring.
+                // Nudged right: the gap that was missing between the title
+                // and the download control comes out of the padding after the
+                // last button, so the title keeps exactly the width it had.
+                const SizedBox(width: 8),
                 TrackDownloadButton(
                   track: track,
                   size: 24,
@@ -457,6 +460,8 @@ class _SearchScreenState extends State<SearchScreen> {
                 IconButton(
                   icon: const Icon(Icons.add, color: AppColors.textSecondary, size: 22),
                   tooltip: '添加至歌单',
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(minWidth: 40, minHeight: 40),
                   onPressed: () {
                     TrackOptionsMenu.showAddToPlaylist(context, track, onTrackChanged: () {
                       if (mounted) setState(() {});

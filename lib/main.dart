@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'models/track.dart';
@@ -203,6 +204,21 @@ class _MainLayoutState extends State<MainLayout> {
   Future<List<Track>> _resolveQueue(List<Track>? queue) async {
     if (queue != null && queue.isNotEmpty) return queue;
     return DatabaseService.getDownloadedTracks();
+  }
+
+  /// Starts a whole collection — 本地, 收藏, a playlist — rather than one
+  /// track. Loop-all either way; shuffle is the caller's choice, and it is set
+  /// *before* the queue is handed over so the shuffle order is built around
+  /// the track that starts.
+  void _playCollection(List<Track> tracks, {bool shuffle = false}) async {
+    if (tracks.isEmpty) return;
+    await _audioHandler.setShuffle(shuffle);
+    await _audioHandler.setLoopMode(LoopMode.all);
+    if (!mounted) return;
+    final first =
+        shuffle ? tracks[Random().nextInt(tracks.length)] : tracks.first;
+    _currentTrack.value = first;
+    _audioHandler.playTrack(first, newQueue: tracks);
   }
 
   void _onPlayTrackOnly(Track track, {List<Track>? queue}) async {
@@ -466,6 +482,7 @@ class _MainLayoutState extends State<MainLayout> {
                             recentlyPlayed: recent,
                             onSelectTrack: _onPlayTrackAndExpand,
                             onPlayOnly: _onPlayTrackOnly,
+                            onPlayCollection: _playCollection,
                             onOpenPlaylist: (pl) {
                               setState(() => _activePlaylistSheet = pl);
                             },
@@ -519,6 +536,7 @@ class _MainLayoutState extends State<MainLayout> {
                           playlist: _activePlaylistSheet!,
                           onSelectTrack: _onPlayTrackAndExpand,
                           onPlayOnly: _onPlayTrackOnly,
+                          onPlayCollection: _playCollection,
                           onPlaylistUpdated: _loadHistory,
                           onClose: () =>
                               setState(() => _activePlaylistSheet = null),

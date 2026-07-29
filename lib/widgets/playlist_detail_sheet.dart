@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import '../theme/app_theme.dart';
+import '../theme/haptics.dart';
 import '../models/playlist.dart';
 import '../models/track.dart';
 import '../services/database_service.dart';
@@ -18,6 +19,7 @@ class PlaylistDetailSheet extends StatefulWidget {
   final Playlist playlist;
   final TrackAction onSelectTrack;
   final TrackAction? onPlayOnly;
+  final void Function(List<Track> tracks, {bool shuffle})? onPlayCollection;
   final VoidCallback? onPlaylistUpdated;
   final VoidCallback? onClose;
 
@@ -26,6 +28,7 @@ class PlaylistDetailSheet extends StatefulWidget {
     required this.playlist,
     required this.onSelectTrack,
     this.onPlayOnly,
+    this.onPlayCollection,
     this.onPlaylistUpdated,
     this.onClose,
   });
@@ -35,6 +38,7 @@ class PlaylistDetailSheet extends StatefulWidget {
     required Playlist playlist,
     required TrackAction onSelectTrack,
     TrackAction? onPlayOnly,
+    void Function(List<Track> tracks, {bool shuffle})? onPlayCollection,
     VoidCallback? onPlaylistUpdated,
     VoidCallback? onClose,
   }) {
@@ -47,6 +51,7 @@ class PlaylistDetailSheet extends StatefulWidget {
         playlist: playlist,
         onSelectTrack: onSelectTrack,
         onPlayOnly: onPlayOnly,
+        onPlayCollection: onPlayCollection,
         onPlaylistUpdated: onPlaylistUpdated,
         onClose: onClose ?? () => Navigator.pop(context),
       ),
@@ -96,7 +101,7 @@ class _PlaylistDetailSheetState extends State<PlaylistDetailSheet> {
   }
 
   Future<void> _refresh() async {
-    // 已下载 is a virtual playlist with no database row, so it is rebuilt from
+    // 本地 is a virtual playlist with no database row, so it is rebuilt from
     // the download library rather than looked up by id.
     final Playlist updated;
     if (_isVirtualDownloads) {
@@ -220,16 +225,17 @@ class _PlaylistDetailSheetState extends State<PlaylistDetailSheet> {
               padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
               child: ElevatedButton.icon(
                 // Starting on a track that is still downloading would be
-                // dropped from the queue immediately — start on the first
-                // playable one instead.
+                // dropped from the queue immediately — the queue is the
+                // playable subset.
                 onPressed: _playableQueue.isEmpty
                     ? null
                     : () {
-                        final queue = _playableQueue;
-                        widget.onSelectTrack(queue.first, queue: queue);
+                        Haptics.medium();
+                        widget.onPlayCollection?.call(_playableQueue,
+                            shuffle: true);
                       },
-                icon: const Icon(Icons.play_arrow_rounded, size: 24),
-                label: const Text('播放全部', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                icon: const Icon(Icons.shuffle_rounded, size: 22),
+                label: const Text('随机播放', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
                 style: ElevatedButton.styleFrom(
                   backgroundColor: AppColors.accent,
                   foregroundColor: AppColors.textPrimary,
@@ -304,7 +310,10 @@ class _PlaylistDetailSheetState extends State<PlaylistDetailSheet> {
                                       ],
                                     ),
                                   ),
-                                  // Play / download-with-ring button.
+                                  // Nudged right, with the gap taken from the
+                                  // padding after the last button rather than
+                                  // from the title's width.
+                                  const SizedBox(width: 8),
                                   TrackDownloadButton(
                                     track: track,
                                     size: 24,
@@ -322,6 +331,9 @@ class _PlaylistDetailSheetState extends State<PlaylistDetailSheet> {
                                   IconButton(
                                     icon: const Icon(Icons.add, color: AppColors.textSecondary, size: 22),
                                     tooltip: '添加至歌单',
+                                    padding: EdgeInsets.zero,
+                                    constraints: const BoxConstraints(
+                                        minWidth: 40, minHeight: 40),
                                     onPressed: () {
                                       TrackOptionsMenu.showAddToPlaylist(context, track, onTrackChanged: _refresh);
                                     },

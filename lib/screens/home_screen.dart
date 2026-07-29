@@ -24,12 +24,16 @@ class HomeScreen extends StatefulWidget {
   final TrackAction? onPlayOnly;
   final Function(Playlist)? onOpenPlaylist;
 
+  /// Plays a whole collection. Loop-all; shuffle only when asked.
+  final void Function(List<Track> tracks, {bool shuffle})? onPlayCollection;
+
   const HomeScreen({
     super.key,
     required this.recentlyPlayed,
     required this.onSelectTrack,
     this.onPlayOnly,
     this.onOpenPlaylist,
+    this.onPlayCollection,
   });
 
   @override
@@ -170,11 +174,14 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
+  List<Track> get _localTracks =>
+      [..._downloadingTasks.map((t) => t.track), ..._downloadedTracks];
+
   void _openDownloadedPlaylist() {
     _openPlaylist(Playlist(
       id: 'downloaded',
-      name: '已下载',
-      tracks: [..._downloadingTasks.map((t) => t.track), ..._downloadedTracks],
+      name: '本地',
+      tracks: _localTracks,
     ));
   }
 
@@ -184,6 +191,7 @@ class _HomeScreenState extends State<HomeScreen> {
     required String title,
     required String subtitle,
     required VoidCallback onTap,
+    required List<Track> Function() tracks,
   }) {
     return GestureDetector(
       onTap: onTap,
@@ -193,14 +201,23 @@ class _HomeScreenState extends State<HomeScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Container(
-              width: 40,
-              height: 40,
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(12),
-                gradient: LinearGradient(colors: gradient),
-              ),
-              child: Icon(icon, color: AppColors.textPrimary, size: 22),
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Container(
+                  width: 40,
+                  height: 40,
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(12),
+                    gradient: LinearGradient(colors: gradient),
+                  ),
+                  child: Icon(icon, color: AppColors.textPrimary, size: 22),
+                ),
+                const Spacer(),
+                // Opposite corner from the icon: tapping the card opens the
+                // collection, tapping here just starts it.
+                _playCollectionButton(tracks),
+              ],
             ),
             const SizedBox(height: 12),
             Text(title, style: AppTypography.headline),
@@ -210,6 +227,42 @@ class _HomeScreenState extends State<HomeScreen> {
                 overflow: TextOverflow.ellipsis,
                 style: AppTypography.caption),
           ],
+        ),
+      ),
+    );
+  }
+
+  /// Start-this-collection control. Loop-all, in order — the shuffled variant
+  /// lives inside the collection, where 随机播放 is the header button.
+  Widget _playCollectionButton(List<Track> Function() tracks) {
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: () {
+        final list = tracks();
+        if (list.isEmpty) return;
+        Haptics.medium();
+        widget.onPlayCollection?.call(list);
+      },
+      child: SizedBox(
+        width: 36,
+        height: 36,
+        child: Center(
+          child: Container(
+            width: 30,
+            height: 30,
+            decoration: const BoxDecoration(
+              shape: BoxShape.circle,
+              gradient: AppColors.primaryGradient,
+              boxShadow: [
+                BoxShadow(
+                    color: AppColors.accent30,
+                    blurRadius: 10,
+                    offset: Offset(0, 3)),
+              ],
+            ),
+            child: const Icon(Icons.play_arrow_rounded,
+                color: Colors.white, size: 20),
+          ),
         ),
       ),
     );
@@ -262,8 +315,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 ],
               ),
             ),
-            const Icon(Icons.chevron_right_rounded,
-                color: AppColors.textFaint, size: 22),
+            _playCollectionButton(() => pl.tracks),
           ],
         ),
       ),
@@ -326,11 +378,12 @@ class _HomeScreenState extends State<HomeScreen> {
               child: _quickCard(
                 icon: Icons.download_done_rounded,
                 gradient: const [AppColors.success, Color(0xFF059669)],
-                title: '已下载',
+                title: '本地',
                 subtitle: _downloadingTasks.isEmpty
                     ? '${_downloadedTracks.length} 首'
                     : '${_downloadingTasks.length} 首下载中',
                 onTap: _openDownloadedPlaylist,
+                tracks: () => _localTracks,
               ),
             ),
             const SizedBox(width: 12),
@@ -344,6 +397,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   final fav = _favorites;
                   if (fav != null) _openPlaylist(fav);
                 },
+                tracks: () => _favorites?.tracks ?? const [],
               ),
             ),
           ],
