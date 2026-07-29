@@ -215,83 +215,83 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  /// One playlist as a full-width bar. Still a [GlassCard]: a playlist *is* an
-  /// object you pick, unlike the songs inside it.
+  /// A playlist reads as a row, exactly like a song in the search results.
+  ///
+  /// It used to be a [GlassCard]; a page of them was a stack of boxes again,
+  /// and there is no reason a playlist should look heavier than the songs
+  /// inside it.
   Widget _playlistBar(Playlist pl) {
     return Padding(
-      padding: const EdgeInsets.only(bottom: 8),
-      child: GestureDetector(
+      padding: const EdgeInsets.only(bottom: TrackRow.gap),
+      child: TrackRow(
         onTap: () => _openPlaylist(pl),
         onLongPress: () => _confirmDeletePlaylist(pl),
-        child: GlassCard(
-          borderRadius: AppRadius.md,
-          padding: const EdgeInsets.all(10),
-          child: Row(
-            children: [
-              Container(
-                width: 44,
-                height: 44,
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(12),
-                  gradient: const LinearGradient(
-                    colors: [Color(0xFF3A3A40), Color(0xFF232327)],
+        child: Row(
+          children: [
+            Container(
+              width: 54,
+              height: 54,
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(AppRadius.sm),
+                gradient: const LinearGradient(
+                  colors: [Color(0xFF3A3A40), Color(0xFF232327)],
+                ),
+              ),
+              child: const Icon(Icons.queue_music_rounded,
+                  color: AppColors.textPrimary, size: 26),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    pl.name,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                        color: AppColors.textPrimary,
+                        fontSize: 15,
+                        height: 1.3,
+                        fontWeight: FontWeight.w600),
                   ),
-                ),
-                child: const Icon(Icons.queue_music_rounded,
-                    color: AppColors.textPrimary, size: 24),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      pl.name,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
+                  const SizedBox(height: 4),
+                  Text('${pl.tracks.length} 首',
                       style: const TextStyle(
-                          color: AppColors.textPrimary,
-                          fontSize: 15,
-                          fontWeight: FontWeight.w600),
-                    ),
-                    const SizedBox(height: 2),
-                    Text('${pl.tracks.length} 首',
-                        style: const TextStyle(
-                            color: AppColors.textMuted, fontSize: 12.5)),
-                  ],
-                ),
+                          color: AppColors.textMuted, fontSize: 13)),
+                ],
               ),
-              const Icon(Icons.chevron_right_rounded,
-                  color: AppColors.textFaint, size: 22),
-            ],
-          ),
+            ),
+            const Icon(Icons.chevron_right_rounded,
+                color: AppColors.textFaint, size: 22),
+          ],
         ),
       ),
     );
   }
 
   Widget _newPlaylistBar() {
-    return GestureDetector(
+    return TrackRow(
       onTap: _openCreatePlaylistDialog,
-      child: Container(
-        height: 52,
-        alignment: Alignment.center,
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(AppRadius.md),
-          border: Border.all(color: AppColors.hairlineStrong),
-        ),
-        child: const Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(Icons.add_rounded, color: AppColors.accent, size: 20),
-            SizedBox(width: 8),
-            Text('新建歌单',
-                style: TextStyle(
-                    color: AppColors.textSecondary,
-                    fontSize: 14,
-                    fontWeight: FontWeight.w600)),
-          ],
-        ),
+      child: Row(
+        children: [
+          Container(
+            width: 54,
+            height: 54,
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(AppRadius.sm),
+              border: Border.all(color: AppColors.hairlineStrong),
+            ),
+            child: const Icon(Icons.add_rounded,
+                color: AppColors.accent, size: 24),
+          ),
+          const SizedBox(width: 12),
+          const Text('新建歌单',
+              style: TextStyle(
+                  color: AppColors.textSecondary,
+                  fontSize: 15,
+                  fontWeight: FontWeight.w600)),
+        ],
       ),
     );
   }

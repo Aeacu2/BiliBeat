@@ -10,6 +10,7 @@ import '../services/audio_download_service.dart';
 import '../services/download_manager.dart';
 import '../theme/app_theme.dart';
 import '../theme/haptics.dart';
+import 'ambient_background.dart';
 import 'cached_cover_image.dart';
 import 'marquee_text.dart';
 import 'progress_ring.dart';
@@ -194,8 +195,16 @@ class _NowPlayingSheetState extends State<NowPlayingSheet> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      // The same backdrop as the rest of the app — the aura at the top, black
+      // below — rather than a flat black page. The route morph paints its own
+      // opaque surface underneath, so this stays honest during the transition.
       backgroundColor: AppColors.background,
-      body: GestureDetector(
+      body: Stack(
+        children: [
+          Positioned.fill(
+            child: AmbientBackground(coverUrl: _displayTrack.coverUrl),
+          ),
+          GestureDetector(
         // Swipe down anywhere on the chrome to dismiss, like the system sheets.
         onVerticalDragEnd: (details) {
           if ((details.primaryVelocity ?? 0) > 320) {
@@ -238,6 +247,8 @@ class _NowPlayingSheetState extends State<NowPlayingSheet> {
             ],
           ),
         ),
+          ),
+        ],
       ),
     );
   }

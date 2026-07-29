@@ -16,7 +16,7 @@ import 'cached_cover_image.dart';
 ///  * The dominant color is extracted from a 24×24 decode (tiny) and cached per
 ///    URL, so it runs once per track.
 ///  * The glow lives in a [RepaintBoundary]; only the ~600 ms color transition
-///    repaints, then it is static. The frosted overlay is built once.
+///    repaints, then it is static.
 class AmbientBackground extends StatefulWidget {
   final String? coverUrl;
 
@@ -38,6 +38,12 @@ class _AmbientBackgroundState extends State<AmbientBackground> {
   static final Map<String, Color> _colorCache = {};
   static const int _maxCacheSize = 100;
   static const Color _fallback = AppColors.accent;
+
+  /// How far above the top edge the aura's centre sits, and how tall it is,
+  /// both as fractions of the screen. Tuned so the colour is gone by the time
+  /// the first row of content begins — roughly the top third.
+  static const double _auraTop = 0.30;
+  static const double _auraHeight = 0.62;
 
   Color _color = _fallback;
   int _token = 0;
@@ -165,12 +171,20 @@ class _AmbientBackgroundState extends State<AmbientBackground> {
   @override
   Widget build(BuildContext context) {
     final size = MediaQuery.of(context).size;
-    final blob = size.longestSide * 0.85;
 
     return Stack(
       children: [
-        // Animated, color-derived glow (isolated so it caches between changes).
-        Positioned.fill(
+        // Pure black everywhere. The glow is the exception, not the default.
+        const Positioned.fill(child: ColoredBox(color: AppColors.background)),
+
+        // One aura, hanging off the top edge, gone by the time the first row
+        // of content starts. It used to be two blobs across the whole screen,
+        // which tinted every list and left nothing actually black.
+        Positioned(
+          top: -size.height * _auraTop,
+          left: -size.width * 0.25,
+          right: -size.width * 0.25,
+          height: size.height * _auraHeight,
           child: RepaintBoundary(
             child: TweenAnimationBuilder<Color?>(
               tween: ColorTween(begin: _fallback, end: _color),
@@ -178,59 +192,42 @@ class _AmbientBackgroundState extends State<AmbientBackground> {
               curve: Curves.easeOutCubic,
               builder: (context, animated, _) {
                 final c = animated ?? _fallback;
-                final c2 = HSLColor.fromColor(c)
-                    .withLightness(
-                        (HSLColor.fromColor(c).lightness + 0.12).clamp(0.0, 0.7))
-                    .toColor();
-                return Stack(
-                  children: [
-                    Container(color: AppColors.background),
-                    Positioned(
-                      top: -blob * 0.28,
-                      left: -blob * 0.22,
-                      width: blob,
-                      height: blob,
-                      child: DecoratedBox(
-                        decoration: BoxDecoration(
-                          shape: BoxShape.circle,
-                          gradient: RadialGradient(
-                            colors: [c.withValues(alpha: 0.55), Colors.transparent],
-                          ),
-                        ),
-                      ),
+                return DecoratedBox(
+                  // No circle clip: the gradient's own falloff is the edge, and
+                  // a clipped circle on a screen-wide box gives the aura a
+                  // visible rim.
+                  decoration: BoxDecoration(
+                    gradient: RadialGradient(
+                      colors: [
+                        c.withValues(alpha: 0.55),
+                        c.withValues(alpha: 0.22),
+                        Colors.transparent,
+                      ],
+                      stops: const [0.0, 0.55, 1.0],
                     ),
-                    Positioned(
-                      bottom: -blob * 0.3,
-                      right: -blob * 0.25,
-                      width: blob * 1.05,
-                      height: blob * 1.05,
-                      child: DecoratedBox(
-                        decoration: BoxDecoration(
-                          shape: BoxShape.circle,
-                          gradient: RadialGradient(
-                            colors: [c2.withValues(alpha: 0.4), Colors.transparent],
-                          ),
-                        ),
-                      ),
-                    ),
-                  ],
+                  ),
                 );
               },
             ),
           ),
         ),
 
-        // Overlay gradient: deepens the ambient background glow for high legibility.
-        const Positioned.fill(
-          child: DecoratedBox(
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                begin: Alignment.topCenter,
-                end: Alignment.bottomCenter,
-                colors: [
-                  AppColors.black30,
-                  AppColors.black55,
-                ],
+        // Hard floor: whatever the aura's falloff does, everything below the
+        // first screenful of content is exactly the background colour.
+        Positioned(
+          top: 0,
+          left: 0,
+          right: 0,
+          height: size.height * 0.5,
+          child: const IgnorePointer(
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  colors: [Colors.transparent, AppColors.background],
+                  stops: [0.45, 0.95],
+                ),
               ),
             ),
           ),
