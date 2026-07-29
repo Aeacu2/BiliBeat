@@ -892,7 +892,7 @@ class _LyricEditorDialogState extends State<LyricEditorDialog>
                 offset: _previewOffset,
                 calibrating: _calibrating,
                 onCalibrateTap: _applyTapCalibration,
-                autoFollow: widget.positionNotifier != null,
+                autoFollow: false,
               ),
             ),
           ),
