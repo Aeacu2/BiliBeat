@@ -170,7 +170,7 @@ class _PlaylistDetailSheetState extends State<PlaylistDetailSheet> {
 
           // Header
           Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 20),
+            padding: const EdgeInsets.only(left: 20, right: 16),
             child: Row(
               children: [
                 _headerArtwork(isFav),
@@ -205,10 +205,8 @@ class _PlaylistDetailSheetState extends State<PlaylistDetailSheet> {
                 ),
                 if (!_isVirtualDownloads)
                   IconButton(
-                    icon: const Icon(Icons.image_outlined, color: AppColors.textSecondary, size: 22),
+                    icon: const Icon(Icons.image_outlined, color: AppColors.textSecondary),
                     tooltip: '更换封面',
-                    padding: EdgeInsets.zero,
-                    constraints: const BoxConstraints(minWidth: 40, minHeight: 40),
                     onPressed: _pickCover,
                   ),
               ],
