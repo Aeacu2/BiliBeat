@@ -741,7 +741,7 @@ class _LyricEditorDialogState extends State<LyricEditorDialog>
     );
   }
 
-  /// "粘贴 / 编辑 LRC" card at the bottom of the results list.
+  /// "粘贴 LRC" card at the bottom of the results list.
   Widget _pasteCard() {
     return InkWell(
       borderRadius: BorderRadius.circular(14),
@@ -760,7 +760,7 @@ class _LyricEditorDialogState extends State<LyricEditorDialog>
             SizedBox(width: 10),
             Expanded(
               child: Text(
-                '粘贴 / 编辑 LRC 文本',
+                '粘贴 LRC 文本',
                 style: TextStyle(
                     color: AppColors.textPrimary,
                     fontSize: 13,
@@ -786,15 +786,7 @@ class _LyricEditorDialogState extends State<LyricEditorDialog>
               icon: const Icon(Icons.arrow_back, color: AppColors.textPrimary),
               onPressed: () => setState(() => _inLrcEditor = false),
             ),
-            const Expanded(
-              child: Text(
-                '编辑 LRC',
-                style: TextStyle(
-                    color: AppColors.textPrimary,
-                    fontSize: 14,
-                    fontWeight: FontWeight.bold),
-              ),
-            ),
+
           ],
         ),
         const SizedBox(height: 8),
@@ -877,7 +869,12 @@ class _LyricEditorDialogState extends State<LyricEditorDialog>
                     fontWeight: FontWeight.bold),
               ),
             ),
-
+            IconButton(
+              icon: const Icon(Icons.edit_outlined,
+                  color: AppColors.textMuted, size: 20),
+              tooltip: '编辑 LRC',
+              onPressed: () => _openLrcEditor(_previewingResult),
+            ),
           ],
         ),
         const SizedBox(height: 6),
