@@ -744,19 +744,6 @@ class _LyricEditorDialogState extends State<LyricEditorDialog>
   Widget _buildLrcEditor() {
     return Column(
       children: [
-        // Header
-        Row(
-          children: [
-            IconButton(
-              icon: const Icon(Icons.arrow_back, color: AppColors.textPrimary),
-              onPressed: () => setState(() => _inLrcEditor = false),
-            ),
-
-          ],
-        ),
-        const SizedBox(height: 8),
-
-        // Editor
         Expanded(
           child: TextField(
             controller: _lrcController,
@@ -784,30 +771,49 @@ class _LyricEditorDialogState extends State<LyricEditorDialog>
           ),
         ),
         const SizedBox(height: 12),
-
-        // Confirm → preview
-        SizedBox(
-          width: double.infinity,
-          height: 44,
-          child: ElevatedButton.icon(
-            onPressed: _confirmLrcEdit,
-            icon: const Icon(Icons.preview, color: AppColors.textPrimary, size: 20),
-            label: const Text('预览并校准',
-                style: TextStyle(
-                    color: AppColors.textPrimary,
-                    fontWeight: FontWeight.bold,
-                    fontSize: 15)),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: AppColors.accent,
-              shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12)),
+        Row(
+          children: [
+            Expanded(
+              child: SizedBox(
+                height: 44,
+                child: OutlinedButton(
+                  onPressed: () => setState(() => _inLrcEditor = false),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: AppColors.textMuted,
+                    side: const BorderSide(color: Colors.white24),
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12)),
+                  ),
+                  child: const Text('取消',
+                      style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600)),
+                ),
+              ),
             ),
-          ),
+            const SizedBox(width: 12),
+            Expanded(
+              flex: 2,
+              child: SizedBox(
+                height: 44,
+                child: ElevatedButton(
+                  onPressed: _confirmLrcEdit,
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppColors.accent,
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12)),
+                  ),
+                  child: const Text('保存',
+                      style: TextStyle(
+                          color: AppColors.textPrimary,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 15)),
+                ),
+              ),
+            ),
+          ],
         ),
       ],
     );
   }
-
   // --- State C: preview + calibration ---
 
   Widget _buildPreview() {
