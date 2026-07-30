@@ -377,8 +377,9 @@ class _MainLayoutState extends State<MainLayout> {
                 // Top Tab Header Selector ("聆听" | "搜索") — sliding pill
                 SafeArea(
                   bottom: false,
+                  minimum: const EdgeInsets.only(top: 12),
                   child: Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+                    padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
                     child: Row(
                       children: [
                         Expanded(

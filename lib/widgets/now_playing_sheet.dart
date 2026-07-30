@@ -223,6 +223,7 @@ class _NowPlayingSheetState extends State<NowPlayingSheet> {
           }
         },
         child: SafeArea(
+          minimum: const EdgeInsets.only(top: 16),
           child: Column(
             children: [
               if (_showEditor)
@@ -301,7 +302,7 @@ class _NowPlayingSheetState extends State<NowPlayingSheet> {
 
   Widget _topBar() {
     return Padding(
-      padding: const EdgeInsets.fromLTRB(8, 4, 8, 0),
+      padding: const EdgeInsets.fromLTRB(8, 0, 8, 0),
       child: Row(
         children: [
           IconButton(

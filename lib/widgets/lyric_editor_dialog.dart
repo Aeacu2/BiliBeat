@@ -315,7 +315,7 @@ class _LyricEditorDialogState extends State<LyricEditorDialog>
   Widget build(BuildContext context) {
     if (_inLrcEditor || _previewingResult != null) {
       return Padding(
-        padding: const EdgeInsets.fromLTRB(20, 12, 20, 12),
+        padding: const EdgeInsets.fromLTRB(20, 4, 20, 12),
         child: SafeArea(bottom: false, child: _buildLyricsTab()),
       );
     }
@@ -325,7 +325,7 @@ class _LyricEditorDialogState extends State<LyricEditorDialog>
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const SizedBox(height: 4),
+          const SizedBox(height: 2),
           // Tabs — exact replica of home screen's 聆听/搜索
           Row(
             children: [
