@@ -68,6 +68,9 @@ class _LyricEditorDialogState extends State<LyricEditorDialog>
     _artistController = TextEditingController(text: widget.artistName);
     _coverUrlController = TextEditingController(text: widget.coverUrl ?? '');
 
+    _tabController.addListener(() => setState(() {}));
+    _titleController.addListener(() => setState(() {}));
+    _artistController.addListener(() => setState(() {}));
     _searchController.text = '${widget.artistName} ${widget.songTitle}'.trim();
     _searchResults = _pinnedResults();
     _performSearch();
@@ -308,35 +311,75 @@ class _LyricEditorDialogState extends State<LyricEditorDialog>
             ? _buildLyricsTab()
             : Column(
                 children: [
+                  // Contextual header: cover + title + close
                   Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      const Text(
-                        '信息与歌词',
-                        style: TextStyle(
-                            color: AppColors.textPrimary,
-                            fontSize: 18,
-                            fontWeight: FontWeight.bold),
+                      GestureDetector(
+                        onTap: _pickLocalCoverImage,
+                        child: ClipRRect(
+                          borderRadius: BorderRadius.circular(10),
+                          child: CachedCoverImage(
+                            url: _coverUrlController.text.trim(),
+                            width: 44,
+                            height: 44,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              _titleController.text.trim().isNotEmpty
+                                  ? _titleController.text.trim()
+                                  : widget.songTitle,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                  color: AppColors.textPrimary,
+                                  fontSize: 15,
+                                  fontWeight: FontWeight.w700),
+                            ),
+                            const SizedBox(height: 2),
+                            Text(
+                              _artistController.text.trim().isNotEmpty
+                                  ? _artistController.text.trim()
+                                  : widget.artistName,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                  color: AppColors.textMuted, fontSize: 12.5),
+                            ),
+                          ],
+                        ),
                       ),
                       IconButton(
-                        icon: const Icon(Icons.close, color: AppColors.textMuted),
+                        icon: const Icon(Icons.close,
+                            color: AppColors.textFaint, size: 20),
                         onPressed: () => Navigator.pop(context),
+                        visualDensity: VisualDensity.compact,
                       ),
                     ],
                   ),
-                  const SizedBox(height: 4),
-                  TabBar(
-                    controller: _tabController,
-                    indicatorSize: TabBarIndicatorSize.label,
-                    indicator: const BoxDecoration(),
-                    dividerColor: Colors.transparent,
-                    labelColor: AppColors.textPrimary,
-                    unselectedLabelColor: AppColors.textFaint,
-                    labelStyle: const TextStyle(fontSize: 14, fontWeight: FontWeight.w700),
-                    unselectedLabelStyle: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
-                    tabs: const [Tab(text: '信息'), Tab(text: '歌词')],
+                  const SizedBox(height: 14),
+
+                  // Segmented pill toggle
+                  Container(
+                    padding: const EdgeInsets.all(3),
+                    decoration: BoxDecoration(
+                      color: Colors.white.withValues(alpha: 0.06),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Row(
+                      children: [
+                        _segmentTab('信息', 0),
+                        _segmentTab('歌词', 1),
+                      ],
+                    ),
                   ),
-                  const SizedBox(height: 12),
+                  const SizedBox(height: 14),
+
                   Expanded(
                     child: TabBarView(
                       controller: _tabController,
@@ -353,127 +396,92 @@ class _LyricEditorDialogState extends State<LyricEditorDialog>
   }
 
   // ---------------------------------------------------------------------------
+  // Segment tab helper
+  // ---------------------------------------------------------------------------
+
+  Widget _segmentTab(String label, int index) {
+    final active = _tabController.index == index;
+    return Expanded(
+      child: GestureDetector(
+        onTap: () => _tabController.animateTo(index),
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 200),
+          padding: const EdgeInsets.symmetric(vertical: 7),
+          decoration: BoxDecoration(
+            color: active ? AppColors.accent22 : Colors.transparent,
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: Text(
+            label,
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              color: active ? AppColors.accent : AppColors.textFaint,
+              fontSize: 13,
+              fontWeight: active ? FontWeight.w700 : FontWeight.w500,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  // ---------------------------------------------------------------------------
   // Tab 1: Info
   // ---------------------------------------------------------------------------
 
   Widget _buildInfoTab() {
-    return SingleChildScrollView(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Center(
+    return Column(
+      children: [
+        Expanded(
+          child: SingleChildScrollView(
             child: Column(
               children: [
-                ClipRRect(
-                  borderRadius: BorderRadius.circular(16),
-                  child: CachedCoverImage(
-                    url: _coverUrlController.text.trim(),
-                    width: 96,
-                    height: 96,
-                  ),
-                ),
+                const SizedBox(height: 4),
+                _infoField(_titleController, '歌名'),
                 const SizedBox(height: 10),
-                OutlinedButton.icon(
-                  onPressed: _pickLocalCoverImage,
-                  icon: const Icon(Icons.photo_library,
-                      size: 18, color: AppColors.accent),
-                  label: const Text('选择封面',
-                      style: TextStyle(
-                          color: AppColors.textSecondary, fontSize: 13)),
-                  style: OutlinedButton.styleFrom(
-                    side: const BorderSide(color: Colors.white24),
-                    shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(20)),
-                  ),
-                ),
+                _infoField(_artistController, '歌手 / UP主'),
+                const SizedBox(height: 10),
+                _infoField(_coverUrlController, '封面 URL 或本地路径'),
               ],
             ),
           ),
-          const SizedBox(height: 16),
-          const Text('歌名',
-              style: TextStyle(
-                  color: AppColors.textSecondary,
-                  fontSize: 12,
-                  fontWeight: FontWeight.w600)),
-          const SizedBox(height: 6),
-          TextField(
-            controller: _titleController,
-            style: const TextStyle(color: AppColors.textPrimary, fontSize: 14),
-            decoration: InputDecoration(
-              hintText: '歌曲名称',
-              hintStyle: const TextStyle(color: AppColors.textFaint),
-              filled: true,
-              fillColor: Colors.white10,
-              border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
-                  borderSide: BorderSide.none),
-              contentPadding:
-                  const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+        ),
+        const SizedBox(height: 12),
+        SizedBox(
+          width: double.infinity,
+          height: 44,
+          child: ElevatedButton(
+            onPressed: _saveMetadata,
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppColors.accent,
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12)),
             ),
+            child: const Text('保存',
+                style: TextStyle(
+                    color: AppColors.textPrimary,
+                    fontWeight: FontWeight.bold,
+                    fontSize: 15)),
           ),
-          const SizedBox(height: 12),
-          const Text('歌手 / UP主',
-              style: TextStyle(
-                  color: AppColors.textSecondary,
-                  fontSize: 12,
-                  fontWeight: FontWeight.w600)),
-          const SizedBox(height: 6),
-          TextField(
-            controller: _artistController,
-            style: const TextStyle(color: AppColors.textPrimary, fontSize: 14),
-            decoration: InputDecoration(
-              hintText: '歌手或UP主名称',
-              hintStyle: const TextStyle(color: AppColors.textFaint),
-              filled: true,
-              fillColor: Colors.white10,
-              border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
-                  borderSide: BorderSide.none),
-              contentPadding:
-                  const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-            ),
-          ),
-          const SizedBox(height: 12),
-          const Text('封面 URL / 本地路径',
-              style: TextStyle(
-                  color: AppColors.textSecondary,
-                  fontSize: 12,
-                  fontWeight: FontWeight.w600)),
-          const SizedBox(height: 6),
-          TextField(
-            controller: _coverUrlController,
-            style: const TextStyle(color: AppColors.textPrimary, fontSize: 14),
-            decoration: InputDecoration(
-              hintText: 'https:// 或本地路径',
-              hintStyle: const TextStyle(color: AppColors.textFaint),
-              filled: true,
-              fillColor: Colors.white10,
-              border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
-                  borderSide: BorderSide.none),
-              contentPadding:
-                  const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-            ),
-          ),
-          const SizedBox(height: 20),
-          SizedBox(
-            width: double.infinity,
-            height: 44,
-            child: ElevatedButton(
-              onPressed: _saveMetadata,
-              style: ElevatedButton.styleFrom(
-                backgroundColor: AppColors.accent,
-                shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12)),
-              ),
-              child: const Text('保存',
-                  style: TextStyle(
-                      color: AppColors.textPrimary,
-                      fontWeight: FontWeight.bold,
-                      fontSize: 15)),
-            ),
-          ),
-        ],
+        ),
+      ],
+    );
+  }
+
+  Widget _infoField(TextEditingController ctrl, String hint) {
+    return TextField(
+      controller: ctrl,
+      style: const TextStyle(color: AppColors.textPrimary, fontSize: 14),
+      decoration: InputDecoration(
+        hintText: hint,
+        hintStyle: const TextStyle(color: AppColors.textFaint, fontSize: 14),
+        filled: true,
+        fillColor: Colors.white.withValues(alpha: 0.06),
+        border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(12),
+            borderSide: BorderSide.none),
+        contentPadding:
+            const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
       ),
     );
   }
