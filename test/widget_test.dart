@@ -385,7 +385,7 @@ void main() {
       void Function(double)? onSeek,
       VoidCallback? onOpenEditor,
       bool calibrating = false,
-      void Function(double)? onCalibrate,
+      void Function(double)? onCalibrateTap,
       bool autoFollow = true,
       double offset = 0.0,
     }) {
@@ -399,7 +399,7 @@ void main() {
               onSeek: onSeek,
               onOpenEditor: onOpenEditor,
               calibrating: calibrating,
-              onCalibrate: onCalibrate,
+              onCalibrateTap: onCalibrateTap,
               autoFollow: autoFollow,
               offset: offset,
             ),
@@ -418,7 +418,8 @@ void main() {
       expect(opened, isTrue);
     });
 
-    testWidgets('tapping a line seeks to its timestamp', (tester) async {
+    testWidgets('tapping a line seeks to its timestamp when not calibrating',
+        (tester) async {
       double? sought;
       await tester
           .pumpWidget(host(data: lines(), onSeek: (s) => sought = s));
@@ -451,97 +452,36 @@ void main() {
       expect(find.text('回到当前'), findsNothing);
     });
 
-    testWidgets('armed, dragging the lyrics moves the timeline', (tester) async {
+    testWidgets('armed, tapping a line reports tap calibration offset',
+        (tester) async {
       final applied = <double>[];
       await tester.pumpWidget(host(
         data: lines(),
+        position: ValueNotifier(const Duration(seconds: 10)),
         calibrating: true,
-        onCalibrate: applied.add,
+        onCalibrateTap: applied.add,
       ));
       await tester.pumpAndSettle();
 
-      // Dragging down brings earlier lines under the guide, which means the
-      // lyrics were running ahead and have to be delayed.
-      await tester.drag(find.byType(ListView), const Offset(0, 90));
+      await tester.tap(find.text('第 2 行歌词内容'));
       await tester.pumpAndSettle();
 
+      // Line 2 time is 8.0s, playhead is at 10.0s. Difference - reaction time (0.2s) = 1.8s
       expect(applied, hasLength(1));
-      expect(applied.single, greaterThan(0));
+      expect(applied.single, closeTo(1.8, 0.01));
     });
 
-    testWidgets('a drag is worth the same correction wherever it starts',
-        (tester) async {
-      // The correction is a displacement, so it must not depend on how far
-      // into the song the user has scrolled — measuring against a playhead
-      // parked at 0:00 made it depend on exactly that.
-      final near = <double>[], far = <double>[];
-      await tester.pumpWidget(host(
-          data: lines(), autoFollow: false, onCalibrate: near.add));
+    testWidgets('calibration mode shows tap instruction hint', (tester) async {
+      await tester.pumpWidget(
+          host(data: lines(), calibrating: true, onCalibrateTap: (_) {}));
       await tester.pumpAndSettle();
-      await tester.drag(find.byType(ListView), const Offset(0, -600));
-      await tester.pumpAndSettle();
-
-      await tester.pumpWidget(host(
-          data: lines(),
-          autoFollow: false,
-          calibrating: true,
-          onCalibrate: far.add));
-      await tester.pumpAndSettle();
-      await tester.drag(find.byType(ListView), const Offset(0, 90));
-      await tester.pumpAndSettle();
-
-      await tester.pumpWidget(host(
-          data: lines(), calibrating: true, onCalibrate: near.add));
-      await tester.pumpAndSettle();
-      await tester.drag(find.byType(ListView), const Offset(0, 90));
-      await tester.pumpAndSettle();
-
-      expect(far.single, closeTo(near.single, 0.6));
-    });
-
-    testWidgets('the readout names what moved, and shows the running total',
-        (tester) async {
-      // The total, not a per-session tally: re-arming calibration must not
-      // reset the number the user is reading.
-      await tester.pumpWidget(host(
-          data: lines(), calibrating: true, onCalibrate: (_) {}, offset: 1.5));
-      await tester.pumpAndSettle();
-      expect(find.text('歌词延迟 1.5 秒'), findsOneWidget);
-
-      await tester.pumpWidget(host(
-          data: lines(), calibrating: true, onCalibrate: (_) {}, offset: -2.0));
-      await tester.pumpAndSettle();
-      expect(find.text('歌词提前 2.0 秒'), findsOneWidget);
-    });
-
-    testWidgets('a drag is worth the same wherever the highlight sits',
-        (tester) async {
-      // The active line is drawn taller than the rest. Measuring it at the
-      // ordinary height put every line below it out by that difference, and
-      // since the highlight moves with each correction, the error changed from
-      // drag to drag and piled up.
-      final early = <double>[], late = <double>[];
-      for (final (pos, sink) in [
-        (const Duration(seconds: 8), early),
-        (const Duration(seconds: 80), late),
-      ]) {
-        await tester.pumpWidget(host(
-          data: lines(),
-          position: ValueNotifier(pos),
-          calibrating: true,
-          onCalibrate: sink.add,
-        ));
-        await tester.pumpAndSettle();
-        await tester.drag(find.byType(ListView), const Offset(0, 80));
-        await tester.pumpAndSettle();
-      }
-      expect(late.single, closeTo(early.single, 0.35));
+      expect(find.text('点击正在唱的那行歌词'), findsOneWidget);
     });
 
     testWidgets('unarmed, a drag scrolls and calibrates nothing',
         (tester) async {
       final applied = <double>[];
-      await tester.pumpWidget(host(data: lines(), onCalibrate: applied.add));
+      await tester.pumpWidget(host(data: lines(), onCalibrateTap: applied.add));
       await tester.pump();
 
       await tester.drag(find.byType(ListView), const Offset(0, -200));
