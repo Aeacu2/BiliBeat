@@ -37,8 +37,8 @@ cd "$(dirname "$0")/.."
 
 TARGET="${1:-android}"
 case "$TARGET" in
-  android|ios|all) ;;
-  *) echo "usage: tool/build_release.sh [android|ios|all]" >&2; exit 2 ;;
+  android|ios|macos|all) ;;
+  *) echo "usage: tool/build_release.sh [android|ios|macos|all]" >&2; exit 2 ;;
 esac
 
 # Flutter is not always on PATH (it isn't on this machine), so resolve it
@@ -122,10 +122,31 @@ build_ios() {
   ls -lh "$ipa"
 }
 
+build_macos() {
+  if [ "$(uname)" != "Darwin" ]; then
+    echo "error: macOS builds need macOS with Xcode" >&2
+    exit 1
+  fi
+
+  echo "==> macOS $VERSION (obfuscated), symbols -> $SYMBOLS_DIR"
+  "$FLUTTER" build macos --release \
+    --obfuscate \
+    --split-debug-info="$SYMBOLS_DIR"
+
+  local app_path="build/macos/Build/Products/Release/bilibeat.app"
+  local dmg="build/macos/bilibeat-${SHORT_VERSION}-macos.dmg"
+  hdiutil create -volname "BiliBeat" -srcfolder "$app_path" -ov -format UDZO "$dmg"
+
+  echo
+  echo "==> macOS DMG"
+  ls -lh "$dmg"
+}
+
 case "$TARGET" in
   android) build_android ;;
   ios) build_ios ;;
-  all) build_android; build_ios ;;
+  macos) build_macos ;;
+  all) build_android; build_ios; build_macos ;;
 esac
 
 echo
