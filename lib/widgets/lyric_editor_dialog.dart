@@ -282,43 +282,7 @@ class _LyricEditorDialogState extends State<LyricEditorDialog>
   // Offset bar (calibration controls)
   // ---------------------------------------------------------------------------
 
-  Widget _offsetBar() {
-    return Align(
-      alignment: Alignment.centerRight,
-      child: _offsetBtn(
-        _calibrating ? '完成' : '校准',
-        () => setState(() => _calibrating = !_calibrating),
-        highlighted: _calibrating,
-      ),
-    );
-  }
 
-  Widget _offsetBtn(String label, VoidCallback onPressed,
-      {bool muted = false, bool highlighted = false}) {
-    return GestureDetector(
-      onTap: onPressed,
-      behavior: HitTestBehavior.opaque,
-      child: Container(
-        padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 12),
-        decoration: BoxDecoration(
-          color: highlighted ? AppColors.accent22 : AppColors.surfaceHighlight,
-          borderRadius: BorderRadius.circular(AppRadius.sm),
-          border: Border.all(
-              color: highlighted ? AppColors.accent30 : AppColors.hairline),
-        ),
-        child: Text(
-          label,
-          style: TextStyle(
-            color: muted
-                ? AppColors.textMuted
-                : (highlighted ? AppColors.accent : AppColors.textPrimary),
-            fontSize: 12,
-            fontWeight: FontWeight.w600,
-          ),
-        ),
-      ),
-    );
-  }
 
   // ---------------------------------------------------------------------------
   // Build
@@ -340,43 +304,50 @@ class _LyricEditorDialogState extends State<LyricEditorDialog>
       child: Container(
         padding: const EdgeInsets.all(20),
         height: height,
-        child: Column(
-          children: [
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                const Text(
-                  '信息与歌词',
-                  style: TextStyle(
-                      color: AppColors.textPrimary,
-                      fontSize: 18,
-                      fontWeight: FontWeight.bold),
-                ),
-                IconButton(
-                  icon: const Icon(Icons.close, color: AppColors.textMuted),
-                  onPressed: () => Navigator.pop(context),
-                ),
-              ],
-            ),
-            TabBar(
-              controller: _tabController,
-              indicatorColor: AppColors.accent,
-              labelColor: AppColors.accent,
-              unselectedLabelColor: AppColors.textMuted,
-              tabs: const [Tab(text: '信息'), Tab(text: '歌词')],
-            ),
-            const SizedBox(height: 16),
-            Expanded(
-              child: TabBarView(
-                controller: _tabController,
+        child: (_inLrcEditor || _previewingResult != null)
+            ? _buildLyricsTab()
+            : Column(
                 children: [
-                  _buildInfoTab(),
-                  _buildLyricsTab(),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      const Text(
+                        '信息与歌词',
+                        style: TextStyle(
+                            color: AppColors.textPrimary,
+                            fontSize: 18,
+                            fontWeight: FontWeight.bold),
+                      ),
+                      IconButton(
+                        icon: const Icon(Icons.close, color: AppColors.textMuted),
+                        onPressed: () => Navigator.pop(context),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 4),
+                  TabBar(
+                    controller: _tabController,
+                    indicatorSize: TabBarIndicatorSize.label,
+                    indicator: const BoxDecoration(),
+                    dividerColor: Colors.transparent,
+                    labelColor: AppColors.textPrimary,
+                    unselectedLabelColor: AppColors.textFaint,
+                    labelStyle: const TextStyle(fontSize: 14, fontWeight: FontWeight.w700),
+                    unselectedLabelStyle: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
+                    tabs: const [Tab(text: '信息'), Tab(text: '歌词')],
+                  ),
+                  const SizedBox(height: 12),
+                  Expanded(
+                    child: TabBarView(
+                      controller: _tabController,
+                      children: [
+                        _buildInfoTab(),
+                        _buildLyricsTab(),
+                      ],
+                    ),
+                  ),
                 ],
               ),
-            ),
-          ],
-        ),
       ),
     );
   }
@@ -869,29 +840,48 @@ class _LyricEditorDialogState extends State<LyricEditorDialog>
           ),
         ),
         const SizedBox(height: 10),
-        _offsetBar(),
-        const SizedBox(height: 10),
 
-        // Apply
-        SizedBox(
-          width: double.infinity,
-          height: 44,
-          child: ElevatedButton.icon(
-            onPressed: () =>
-                _applyLyricResult(_previewingResult!, offset: _previewOffset),
-            icon: const Icon(Icons.check_circle,
-                color: AppColors.textPrimary, size: 20),
-            label: const Text('应用',
-                style: TextStyle(
-                    color: AppColors.textPrimary,
-                    fontWeight: FontWeight.bold,
-                    fontSize: 15)),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: AppColors.accent,
-              shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12)),
+        // 校准 / 应用
+        Row(
+          children: [
+            Expanded(
+              child: SizedBox(
+                height: 44,
+                child: OutlinedButton(
+                  onPressed: () => setState(() => _calibrating = !_calibrating),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: _calibrating ? AppColors.accent : AppColors.textMuted,
+                    side: BorderSide(color: _calibrating ? AppColors.accent30 : Colors.white24),
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12)),
+                  ),
+                  child: Text(_calibrating ? '完成' : '校准',
+                      style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600)),
+                ),
+              ),
             ),
-          ),
+            const SizedBox(width: 12),
+            Expanded(
+              flex: 2,
+              child: SizedBox(
+                height: 44,
+                child: ElevatedButton(
+                  onPressed: () =>
+                      _applyLyricResult(_previewingResult!, offset: _previewOffset),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppColors.accent,
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12)),
+                  ),
+                  child: const Text('应用',
+                      style: TextStyle(
+                          color: AppColors.textPrimary,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 15)),
+                ),
+              ),
+            ),
+          ],
         ),
       ],
     );
