@@ -4,7 +4,7 @@ A Flutter music player for Bilibili audio with synced LRC lyrics and offline cac
 
 ## Downloads & Installation
 
-- **[Latest Release (v3.6.2)](https://github.com/Aeacu2/BiliBeat/releases/latest)**
+- **[Latest Release](https://github.com/Aeacu2/BiliBeat/releases/latest)**
 
 ---
 
