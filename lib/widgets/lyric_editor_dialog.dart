@@ -436,34 +436,40 @@ class _LyricEditorDialogState extends State<LyricEditorDialog>
                 const SizedBox(height: 8),
                 // Cover art — tap to change
                 Center(
-                  child: GestureDetector(
-                    onTap: _pickLocalCoverImage,
-                    child: ClipRRect(
-                      borderRadius: BorderRadius.circular(16),
-                      child: CachedCoverImage(
-                        url: _coverUrlController.text.trim(),
-                        width: 100,
-                        height: 100,
+                  child: Stack(
+                    alignment: Alignment.bottomRight,
+                    children: [
+                      GestureDetector(
+                        onTap: _pickLocalCoverImage,
+                        child: ClipRRect(
+                          borderRadius: BorderRadius.circular(20),
+                          child: CachedCoverImage(
+                            url: _coverUrlController.text.trim(),
+                            width: 140,
+                            height: 140,
+                          ),
+                        ),
                       ),
-                    ),
+                      GestureDetector(
+                        onTap: _pickLocalCoverImage,
+                        child: Container(
+                          padding: const EdgeInsets.all(6),
+                          decoration: BoxDecoration(
+                            color: AppColors.backgroundElevated,
+                            shape: BoxShape.circle,
+                            border: Border.all(color: AppColors.hairlineStrong),
+                          ),
+                          child: const Icon(Icons.image_outlined,
+                              color: AppColors.textSecondary, size: 18),
+                        ),
+                      ),
+                    ],
                   ),
                 ),
-                const SizedBox(height: 8),
-                Center(
-                  child: GestureDetector(
-                    onTap: _pickLocalCoverImage,
-                    child: const Text(
-                      '更换封面',
-                      style: TextStyle(color: AppColors.accent, fontSize: 12.5, fontWeight: FontWeight.w600),
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 20),
+                const SizedBox(height: 24),
                 _infoField(_titleController, '歌名'),
                 const SizedBox(height: 12),
                 _infoField(_artistController, '歌手 / UP主'),
-                const SizedBox(height: 12),
-                _infoField(_coverUrlController, '封面 URL / 本地路径'),
               ],
             ),
           ),
