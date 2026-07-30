@@ -62,6 +62,11 @@ class _LyricEditorDialogState extends State<LyricEditorDialog>
   /// True while the full-screen LRC text editor is showing.
   bool _inLrcEditor = false;
 
+  final GlobalKey _tabRowKey = GlobalKey();
+  final List<GlobalKey> _tabKeys = [GlobalKey(), GlobalKey()];
+  double _indicatorLeft = 0;
+  double _indicatorWidth = 0;
+
   @override
   void initState() {
     super.initState();
@@ -71,12 +76,16 @@ class _LyricEditorDialogState extends State<LyricEditorDialog>
     _artistController = TextEditingController(text: widget.artistName);
     _coverUrlController = TextEditingController(text: widget.coverUrl ?? '');
 
-    _tabController.addListener(() => setState(() {}));
+    _tabController.addListener(() {
+      setState(() {});
+      WidgetsBinding.instance.addPostFrameCallback((_) => _updateIndicator());
+    });
     _titleController.addListener(() => setState(() {}));
     _artistController.addListener(() => setState(() {}));
     _searchController.text = '${widget.artistName} ${widget.songTitle}'.trim();
     _searchResults = _pinnedResults();
     _performSearch();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _updateIndicator());
   }
 
   @override
@@ -306,7 +315,7 @@ class _LyricEditorDialogState extends State<LyricEditorDialog>
   Widget build(BuildContext context) {
     if (_inLrcEditor || _previewingResult != null) {
       return Padding(
-        padding: const EdgeInsets.fromLTRB(20, 0, 20, 12),
+        padding: const EdgeInsets.fromLTRB(20, 12, 20, 12),
         child: SafeArea(bottom: false, child: _buildLyricsTab()),
       );
     }
@@ -317,11 +326,43 @@ class _LyricEditorDialogState extends State<LyricEditorDialog>
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           const SizedBox(height: 4),
-          // Tabs — matching home screen's 聆听/搜索
+          // Tabs — exact replica of home screen's 聆听/搜索
           Row(
             children: [
-              _pageTab('信息', 0),
-              _pageTab('歌词', 1),
+              Expanded(
+                child: Stack(
+                  key: _tabRowKey,
+                  children: [
+                    AnimatedPositioned(
+                      duration: const Duration(milliseconds: 260),
+                      curve: Curves.easeOutCubic,
+                      left: _indicatorLeft,
+                      width: _indicatorWidth,
+                      top: 0,
+                      bottom: 0,
+                      child: Container(
+                        decoration: BoxDecoration(
+                          color: AppColors.accent14,
+                          borderRadius:
+                              BorderRadius.circular(AppRadius.pill),
+                          border: Border.all(color: AppColors.accent30),
+                        ),
+                      ),
+                    ),
+                    Row(
+                      children: [
+                        _tabItem(0, '信息'),
+                        const SizedBox(width: 8),
+                        _tabItem(1, '歌词'),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.only(left: 12, right: 2),
+                child: Image.asset('assets/logo.png', height: 36),
+              ),
             ],
           ),
           const SizedBox(height: 14),
@@ -343,41 +384,39 @@ class _LyricEditorDialogState extends State<LyricEditorDialog>
   // Segment tab helper
   // ---------------------------------------------------------------------------
 
-  Widget _pageTab(String label, int index) {
+  void _updateIndicator() {
+    final rowBox =
+        _tabRowKey.currentContext?.findRenderObject() as RenderBox?;
+    final tabBox = _tabKeys[_tabController.index].currentContext
+        ?.findRenderObject() as RenderBox?;
+    if (rowBox == null || tabBox == null || !mounted) return;
+    final offset = tabBox.localToGlobal(Offset.zero, ancestor: rowBox);
+    setState(() {
+      _indicatorLeft = offset.dx;
+      _indicatorWidth = tabBox.size.width;
+    });
+  }
+
+  Widget _tabItem(int index, String label) {
     final active = _tabController.index == index;
     return GestureDetector(
+      key: _tabKeys[index],
       behavior: HitTestBehavior.opaque,
       onTap: () {
         Haptics.selection();
         _tabController.animateTo(index);
+        WidgetsBinding.instance.addPostFrameCallback((_) => _updateIndicator());
       },
       child: Padding(
-        padding: const EdgeInsets.only(right: 28, bottom: 8),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(
-              label,
-              style: TextStyle(
-                color: active ? AppColors.textPrimary : AppColors.textMuted,
-                fontSize: 23,
-                fontWeight: FontWeight.w700,
-                letterSpacing: -0.3,
-              ),
-            ),
-            const SizedBox(height: 6),
-            AnimatedContainer(
-              duration: const Duration(milliseconds: 240),
-              curve: Curves.easeOutCubic,
-              height: 3,
-              width: active ? 24 : 0,
-              decoration: BoxDecoration(
-                color: AppColors.accent,
-                borderRadius: BorderRadius.circular(2),
-              ),
-            ),
-          ],
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 7),
+        child: Text(
+          label,
+          style: TextStyle(
+            color: active ? AppColors.textPrimary : AppColors.textMuted,
+            fontSize: 23,
+            fontWeight: FontWeight.w700,
+            letterSpacing: -0.3,
+          ),
         ),
       ),
     );

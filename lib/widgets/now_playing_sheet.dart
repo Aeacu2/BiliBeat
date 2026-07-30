@@ -397,36 +397,38 @@ class _NowPlayingSheetState extends State<NowPlayingSheet> {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Row(
-            children: [
-              Expanded(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    MarqueeText(
-                      text: _displayTrack.title,
-                      style: AppTypography.title,
-                    ),
-                    const SizedBox(height: 4),
-                    MarqueeText(
-                      text: _displayTrack.uploader,
-                      phase: 0.35,
-                      style: AppTypography.bodyMedium,
-                    ),
-                  ],
+          if (!_showEditor) ...[
+            Row(
+              children: [
+                Expanded(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      MarqueeText(
+                        text: _displayTrack.title,
+                        style: AppTypography.title,
+                      ),
+                      const SizedBox(height: 4),
+                      MarqueeText(
+                        text: _displayTrack.uploader,
+                        phase: 0.35,
+                        style: AppTypography.bodyMedium,
+                      ),
+                    ],
+                  ),
                 ),
-              ),
-              const SizedBox(width: 8),
-              IconButton(
-                icon: const Icon(Icons.edit_note_rounded,
-                    color: AppColors.textSecondary, size: 24),
-                tooltip: '编辑',
-                onPressed: _openEditor,
-              ),
-            ],
-          ),
-          const SizedBox(height: 10),
+                const SizedBox(width: 8),
+                IconButton(
+                  icon: const Icon(Icons.edit_note_rounded,
+                      color: AppColors.textSecondary, size: 24),
+                  tooltip: '编辑',
+                  onPressed: _openEditor,
+                ),
+              ],
+            ),
+            const SizedBox(height: 10),
+          ],
           _seekBar(),
           const SizedBox(height: 4),
           _transportControls(),
