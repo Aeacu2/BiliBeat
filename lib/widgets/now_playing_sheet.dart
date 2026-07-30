@@ -320,12 +320,6 @@ class _NowPlayingSheetState extends State<NowPlayingSheet> {
               mainAxisSize: MainAxisSize.min,
               children: [
                 Image.asset('assets/logo.png', height: 30),
-                if (!_isActive) ...[
-                  const SizedBox(height: 2),
-                  Text('预览',
-                      style: AppTypography.overline
-                          .copyWith(color: AppColors.textFaint)),
-                ],
               ],
             ),
           ),
@@ -626,20 +620,21 @@ class _NowPlayingSheetState extends State<NowPlayingSheet> {
       ),
     );
 
-    if (progress == null) return button;
-
+    // Always occupy the same 76×76 footprint so adding/removing the
+    // progress ring never reflows the transport row.
     return SizedBox(
       width: 76,
       height: 76,
       child: Stack(
         alignment: Alignment.center,
         children: [
-          ProgressRing(
-            fraction: progress,
-            size: 76,
-            strokeWidth: 3,
-            trackColor: AppColors.hairline,
-          ),
+          if (progress != null)
+            ProgressRing(
+              fraction: progress,
+              size: 76,
+              strokeWidth: 3,
+              trackColor: AppColors.hairline,
+            ),
           button,
         ],
       ),
