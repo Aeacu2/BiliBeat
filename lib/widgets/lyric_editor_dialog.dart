@@ -305,68 +305,36 @@ class _LyricEditorDialogState extends State<LyricEditorDialog>
   @override
   Widget build(BuildContext context) {
     if (_inLrcEditor || _previewingResult != null) {
-      return Container(
-        color: AppColors.background,
+      return Padding(
         padding: const EdgeInsets.fromLTRB(20, 0, 20, 12),
         child: SafeArea(bottom: false, child: _buildLyricsTab()),
       );
     }
 
-    return ColoredBox(
-      color: AppColors.background,
-      child: SafeArea(
-        bottom: false,
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 20),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 20),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const SizedBox(height: 4),
+          // Tabs — matching home screen's 聆听/搜索
+          Row(
             children: [
-              const SizedBox(height: 8),
-              // Header row: back + title
-              Row(
-                children: [
-                  GestureDetector(
-                    onTap: _close,
-                    child: const Padding(
-                      padding: EdgeInsets.all(4),
-                      child: Icon(Icons.arrow_back_rounded,
-                          color: AppColors.textPrimary, size: 22),
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  const Text(
-                    '信息与歌词',
-                    style: TextStyle(
-                        color: AppColors.textPrimary,
-                        fontSize: 20,
-                        fontWeight: FontWeight.w700,
-                        letterSpacing: -0.3),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 16),
-
-              // Tabs — matching home screen style
-              Row(
-                children: [
-                  _pageTab('信息', 0),
-                  _pageTab('歌词', 1),
-                ],
-              ),
-              const SizedBox(height: 14),
-
-              Expanded(
-                child: TabBarView(
-                  controller: _tabController,
-                  children: [
-                    _buildInfoTab(),
-                    _buildLyricsTab(),
-                  ],
-                ),
-              ),
+              _pageTab('信息', 0),
+              _pageTab('歌词', 1),
             ],
           ),
-        ),
+          const SizedBox(height: 14),
+          Expanded(
+            child: TabBarView(
+              controller: _tabController,
+              children: [
+                _buildInfoTab(),
+                _buildLyricsTab(),
+              ],
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -384,7 +352,7 @@ class _LyricEditorDialogState extends State<LyricEditorDialog>
         _tabController.animateTo(index);
       },
       child: Padding(
-        padding: const EdgeInsets.only(right: 24, bottom: 6),
+        padding: const EdgeInsets.only(right: 28, bottom: 8),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           mainAxisSize: MainAxisSize.min,
@@ -393,16 +361,17 @@ class _LyricEditorDialogState extends State<LyricEditorDialog>
               label,
               style: TextStyle(
                 color: active ? AppColors.textPrimary : AppColors.textMuted,
-                fontSize: 18,
+                fontSize: 23,
                 fontWeight: FontWeight.w700,
                 letterSpacing: -0.3,
               ),
             ),
-            const SizedBox(height: 5),
+            const SizedBox(height: 6),
             AnimatedContainer(
-              duration: const Duration(milliseconds: 220),
+              duration: const Duration(milliseconds: 240),
+              curve: Curves.easeOutCubic,
               height: 3,
-              width: active ? 20 : 0,
+              width: active ? 24 : 0,
               decoration: BoxDecoration(
                 color: AppColors.accent,
                 borderRadius: BorderRadius.circular(2),
@@ -461,22 +430,46 @@ class _LyricEditorDialogState extends State<LyricEditorDialog>
           ),
         ),
         const SizedBox(height: 12),
-        SizedBox(
-          width: double.infinity,
-          height: 44,
-          child: ElevatedButton(
-            onPressed: _saveMetadata,
-            style: ElevatedButton.styleFrom(
-              backgroundColor: AppColors.accent,
-              shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12)),
+        Row(
+          children: [
+            Expanded(
+              child: SizedBox(
+                height: 44,
+                child: OutlinedButton(
+                  onPressed: _close,
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: AppColors.textMuted,
+                    side: const BorderSide(color: Colors.white24),
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12)),
+                  ),
+                  child: const Text('取消',
+                      style:
+                          TextStyle(fontSize: 15, fontWeight: FontWeight.w600)),
+                ),
+              ),
             ),
-            child: const Text('保存',
-                style: TextStyle(
-                    color: AppColors.textPrimary,
-                    fontWeight: FontWeight.bold,
-                    fontSize: 15)),
-          ),
+            const SizedBox(width: 12),
+            Expanded(
+              flex: 2,
+              child: SizedBox(
+                height: 44,
+                child: ElevatedButton(
+                  onPressed: _saveMetadata,
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppColors.accent,
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12)),
+                  ),
+                  child: const Text('保存',
+                      style: TextStyle(
+                          color: AppColors.textPrimary,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 15)),
+                ),
+              ),
+            ),
+          ],
         ),
       ],
     );
