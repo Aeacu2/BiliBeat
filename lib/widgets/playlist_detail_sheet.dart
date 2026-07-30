@@ -265,7 +265,7 @@ class _PlaylistDetailSheetState extends State<PlaylistDetailSheet> {
                       ),
                     ),
                   ),
-                  if (!_isVirtualDownloads && !_isEditMode) ...[
+                  if (!_isVirtualDownloads && !_isFavorites && !_isEditMode) ...[
                     IconButton(
                       icon: const Icon(Icons.image_outlined,
                           color: AppColors.textSecondary, size: 22),
@@ -554,36 +554,38 @@ class _PlaylistDetailSheetState extends State<PlaylistDetailSheet> {
   }
 
   bool get _isVirtualDownloads => _currentPlaylist.id == 'downloaded';
+  bool get _isFavorites => _currentPlaylist.id == 'favorites';
 
   /// The playlist's artwork. 本地 is rebuilt from
   /// the download library on every refresh and has no row to store a cover on,
   /// so it keeps the default badge.
   Widget _headerArtwork(bool isFav) {
     final cover = _currentPlaylist.coverUrl;
+    final List<Color> gradient;
+    final IconData icon;
+    if (_isVirtualDownloads) {
+      gradient = [AppColors.success, const Color(0xFF1B8A4B)];
+      icon = Icons.download_rounded;
+    } else if (isFav) {
+      gradient = [AppColors.accent, const Color(0xFFFF5252)];
+      icon = Icons.favorite;
+    } else {
+      gradient = [const Color(0xFF3A3A40), const Color(0xFF232327)];
+      icon = Icons.queue_music;
+    }
     return SizedBox(
       width: 72,
       height: 72,
       child: ClipRRect(
         borderRadius: BorderRadius.circular(16),
-        child: cover != null && cover.isNotEmpty
+        child: cover != null && cover.isNotEmpty && !_isVirtualDownloads
             ? CachedCoverImage(url: cover, width: 72, height: 72)
             : DecoratedBox(
                 decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    colors: isFav
-                        ? [AppColors.accent, const Color(0xFFFF5252)]
-                        : [
-                            const Color(0xFF3A3A40),
-                            const Color(0xFF232327)
-                          ],
-                  ),
+                  gradient: LinearGradient(colors: gradient),
                 ),
                 child: Center(
-                  child: Icon(
-                    isFav ? Icons.favorite : Icons.queue_music,
-                    color: AppColors.textPrimary,
-                    size: 36,
-                  ),
+                  child: Icon(icon, color: AppColors.textPrimary, size: 36),
                 ),
               ),
       ),
