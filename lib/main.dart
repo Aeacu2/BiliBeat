@@ -15,7 +15,6 @@ import 'widgets/ambient_background.dart';
 import 'widgets/expand_from_card.dart';
 import 'widgets/mini_player.dart';
 import 'widgets/now_playing_sheet.dart';
-import 'widgets/lyric_editor_dialog.dart';
 import 'widgets/playlist_detail_sheet.dart';
 import 'screens/home_screen.dart';
 import 'screens/search_screen.dart';
@@ -111,9 +110,6 @@ class _MainLayoutState extends State<MainLayout> {
   /// for a change only the 最近播放 rail cares about.
   final ValueNotifier<List<Track>> _recentlyPlayed = ValueNotifier(const []);
   Playlist? _activePlaylistSheet;
-  Track? _editorTrack;
-  bool _editorLyricsTab = false;
-  VoidCallback? _editorRelease;
 
   late final PageController _pageController = PageController();
   final List<StreamSubscription> _subs = [];
@@ -283,7 +279,6 @@ class _MainLayoutState extends State<MainLayout> {
             positionNotifier: _positionNotifier,
             durationNotifier: _durationNotifier,
             lyricsNotifier: _lyricsNotifier,
-            onOpenLyricEditor: _openLyricEditor,
             followHandler: follow,
           );
         },
@@ -312,22 +307,8 @@ class _MainLayoutState extends State<MainLayout> {
     ).whenComplete(() => _nowPlayingOpen = false);
   }
 
-  /// Opens the info/lyrics editor for [track] — which is whatever the player
-  /// sheet is actually showing, not necessarily the playing track.
-  void _openLyricEditor(Track track, {bool lyricsTab = false}) {
-    _editorRelease?.call();
-    _editorRelease = _audioHandler.holdAutoAdvance();
-    setState(() {
-      _editorTrack = track;
-      _editorLyricsTab = lyricsTab;
-    });
-  }
 
-  void _closeLyricEditor() {
-    _editorRelease?.call();
-    _editorRelease = null;
-    setState(() => _editorTrack = null);
-  }
+
 
   Widget _tabItem(int index, String label) {
     final active = _activeTabIndex == index;
@@ -528,62 +509,6 @@ class _MainLayoutState extends State<MainLayout> {
                 ),
               ),
 
-            // Layer 2.5: Info/Lyrics editor overlay
-            if (_editorTrack != null)
-              Positioned(
-                left: 0,
-                right: 0,
-                top: 0,
-                bottom: dockedHeight,
-                child: TweenAnimationBuilder<double>(
-                  key: ValueKey(_editorTrack!.id),
-                  tween: Tween(begin: 0.0, end: 1.0),
-                  duration: const Duration(milliseconds: 260),
-                  curve: Curves.easeOutCubic,
-                  builder: (context, t, child) => Opacity(
-                    opacity: t,
-                    child: Transform.translate(
-                      offset: Offset(0, (1 - t) * 30),
-                      child: child,
-                    ),
-                  ),
-                  child: LyricEditorDialog(
-                    songTitle: _editorTrack!.title,
-                    artistName: _editorTrack!.uploader,
-                    coverUrl: _editorTrack!.coverUrl,
-                    positionNotifier:
-                        _currentTrack.value?.id == _editorTrack!.id
-                            ? _positionNotifier
-                            : null,
-                    initialTabIndex: _editorLyricsTab ? 1 : 0,
-                    currentLines:
-                        _currentTrack.value?.id == _editorTrack!.id
-                            ? _lyricsNotifier.value
-                            : const [],
-                    onClose: _closeLyricEditor,
-                    onApplyLyrics: (result) async {
-                      final track = _editorTrack!;
-                      final isCurrent = _currentTrack.value?.id == track.id;
-                      if (isCurrent) _lyricsNotifier.value = result.lines;
-                      await DatabaseService.cacheLyrics(track.id, result);
-                      _closeLyricEditor();
-                    },
-                    onUpdateMetadata: (newTitle, newArtist, newCoverUrl) async {
-                      final track = _editorTrack!;
-                      final isCurrent = _currentTrack.value?.id == track.id;
-                      final updated = track.copyWith(
-                        title: newTitle,
-                        uploader: newArtist,
-                        coverUrl: newCoverUrl,
-                      );
-                      if (isCurrent) _currentTrack.value = updated;
-                      await DatabaseService.updateTrackMetadata(updated);
-                      _audioHandler.updateCurrentTrackMetadata(updated);
-                      _closeLyricEditor();
-                    },
-                  ),
-                ),
-              ),
 
             // Layer 3: Permanent Docked MiniPlayer (Top of Z-index, ALWAYS interactive!)
             Positioned(

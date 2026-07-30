@@ -15,6 +15,7 @@ import 'cached_cover_image.dart';
 import 'marquee_text.dart';
 import 'progress_ring.dart';
 import 'synced_lyrics_view.dart';
+import 'lyric_editor_dialog.dart';
 
 /// Full-screen "now playing" surface.
 class NowPlayingSheet extends StatefulWidget {
@@ -23,10 +24,6 @@ class NowPlayingSheet extends StatefulWidget {
   final ValueNotifier<Duration> positionNotifier;
   final ValueNotifier<Duration> durationNotifier;
   final ValueNotifier<List<LyricLine>> lyricsNotifier;
-
-  /// Receives the track actually on screen — which is not always the one the
-  /// handler is playing (a search result can be previewed here).
-  final void Function(Track track, {bool lyricsTab}) onOpenLyricEditor;
 
   /// Set when the sheet is opened as part of "play this now". The handler has
   /// not switched track yet at that instant, so it cannot be inferred — and
@@ -41,7 +38,6 @@ class NowPlayingSheet extends StatefulWidget {
     required this.positionNotifier,
     required this.durationNotifier,
     required this.lyricsNotifier,
-    required this.onOpenLyricEditor,
     this.followHandler = false,
   });
 
@@ -62,6 +58,9 @@ class _NowPlayingSheetState extends State<NowPlayingSheet> {
   bool _isDownloaded = false;
   DownloadTask? _downloadTask;
   double? _dragValue;
+  bool _showEditor = false;
+  bool _editorLyricsTab = false;
+  VoidCallback? _editorRelease;
 
   bool get _isActive => widget.handler.currentTrack?.id == _displayTrack.id;
 
@@ -116,6 +115,7 @@ class _NowPlayingSheetState extends State<NowPlayingSheet> {
 
   @override
   void dispose() {
+    _editorRelease?.call();
     for (final s in _subs) {
       s.cancel();
     }
@@ -180,6 +180,21 @@ class _NowPlayingSheetState extends State<NowPlayingSheet> {
     if (nowFav && !_isDownloaded) _startDownload();
   }
 
+  void _openEditor({bool lyricsTab = false}) {
+    _editorRelease?.call();
+    _editorRelease = widget.handler.holdAutoAdvance();
+    setState(() {
+      _showEditor = true;
+      _editorLyricsTab = lyricsTab;
+    });
+  }
+
+  void _closeEditor() {
+    _editorRelease?.call();
+    _editorRelease = null;
+    setState(() => _showEditor = false);
+  }
+
   static String _formatDuration(Duration d) {
     final hours = d.inHours;
     final minutes = d.inMinutes.remainder(60).toString().padLeft(2, '0');
@@ -210,34 +225,70 @@ class _NowPlayingSheetState extends State<NowPlayingSheet> {
         child: SafeArea(
           child: Column(
             children: [
-              _topBar(),
-              Expanded(
-                child: Padding(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
-                  child: AnimatedSwitcher(
-                    duration: const Duration(milliseconds: 260),
-                    child: _showLyrics && _isActive
-                        ? ValueListenableBuilder<List<LyricLine>>(
-                            key: const ValueKey('lyrics'),
-                            valueListenable: widget.lyricsNotifier,
-                            builder: (context, lines, _) {
-                              return SyncedLyricsView(
-                                lines: lines,
-                                positionNotifier: widget.positionNotifier,
-                                onSeek: (sec) => widget.handler.seek(
-                                  Duration(milliseconds: (sec * 1000).toInt()),
-                                ),
-                                onOpenEditor: () => widget
-                                    .onOpenLyricEditor(_displayTrack,
-                                        lyricsTab: true),
-                              );
-                            },
-                          )
-                        : _albumArt(),
+              if (_showEditor)
+                Expanded(
+                  child: LyricEditorDialog(
+                    songTitle: _displayTrack.title,
+                    artistName: _displayTrack.uploader,
+                    coverUrl: _displayTrack.coverUrl,
+                    positionNotifier:
+                        _isActive ? widget.positionNotifier : null,
+                    initialTabIndex: _editorLyricsTab ? 1 : 0,
+                    currentLines:
+                        _isActive ? widget.lyricsNotifier.value : const [],
+                    onClose: _closeEditor,
+                    onApplyLyrics: (result) async {
+                      if (_isActive) {
+                        widget.lyricsNotifier.value = result.lines;
+                      }
+                      await DatabaseService.cacheLyrics(
+                          _displayTrack.id, result);
+                      _closeEditor();
+                    },
+                    onUpdateMetadata:
+                        (newTitle, newArtist, newCoverUrl) async {
+                      final updated = _displayTrack.copyWith(
+                        title: newTitle,
+                        uploader: newArtist,
+                        coverUrl: newCoverUrl,
+                      );
+                      setState(() => _displayTrack = updated);
+                      await DatabaseService.updateTrackMetadata(updated);
+                      widget.handler.updateCurrentTrackMetadata(updated);
+                      _closeEditor();
+                    },
+                  ),
+                )
+              else ...[
+                _topBar(),
+                Expanded(
+                  child: Padding(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
+                    child: AnimatedSwitcher(
+                      duration: const Duration(milliseconds: 260),
+                      child: _showLyrics && _isActive
+                          ? ValueListenableBuilder<List<LyricLine>>(
+                              key: const ValueKey('lyrics'),
+                              valueListenable: widget.lyricsNotifier,
+                              builder: (context, lines, _) {
+                                return SyncedLyricsView(
+                                  lines: lines,
+                                  positionNotifier: widget.positionNotifier,
+                                  onSeek: (sec) => widget.handler.seek(
+                                    Duration(
+                                        milliseconds: (sec * 1000).toInt()),
+                                  ),
+                                  onOpenEditor: () =>
+                                      _openEditor(lyricsTab: true),
+                                );
+                              },
+                            )
+                          : _albumArt(),
+                    ),
                   ),
                 ),
-              ),
+              ],
               _bottomPanel(),
             ],
           ),
@@ -371,7 +422,7 @@ class _NowPlayingSheetState extends State<NowPlayingSheet> {
                 icon: const Icon(Icons.edit_note_rounded,
                     color: AppColors.textSecondary, size: 24),
                 tooltip: '编辑',
-                onPressed: () => widget.onOpenLyricEditor(_displayTrack),
+                onPressed: _openEditor,
               ),
             ],
           ),
