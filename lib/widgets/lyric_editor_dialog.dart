@@ -5,6 +5,7 @@ import 'package:path_provider/path_provider.dart';
 import '../models/lyric_line.dart';
 import '../services/lyrics_engine.dart';
 import '../theme/app_theme.dart';
+import '../theme/haptics.dart';
 import 'cached_cover_image.dart';
 import 'synced_lyrics_view.dart';
 
@@ -16,6 +17,7 @@ class LyricEditorDialog extends StatefulWidget {
   final List<LyricLine>? currentLines;
   final Function(LyricsResult) onApplyLyrics;
   final Function(String title, String artist, String coverUrl)? onUpdateMetadata;
+  final VoidCallback? onClose;
 
   /// Which tab to land on: 0 = 信息, 1 = 歌词.
   final int initialTabIndex;
@@ -29,6 +31,7 @@ class LyricEditorDialog extends StatefulWidget {
     this.currentLines,
     required this.onApplyLyrics,
     this.onUpdateMetadata,
+    this.onClose,
     this.initialTabIndex = 0,
   });
 
@@ -291,106 +294,79 @@ class _LyricEditorDialogState extends State<LyricEditorDialog>
   // Build
   // ---------------------------------------------------------------------------
 
+  void _close() {
+    if (widget.onClose != null) {
+      widget.onClose!();
+    } else {
+      Navigator.pop(context);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
-    final media = MediaQuery.of(context);
-    final available = media.size.height - media.viewInsets.bottom - 80;
-    final height = available.clamp(320.0, 620.0);
+    if (_inLrcEditor || _previewingResult != null) {
+      return Container(
+        color: AppColors.background,
+        padding: const EdgeInsets.fromLTRB(20, 0, 20, 12),
+        child: SafeArea(bottom: false, child: _buildLyricsTab()),
+      );
+    }
 
-    return Dialog(
-      backgroundColor: const Color(0xFF18181C),
-      insetPadding: EdgeInsets.symmetric(
-        horizontal: 20,
-        vertical: media.viewInsets.bottom > 0 ? 12 : 32,
-      ),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
-      child: Container(
-        padding: const EdgeInsets.all(20),
-        height: height,
-        child: (_inLrcEditor || _previewingResult != null)
-            ? _buildLyricsTab()
-            : Column(
+    return ColoredBox(
+      color: AppColors.background,
+      child: SafeArea(
+        bottom: false,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 20),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const SizedBox(height: 8),
+              // Header row: back + title
+              Row(
                 children: [
-                  // Contextual header: cover + title + close
-                  Row(
-                    children: [
-                      GestureDetector(
-                        onTap: _pickLocalCoverImage,
-                        child: ClipRRect(
-                          borderRadius: BorderRadius.circular(10),
-                          child: CachedCoverImage(
-                            url: _coverUrlController.text.trim(),
-                            width: 44,
-                            height: 44,
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              _titleController.text.trim().isNotEmpty
-                                  ? _titleController.text.trim()
-                                  : widget.songTitle,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(
-                                  color: AppColors.textPrimary,
-                                  fontSize: 15,
-                                  fontWeight: FontWeight.w700),
-                            ),
-                            const SizedBox(height: 2),
-                            Text(
-                              _artistController.text.trim().isNotEmpty
-                                  ? _artistController.text.trim()
-                                  : widget.artistName,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(
-                                  color: AppColors.textMuted, fontSize: 12.5),
-                            ),
-                          ],
-                        ),
-                      ),
-                      IconButton(
-                        icon: const Icon(Icons.close,
-                            color: AppColors.textFaint, size: 20),
-                        onPressed: () => Navigator.pop(context),
-                        visualDensity: VisualDensity.compact,
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 14),
-
-                  // Segmented pill toggle
-                  Container(
-                    padding: const EdgeInsets.all(3),
-                    decoration: BoxDecoration(
-                      color: Colors.white.withValues(alpha: 0.06),
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                    child: Row(
-                      children: [
-                        _segmentTab('信息', 0),
-                        _segmentTab('歌词', 1),
-                      ],
+                  GestureDetector(
+                    onTap: _close,
+                    child: const Padding(
+                      padding: EdgeInsets.all(4),
+                      child: Icon(Icons.arrow_back_rounded,
+                          color: AppColors.textPrimary, size: 22),
                     ),
                   ),
-                  const SizedBox(height: 14),
-
-                  Expanded(
-                    child: TabBarView(
-                      controller: _tabController,
-                      children: [
-                        _buildInfoTab(),
-                        _buildLyricsTab(),
-                      ],
-                    ),
+                  const SizedBox(width: 12),
+                  const Text(
+                    '信息与歌词',
+                    style: TextStyle(
+                        color: AppColors.textPrimary,
+                        fontSize: 20,
+                        fontWeight: FontWeight.w700,
+                        letterSpacing: -0.3),
                   ),
                 ],
               ),
+              const SizedBox(height: 16),
+
+              // Tabs — matching home screen style
+              Row(
+                children: [
+                  _pageTab('信息', 0),
+                  _pageTab('歌词', 1),
+                ],
+              ),
+              const SizedBox(height: 14),
+
+              Expanded(
+                child: TabBarView(
+                  controller: _tabController,
+                  children: [
+                    _buildInfoTab(),
+                    _buildLyricsTab(),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }
@@ -399,27 +375,40 @@ class _LyricEditorDialogState extends State<LyricEditorDialog>
   // Segment tab helper
   // ---------------------------------------------------------------------------
 
-  Widget _segmentTab(String label, int index) {
+  Widget _pageTab(String label, int index) {
     final active = _tabController.index == index;
-    return Expanded(
-      child: GestureDetector(
-        onTap: () => _tabController.animateTo(index),
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 200),
-          padding: const EdgeInsets.symmetric(vertical: 7),
-          decoration: BoxDecoration(
-            color: active ? AppColors.accent22 : Colors.transparent,
-            borderRadius: BorderRadius.circular(8),
-          ),
-          child: Text(
-            label,
-            textAlign: TextAlign.center,
-            style: TextStyle(
-              color: active ? AppColors.accent : AppColors.textFaint,
-              fontSize: 13,
-              fontWeight: active ? FontWeight.w700 : FontWeight.w500,
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: () {
+        Haptics.selection();
+        _tabController.animateTo(index);
+      },
+      child: Padding(
+        padding: const EdgeInsets.only(right: 24, bottom: 6),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              label,
+              style: TextStyle(
+                color: active ? AppColors.textPrimary : AppColors.textMuted,
+                fontSize: 18,
+                fontWeight: FontWeight.w700,
+                letterSpacing: -0.3,
+              ),
             ),
-          ),
+            const SizedBox(height: 5),
+            AnimatedContainer(
+              duration: const Duration(milliseconds: 220),
+              height: 3,
+              width: active ? 20 : 0,
+              decoration: BoxDecoration(
+                color: AppColors.accent,
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+          ],
         ),
       ),
     );
@@ -436,12 +425,37 @@ class _LyricEditorDialogState extends State<LyricEditorDialog>
           child: SingleChildScrollView(
             child: Column(
               children: [
-                const SizedBox(height: 4),
+                const SizedBox(height: 8),
+                // Cover art — tap to change
+                Center(
+                  child: GestureDetector(
+                    onTap: _pickLocalCoverImage,
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(16),
+                      child: CachedCoverImage(
+                        url: _coverUrlController.text.trim(),
+                        width: 100,
+                        height: 100,
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Center(
+                  child: GestureDetector(
+                    onTap: _pickLocalCoverImage,
+                    child: const Text(
+                      '更换封面',
+                      style: TextStyle(color: AppColors.accent, fontSize: 12.5, fontWeight: FontWeight.w600),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 20),
                 _infoField(_titleController, '歌名'),
-                const SizedBox(height: 10),
+                const SizedBox(height: 12),
                 _infoField(_artistController, '歌手 / UP主'),
-                const SizedBox(height: 10),
-                _infoField(_coverUrlController, '封面 URL 或本地路径'),
+                const SizedBox(height: 12),
+                _infoField(_coverUrlController, '封面 URL / 本地路径'),
               ],
             ),
           ),
@@ -468,21 +482,30 @@ class _LyricEditorDialogState extends State<LyricEditorDialog>
     );
   }
 
-  Widget _infoField(TextEditingController ctrl, String hint) {
-    return TextField(
-      controller: ctrl,
-      style: const TextStyle(color: AppColors.textPrimary, fontSize: 14),
-      decoration: InputDecoration(
-        hintText: hint,
-        hintStyle: const TextStyle(color: AppColors.textFaint, fontSize: 14),
-        filled: true,
-        fillColor: Colors.white.withValues(alpha: 0.06),
-        border: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(12),
-            borderSide: BorderSide.none),
-        contentPadding:
-            const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
-      ),
+  Widget _infoField(TextEditingController ctrl, String label) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(label,
+            style: const TextStyle(
+                color: AppColors.textSecondary,
+                fontSize: 12,
+                fontWeight: FontWeight.w600)),
+        const SizedBox(height: 6),
+        TextField(
+          controller: ctrl,
+          style: const TextStyle(color: AppColors.textPrimary, fontSize: 14),
+          decoration: InputDecoration(
+            filled: true,
+            fillColor: Colors.white.withValues(alpha: 0.06),
+            border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+                borderSide: BorderSide.none),
+            contentPadding:
+                const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
+          ),
+        ),
+      ],
     );
   }
 
