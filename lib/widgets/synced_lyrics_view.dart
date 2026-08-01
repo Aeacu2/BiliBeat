@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import '../theme/app_theme.dart';
 import '../theme/haptics.dart';
+import '../theme/motion.dart';
 import '../models/lyric_line.dart';
 
 /// Synced lyrics that highlight and auto-scroll to the active line.
@@ -179,8 +180,8 @@ class _SyncedLyricsViewState extends State<SyncedLyricsView> {
     }
     _scrollController.animateTo(
       clamped,
-      duration: const Duration(milliseconds: 420),
-      curve: Curves.easeOutCubic,
+      duration: AppMotion.slow,
+      curve: AppMotion.standard,
     );
   }
 
@@ -320,7 +321,8 @@ class _SyncedLyricsViewState extends State<SyncedLyricsView> {
                   _resumeFollowing();
                 }),
       child: AnimatedOpacity(
-        duration: const Duration(milliseconds: 280),
+        duration: AppMotion.slow,
+        curve: AppMotion.standard,
         opacity: opacity,
         child: Padding(
           padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 4),
@@ -328,8 +330,8 @@ class _SyncedLyricsViewState extends State<SyncedLyricsView> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               AnimatedDefaultTextStyle(
-                duration: const Duration(milliseconds: 280),
-                curve: Curves.easeOutCubic,
+                duration: AppMotion.slow,
+                curve: AppMotion.standard,
                 style: TextStyle(
                   color: AppColors.textPrimary,
                   fontSize: isActive ? 24 : 20,
@@ -345,7 +347,8 @@ class _SyncedLyricsViewState extends State<SyncedLyricsView> {
               if (line.translation != null && line.translation!.isNotEmpty) ...[
                 const SizedBox(height: 4),
                 AnimatedDefaultTextStyle(
-                  duration: const Duration(milliseconds: 280),
+                  duration: AppMotion.slow,
+                  curve: AppMotion.standard,
                   style: TextStyle(
                     color: isActive ? AppColors.accent : AppColors.textMuted,
                     fontSize: isActive ? 16 : 14,

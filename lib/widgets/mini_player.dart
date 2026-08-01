@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../theme/app_theme.dart';
 import '../theme/haptics.dart';
+import '../theme/motion.dart';
 import '../models/track.dart';
 import 'cached_cover_image.dart';
 import 'marquee_text.dart';
@@ -171,31 +172,39 @@ class MiniPlayer extends StatelessWidget {
                 ),
                 const SizedBox(width: 12),
                 Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      MarqueeText(
-                        text: track.title,
-                        style: const TextStyle(
-                          color: AppColors.textPrimary,
-                          fontSize: 15,
-                          height: 1.3,
-                          fontWeight: FontWeight.w600,
-                          letterSpacing: -0.25,
+                  child: AnimatedSwitcher(
+                    duration: AppMotion.fast,
+                    switchInCurve: AppMotion.standard,
+                    switchOutCurve: AppMotion.standardReverse,
+                    transitionBuilder: (child, animation) =>
+                        FadeTransition(opacity: animation, child: child),
+                    child: Column(
+                      key: ValueKey<String>(track.id),
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        MarqueeText(
+                          text: track.title,
+                          style: const TextStyle(
+                            color: AppColors.textPrimary,
+                            fontSize: 15,
+                            height: 1.3,
+                            fontWeight: FontWeight.w600,
+                            letterSpacing: -0.25,
+                          ),
                         ),
-                      ),
-                      const SizedBox(height: 2),
-                      MarqueeText(
-                        text: track.uploader,
-                        phase: 0.35,
-                        style: const TextStyle(
-                          color: AppColors.textMuted,
-                          fontSize: 12.5,
-                          height: 1.35,
+                        const SizedBox(height: 2),
+                        MarqueeText(
+                          text: track.uploader,
+                          phase: 0.35,
+                          style: const TextStyle(
+                            color: AppColors.textMuted,
+                            fontSize: 12.5,
+                            height: 1.35,
+                          ),
                         ),
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
                 ),
                 const SizedBox(width: 8),

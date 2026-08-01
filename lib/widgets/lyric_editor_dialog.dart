@@ -214,7 +214,6 @@ class _LyricEditorDialogState extends State<LyricEditorDialog>
       artistName: res.artistName,
       lines: adjustedLines,
     ));
-    Navigator.pop(context);
   }
 
   void _applyTapCalibration(double offset) {
@@ -237,7 +236,8 @@ class _LyricEditorDialogState extends State<LyricEditorDialog>
     });
   }
 
-  /// Parses the editor text and jumps to preview/calibration.
+  /// Parses the editor text and applies it directly, returning to the
+  /// player's lyrics view.
   void _confirmLrcEdit() {
     final text = _lrcController.text.trim();
     if (text.isEmpty) return;
@@ -257,17 +257,8 @@ class _LyricEditorDialogState extends State<LyricEditorDialog>
         (r) => _fingerprint(r.lines) == _fingerprint(result.lines));
     _pastedResults.add(result);
 
-    setState(() {
-      _inLrcEditor = false;
-      _previewingResult = result;
-      _previewOffset = 0.0;
-      _calibrating = false;
-      // Refresh list so the new paste is pinned.
-      final searchOnly = _searchResults
-          .where((r) => r.source != 'user' && r.source != 'current')
-          .toList();
-      _searchResults = [..._pinnedResults(), ...searchOnly];
-    });
+    // Apply directly and return to the player's lyrics view.
+    _applyLyricResult(result);
   }
 
   // ---------------------------------------------------------------------------
@@ -280,13 +271,16 @@ class _LyricEditorDialogState extends State<LyricEditorDialog>
     final newCover = _coverUrlController.text.trim();
 
     if (newTitle.isNotEmpty && widget.onUpdateMetadata != null) {
+      // The callback is responsible for closing the editor overlay.
       widget.onUpdateMetadata!(
         newTitle,
         newArtist.isNotEmpty ? newArtist : '未知UP主',
         newCover,
       );
+    } else {
+      // Nothing to save; just close the editor overlay.
+      widget.onClose?.call();
     }
-    Navigator.pop(context);
   }
 
   // ---------------------------------------------------------------------------
@@ -917,14 +911,18 @@ class _LyricEditorDialogState extends State<LyricEditorDialog>
         ),
         const SizedBox(height: 10),
 
-        // 校准 / 应用
+        // 校准 / 应用 — calibrating: single 完成 button that applies;
+        // otherwise: 校准 + 应用.
         Row(
           children: [
             Expanded(
               child: SizedBox(
                 height: 44,
                 child: OutlinedButton(
-                  onPressed: () => setState(() => _calibrating = !_calibrating),
+                  onPressed: _calibrating
+                      ? () => _applyLyricResult(_previewingResult!,
+                          offset: _previewOffset)
+                      : () => setState(() => _calibrating = true),
                   style: OutlinedButton.styleFrom(
                     foregroundColor: _calibrating ? AppColors.accent : AppColors.textMuted,
                     side: BorderSide(color: _calibrating ? AppColors.accent30 : Colors.white24),
@@ -936,27 +934,29 @@ class _LyricEditorDialogState extends State<LyricEditorDialog>
                 ),
               ),
             ),
-            const SizedBox(width: 12),
-            Expanded(
-              flex: 2,
-              child: SizedBox(
-                height: 44,
-                child: ElevatedButton(
-                  onPressed: () =>
-                      _applyLyricResult(_previewingResult!, offset: _previewOffset),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: AppColors.accent,
-                    shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12)),
+            if (!_calibrating) ...[
+              const SizedBox(width: 12),
+              Expanded(
+                flex: 2,
+                child: SizedBox(
+                  height: 44,
+                  child: ElevatedButton(
+                    onPressed: () =>
+                        _applyLyricResult(_previewingResult!, offset: _previewOffset),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AppColors.accent,
+                      shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12)),
+                    ),
+                    child: const Text('应用',
+                        style: TextStyle(
+                            color: AppColors.textPrimary,
+                            fontWeight: FontWeight.bold,
+                            fontSize: 15)),
                   ),
-                  child: const Text('应用',
-                      style: TextStyle(
-                          color: AppColors.textPrimary,
-                          fontWeight: FontWeight.bold,
-                          fontSize: 15)),
                 ),
               ),
-            ),
+            ],
           ],
         ),
       ],

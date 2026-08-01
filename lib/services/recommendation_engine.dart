@@ -120,8 +120,8 @@ class TasteProfile {
     }
     for (final e in termsByWeight) {
       if (seeds.length >= max) break;
-      // Single bigrams are too generic to search on their own; pair the
-      // strongest ones into one query instead.
+      // A single CJK bigram is a weak query, but the strongest ones are still
+      // the best title signal left once the UP主s are exhausted.
       if (e.key.length >= 2 && !seeds.contains(e.key)) seeds.add(e.key);
     }
     return seeds.take(max).toList();

@@ -35,14 +35,24 @@ class DatabaseService {
     Playlist(id: 'favorites', name: '收藏', tracks: [])
   ];
 
+  /// Cached documents directory. The path is fixed for the lifetime of the
+  /// app, yet every persist used to re-fetch it across the platform channel.
+  static String? _docsPath;
+  static Future<String> _docs() async {
+    final cached = _docsPath;
+    if (cached != null) return cached;
+    final docs = await getApplicationDocumentsDirectory();
+    return _docsPath = docs.path;
+  }
+
   static Future<void> _ensureLoaded() => _loadFuture ??= _load();
 
   static Future<void> _load() async {
     try {
-      final docs = await getApplicationDocumentsDirectory();
+      final dir = await _docs();
 
       // Load Downloaded Tracks
-      final downloadedFile = File('${docs.path}/bilibeat_downloaded.json');
+      final downloadedFile = File('$dir/bilibeat_downloaded.json');
       if (await downloadedFile.exists()) {
         final content = await downloadedFile.readAsString();
         final List<dynamic> list = jsonDecode(content);
@@ -54,7 +64,7 @@ class DatabaseService {
       }
 
       // Auto-discover any downloaded audio files on disk
-      final audioDir = Directory('${docs.path}/bilibeat_audio');
+      final audioDir = Directory('$dir/bilibeat_audio');
       if (await audioDir.exists()) {
         final List<FileSystemEntity> entities = await audioDir.list().toList();
         for (final entity in entities) {
@@ -82,7 +92,7 @@ class DatabaseService {
       }
 
       // Load Recently Played
-      final recentFile = File('${docs.path}/bilibeat_recently_played.json');
+      final recentFile = File('$dir/bilibeat_recently_played.json');
       if (await recentFile.exists()) {
         final content = await recentFile.readAsString();
         final List<dynamic> list = jsonDecode(content);
@@ -94,7 +104,7 @@ class DatabaseService {
       }
 
       // Load Playlists
-      final playlistFile = File('${docs.path}/bilibeat_playlists.json');
+      final playlistFile = File('$dir/bilibeat_playlists.json');
       if (await playlistFile.exists()) {
         final content = await playlistFile.readAsString();
         final List<dynamic> list = jsonDecode(content);
@@ -110,7 +120,7 @@ class DatabaseService {
         }
       }
       // Load Search History
-      final historyFile = File('${docs.path}/bilibeat_search_history.json');
+      final historyFile = File('$dir/bilibeat_search_history.json');
       if (await historyFile.exists()) {
         final content = await historyFile.readAsString();
         final List<dynamic> list = jsonDecode(content);
@@ -121,7 +131,7 @@ class DatabaseService {
 
       // Load the lyrics cache so a restart does not re-hit the network for
       // every track the user already has lyrics for.
-      final lyricsFile = File('${docs.path}/bilibeat_lyrics.json');
+      final lyricsFile = File('$dir/bilibeat_lyrics.json');
       if (await lyricsFile.exists()) {
         final content = await lyricsFile.readAsString();
         final Map<String, dynamic> map = jsonDecode(content);
@@ -141,8 +151,8 @@ class DatabaseService {
 
   static Future<void> _persistDownloaded() async {
     try {
-      final docs = await getApplicationDocumentsDirectory();
-      final downloadedFile = File('${docs.path}/bilibeat_downloaded.json');
+      final dir = await _docs();
+      final downloadedFile = File('$dir/bilibeat_downloaded.json');
       final list = _downloadedTracks.map((t) => t.toMap()).toList();
       await downloadedFile.writeAsString(jsonEncode(list));
     } catch (e) {
@@ -152,8 +162,8 @@ class DatabaseService {
 
   static Future<void> _persistRecentlyPlayed() async {
     try {
-      final docs = await getApplicationDocumentsDirectory();
-      final recentFile = File('${docs.path}/bilibeat_recently_played.json');
+      final dir = await _docs();
+      final recentFile = File('$dir/bilibeat_recently_played.json');
       final list = _recentlyPlayed.map((t) => t.toMap()).toList();
       await recentFile.writeAsString(jsonEncode(list));
     } catch (e) {
@@ -163,8 +173,8 @@ class DatabaseService {
 
   static Future<void> _persistPlaylists() async {
     try {
-      final docs = await getApplicationDocumentsDirectory();
-      final playlistFile = File('${docs.path}/bilibeat_playlists.json');
+      final dir = await _docs();
+      final playlistFile = File('$dir/bilibeat_playlists.json');
       final list = _playlists.map((p) {
         final map = p.toMap();
         map['tracks'] = p.tracks.map((t) => t.toMap()).toList();
@@ -179,8 +189,8 @@ class DatabaseService {
 
   static Future<void> _persistSearchHistory() async {
     try {
-      final docs = await getApplicationDocumentsDirectory();
-      final historyFile = File('${docs.path}/bilibeat_search_history.json');
+      final dir = await _docs();
+      final historyFile = File('$dir/bilibeat_search_history.json');
       await historyFile.writeAsString(jsonEncode(_searchHistory));
     } catch (e) {
       debugPrint('DatabaseService _persistSearchHistory error: $e');
@@ -441,8 +451,8 @@ class DatabaseService {
 
   static Future<void> _persistLyrics() async {
     try {
-      final docs = await getApplicationDocumentsDirectory();
-      final file = File('${docs.path}/bilibeat_lyrics.json');
+      final dir = await _docs();
+      final file = File('$dir/bilibeat_lyrics.json');
       final map = _lyricsCache.map((k, v) => MapEntry(k, v.toMap()));
       await file.writeAsString(jsonEncode(map));
     } catch (e) {

@@ -5,6 +5,7 @@ import 'package:crypto/crypto.dart';
 import 'package:flutter/material.dart';
 import 'package:path_provider/path_provider.dart';
 import '../theme/app_theme.dart';
+import '../theme/motion.dart';
 
 /// A cover image that downscales on decode and disk-caches a CDN-resized
 /// thumbnail.
@@ -226,7 +227,8 @@ class _CachedCoverImageState extends State<CachedCoverImage> {
     }
 
     return AnimatedSwitcher(
-      duration: const Duration(milliseconds: 220),
+      duration: AppMotion.fast,
+      switchInCurve: AppMotion.standard,
       child: SizedBox(
         key: ValueKey(_status),
         width: widget.width,

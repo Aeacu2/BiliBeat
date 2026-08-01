@@ -228,13 +228,17 @@ class LyricsEngine {
                 final transLines = parseLrc(rawTrans);
 
                 if (transLines.isNotEmpty) {
-                  for (final line in lines) {
+                  // Index loop, not `lines.indexOf(line)`: indexOf is O(n) per
+                  // line (and relied on instance identity), making the merge
+                  // O(n^2) over the lyric count.
+                  for (var i = 0; i < lines.length; i++) {
+                    final line = lines[i];
                     final matchTrans = transLines.firstWhere(
                       (t) => (t.time - line.time).abs() < 0.5,
                       orElse: () => LyricLine(time: -1, text: ''),
                     );
                     if (matchTrans.time >= 0) {
-                      lines[lines.indexOf(line)] = LyricLine(
+                      lines[i] = LyricLine(
                         time: line.time,
                         text: line.text,
                         translation: matchTrans.text,

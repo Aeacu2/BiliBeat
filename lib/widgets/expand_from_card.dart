@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../theme/app_theme.dart';
+import '../theme/motion.dart';
 import 'mini_player.dart';
 
 /// Route transition in which the docked card *becomes* the page.
@@ -39,8 +40,8 @@ class _ExpandFromCardState extends State<ExpandFromCard> {
 
   CurvedAnimation _build() => CurvedAnimation(
         parent: widget.animation,
-        curve: Curves.easeOutCubic,
-        reverseCurve: Curves.easeInCubic,
+        curve: AppMotion.standard,
+        reverseCurve: AppMotion.standardReverse,
       );
 
   @override

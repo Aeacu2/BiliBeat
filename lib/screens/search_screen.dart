@@ -361,15 +361,10 @@ class _SearchScreenState extends State<SearchScreen> {
               Icon(Icons.auto_awesome, color: AppColors.accent, size: 20),
               SizedBox(width: 8),
               Text(
-                '为您推荐',
+                '推荐',
                 style: TextStyle(color: AppColors.textPrimary, fontSize: 18, fontWeight: FontWeight.bold),
               ),
             ],
-          ),
-          const SizedBox(height: 2),
-          const Text(
-            '根据你的收藏、播放与搜索',
-            style: TextStyle(color: AppColors.textFaint, fontSize: 12),
           ),
           const SizedBox(height: 12),
 

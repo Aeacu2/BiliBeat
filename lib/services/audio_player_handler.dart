@@ -314,6 +314,11 @@ class BiliBeatAudioHandler extends BaseAudioHandler with SeekHandler {
     final playerIndex = index - _queueBaseIndex;
     if (playerIndex >= 0 && playerIndex < _queueSource.length) {
       _currentIndex = index;
+      // Broadcast immediately: the currentIndexStream listener's
+      // `logical == _currentIndex` guard would swallow the echo from the
+      // seek below, so without this the UI never learns the track changed.
+      _positionController.add(Duration.zero);
+      _onActiveTrackChanged(_playlist[index]);
       await _player.seek(Duration.zero, index: playerIndex);
       if (!_isPlaying) await _player.play();
       return;

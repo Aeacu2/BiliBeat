@@ -10,6 +10,7 @@ import '../services/audio_download_service.dart';
 import '../services/download_manager.dart';
 import '../theme/app_theme.dart';
 import '../theme/haptics.dart';
+import '../theme/motion.dart';
 import 'ambient_background.dart';
 import 'cached_cover_image.dart';
 import 'marquee_text.dart';
@@ -228,9 +229,9 @@ class _NowPlayingSheetState extends State<NowPlayingSheet> {
             children: [
               Expanded(
                 child: AnimatedSwitcher(
-                  duration: const Duration(milliseconds: 360),
-                  switchInCurve: Curves.easeOutCubic,
-                  switchOutCurve: Curves.easeInCubic,
+                  duration: AppMotion.base,
+                  switchInCurve: AppMotion.standard,
+                  switchOutCurve: AppMotion.standardReverse,
                   transitionBuilder: (child, animation) {
                     // Editor slides up from below; player content slides
                     // down when editor appears and back up when it leaves.
@@ -262,6 +263,7 @@ class _NowPlayingSheetState extends State<NowPlayingSheet> {
                               }
                               await DatabaseService.cacheLyrics(
                                   _displayTrack.id, result);
+                              setState(() => _showLyrics = true);
                               _closeEditor();
                             },
                             onUpdateMetadata:
@@ -288,9 +290,9 @@ class _NowPlayingSheetState extends State<NowPlayingSheet> {
                                   padding: const EdgeInsets.symmetric(
                                       horizontal: 24, vertical: 8),
                                   child: AnimatedSwitcher(
-                                    duration: const Duration(milliseconds: 300),
-                                    switchInCurve: Curves.easeOutCubic,
-                                    switchOutCurve: Curves.easeInCubic,
+                                    duration: AppMotion.base,
+                                    switchInCurve: AppMotion.standard,
+                                    switchOutCurve: AppMotion.standardReverse,
                                     transitionBuilder: (child, animation) {
                                       return FadeTransition(
                                         opacity: animation,
@@ -395,8 +397,8 @@ class _NowPlayingSheetState extends State<NowPlayingSheet> {
         return Center(
           child: AnimatedScale(
             scale: (_isActive && _isPlaying) ? 1.0 : 0.9,
-            duration: const Duration(milliseconds: 450),
-            curve: Curves.easeOutCubic,
+            duration: AppMotion.slow,
+            curve: AppMotion.springBouncy,
             child: Container(
               width: size,
               height: size,
@@ -611,7 +613,7 @@ class _NowPlayingSheetState extends State<NowPlayingSheet> {
       onPressed: _playOrPause,
       filled: true,
       icon: AnimatedSwitcher(
-        duration: const Duration(milliseconds: 180),
+        duration: AppMotion.instant,
         transitionBuilder: (child, animation) =>
             ScaleTransition(scale: animation, child: child),
         child: Icon(

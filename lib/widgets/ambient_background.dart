@@ -6,6 +6,7 @@ import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 
 import '../theme/app_theme.dart';
+import '../theme/motion.dart';
 import 'cached_cover_image.dart';
 
 /// Full-screen ambient backdrop whose glow is derived from the current cover
@@ -188,8 +189,8 @@ class _AmbientBackgroundState extends State<AmbientBackground> {
           child: RepaintBoundary(
             child: TweenAnimationBuilder<Color?>(
               tween: ColorTween(begin: _fallback, end: _color),
-              duration: const Duration(milliseconds: 650),
-              curve: Curves.easeOutCubic,
+              duration: AppMotion.ambient,
+              curve: AppMotion.standard,
               builder: (context, animated, _) {
                 final c = animated ?? _fallback;
                 return DecoratedBox(

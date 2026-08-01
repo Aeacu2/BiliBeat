@@ -82,7 +82,7 @@ class _PlaylistDetailSheetState extends State<PlaylistDetailSheet> {
   @override
   void initState() {
     super.initState();
-    _currentPlaylist = widget.playlist;
+    _currentPlaylist = _detached(widget.playlist);
     _dlIds =
         DownloadManager.instance.activeTasks.map((t) => t.track.id).toSet();
     // Metadata can be edited from the now-playing page stacked on top of this
@@ -105,6 +105,18 @@ class _PlaylistDetailSheetState extends State<PlaylistDetailSheet> {
     super.dispose();
   }
 
+  /// A copy of [pl] whose track list is detached from the database's live
+  /// list. Optimistic edits (reorder, remove) mutate this private copy only;
+  /// the store methods own the real mutation and persist. Sharing the store's
+  /// list meant an optimistic reorder ran twice — once here, once in the store
+  /// — corrupting the order and leaving the UI and disk disagreeing.
+  Playlist _detached(Playlist pl) => Playlist(
+        id: pl.id,
+        name: pl.name,
+        coverUrl: pl.coverUrl,
+        tracks: pl.tracks,
+      );
+
   Future<void> _refresh() async {
     // 本地 is a virtual playlist with no database row, so it is rebuilt from
     // the download library rather than looked up by id.
@@ -117,10 +129,10 @@ class _PlaylistDetailSheetState extends State<PlaylistDetailSheet> {
       );
     } else {
       final playlists = await DatabaseService.getPlaylists();
-      updated = playlists.firstWhere(
+      updated = _detached(playlists.firstWhere(
         (p) => p.id == _currentPlaylist.id,
         orElse: () => _currentPlaylist,
-      );
+      ));
     }
     if (mounted) setState(() => _currentPlaylist = updated);
     widget.onPlaylistUpdated?.call();

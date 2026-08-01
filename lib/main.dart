@@ -11,6 +11,7 @@ import 'services/audio_player_handler.dart';
 import 'services/audio_download_service.dart';
 import 'theme/app_theme.dart';
 import 'theme/haptics.dart';
+import 'theme/motion.dart';
 import 'widgets/ambient_background.dart';
 import 'widgets/expand_from_card.dart';
 import 'widgets/mini_player.dart';
@@ -267,8 +268,8 @@ class _MainLayoutState extends State<MainLayout> {
 
     Navigator.of(context).push(
       PageRouteBuilder(
-        transitionDuration: const Duration(milliseconds: 420),
-        reverseTransitionDuration: const Duration(milliseconds: 340),
+        transitionDuration: AppMotion.slow,
+        reverseTransitionDuration: AppMotion.base,
         pageBuilder: (context, animation, secondaryAnimation) {
           return NowPlayingSheet(
             handler: _audioHandler,
@@ -292,8 +293,8 @@ class _MainLayoutState extends State<MainLayout> {
                 end: Offset.zero,
               ).animate(CurvedAnimation(
                 parent: animation,
-                curve: Curves.easeOutCubic,
-                reverseCurve: Curves.easeInCubic,
+                curve: AppMotion.standard,
+                reverseCurve: AppMotion.standardReverse,
               )),
               child: child,
             );
@@ -317,8 +318,8 @@ class _MainLayoutState extends State<MainLayout> {
         setState(() => _activeTabIndex = index);
         _pageController.animateToPage(
           index,
-          duration: const Duration(milliseconds: 300),
-          curve: Curves.easeInOut,
+          duration: AppMotion.base,
+          curve: AppMotion.emphasized,
         );
       },
       child: Padding(
@@ -480,8 +481,8 @@ class _MainLayoutState extends State<MainLayout> {
                 child: TweenAnimationBuilder<double>(
                   key: ValueKey(_activePlaylistSheet!.id),
                   tween: Tween(begin: 0.0, end: 1.0),
-                  duration: const Duration(milliseconds: 280),
-                  curve: Curves.easeOutCubic,
+                  duration: AppMotion.fast,
+                  curve: AppMotion.standard,
                   builder: (context, t, child) => Opacity(
                     opacity: t,
                     child: Transform.translate(
