@@ -64,8 +64,6 @@ class _LyricEditorDialogState extends State<LyricEditorDialog>
 
   final GlobalKey _tabRowKey = GlobalKey();
   final List<GlobalKey> _tabKeys = [GlobalKey(), GlobalKey()];
-  double _indicatorLeft = 0;
-  double _indicatorWidth = 0;
 
   @override
   void initState() {
@@ -78,14 +76,12 @@ class _LyricEditorDialogState extends State<LyricEditorDialog>
 
     _tabController.addListener(() {
       setState(() {});
-      WidgetsBinding.instance.addPostFrameCallback((_) => _updateIndicator());
     });
     _titleController.addListener(() => setState(() {}));
     _artistController.addListener(() => setState(() {}));
     _searchController.text = '${widget.artistName} ${widget.songTitle}'.trim();
     _searchResults = _pinnedResults();
     _performSearch();
-    WidgetsBinding.instance.addPostFrameCallback((_) => _updateIndicator());
   }
 
   @override
@@ -326,28 +322,47 @@ class _LyricEditorDialogState extends State<LyricEditorDialog>
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           const SizedBox(height: 2),
-          // Tabs — exact replica of home screen's 聆听/搜索
+          // Tabs — animation-driven indicator that follows drag in real time
           Row(
             children: [
               Expanded(
                 child: Stack(
                   key: _tabRowKey,
                   children: [
-                    AnimatedPositioned(
-                      duration: const Duration(milliseconds: 260),
-                      curve: Curves.easeOutCubic,
-                      left: _indicatorLeft,
-                      width: _indicatorWidth,
-                      top: 0,
-                      bottom: 0,
-                      child: Container(
-                        decoration: BoxDecoration(
-                          color: AppColors.accent14,
-                          borderRadius:
-                              BorderRadius.circular(AppRadius.pill),
-                          border: Border.all(color: AppColors.accent30),
-                        ),
-                      ),
+                    // Animated indicator driven by TabController.animation
+                    AnimatedBuilder(
+                      animation: _tabController.animation!,
+                      builder: (context, _) {
+                        final rowBox = _tabRowKey.currentContext
+                            ?.findRenderObject() as RenderBox?;
+                        final box0 = _tabKeys[0].currentContext
+                            ?.findRenderObject() as RenderBox?;
+                        final box1 = _tabKeys[1].currentContext
+                            ?.findRenderObject() as RenderBox?;
+                        if (rowBox == null || box0 == null || box1 == null) {
+                          return const SizedBox.shrink();
+                        }
+                        final off0 = box0.localToGlobal(Offset.zero, ancestor: rowBox);
+                        final off1 = box1.localToGlobal(Offset.zero, ancestor: rowBox);
+                        final t = _tabController.animation!.value;
+                        final left = off0.dx + (off1.dx - off0.dx) * t;
+                        final width = box0.size.width +
+                            (box1.size.width - box0.size.width) * t;
+                        return Positioned(
+                          left: left,
+                          width: width,
+                          top: 0,
+                          bottom: 0,
+                          child: Container(
+                            decoration: BoxDecoration(
+                              color: AppColors.accent14,
+                              borderRadius:
+                                  BorderRadius.circular(AppRadius.pill),
+                              border: Border.all(color: AppColors.accent30),
+                            ),
+                          ),
+                        );
+                      },
                     ),
                     Row(
                       children: [
@@ -384,19 +399,6 @@ class _LyricEditorDialogState extends State<LyricEditorDialog>
   // Segment tab helper
   // ---------------------------------------------------------------------------
 
-  void _updateIndicator() {
-    final rowBox =
-        _tabRowKey.currentContext?.findRenderObject() as RenderBox?;
-    final tabBox = _tabKeys[_tabController.index].currentContext
-        ?.findRenderObject() as RenderBox?;
-    if (rowBox == null || tabBox == null || !mounted) return;
-    final offset = tabBox.localToGlobal(Offset.zero, ancestor: rowBox);
-    setState(() {
-      _indicatorLeft = offset.dx;
-      _indicatorWidth = tabBox.size.width;
-    });
-  }
-
   Widget _tabItem(int index, String label) {
     final active = _tabController.index == index;
     return GestureDetector(
@@ -405,7 +407,6 @@ class _LyricEditorDialogState extends State<LyricEditorDialog>
       onTap: () {
         Haptics.selection();
         _tabController.animateTo(index);
-        WidgetsBinding.instance.addPostFrameCallback((_) => _updateIndicator());
       },
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 7),
@@ -434,37 +435,43 @@ class _LyricEditorDialogState extends State<LyricEditorDialog>
             child: Column(
               children: [
                 const SizedBox(height: 8),
-                // Cover art — tap to change
-                Center(
-                  child: Stack(
-                    alignment: Alignment.bottomRight,
-                    children: [
-                      GestureDetector(
-                        onTap: _pickLocalCoverImage,
-                        child: ClipRRect(
-                          borderRadius: BorderRadius.circular(20),
-                          child: CachedCoverImage(
-                            url: _coverUrlController.text.trim(),
-                            width: 140,
-                            height: 140,
+                // Cover art — tap to change, sized to match player page
+                LayoutBuilder(
+                  builder: (context, constraints) {
+                    final availableWidth = constraints.maxWidth;
+                    final coverSize = (availableWidth * 0.62).clamp(140.0, 320.0);
+                    return Center(
+                      child: Stack(
+                        alignment: Alignment.bottomRight,
+                        children: [
+                          GestureDetector(
+                            onTap: _pickLocalCoverImage,
+                            child: ClipRRect(
+                              borderRadius: BorderRadius.circular(AppRadius.xl),
+                              child: CachedCoverImage(
+                                url: _coverUrlController.text.trim(),
+                                width: coverSize,
+                                height: coverSize,
+                              ),
+                            ),
                           ),
-                        ),
-                      ),
-                      GestureDetector(
-                        onTap: _pickLocalCoverImage,
-                        child: Container(
-                          padding: const EdgeInsets.all(6),
-                          decoration: BoxDecoration(
-                            color: AppColors.backgroundElevated,
-                            shape: BoxShape.circle,
-                            border: Border.all(color: AppColors.hairlineStrong),
+                          GestureDetector(
+                            onTap: _pickLocalCoverImage,
+                            child: Container(
+                              padding: const EdgeInsets.all(6),
+                              decoration: BoxDecoration(
+                                color: AppColors.backgroundElevated,
+                                shape: BoxShape.circle,
+                                border: Border.all(color: AppColors.hairlineStrong),
+                              ),
+                              child: const Icon(Icons.image_outlined,
+                                  color: AppColors.textSecondary, size: 18),
+                            ),
                           ),
-                          child: const Icon(Icons.image_outlined,
-                              color: AppColors.textSecondary, size: 18),
-                        ),
+                        ],
                       ),
-                    ],
-                  ),
+                    );
+                  },
                 ),
                 const SizedBox(height: 24),
                 _infoField(_titleController, '歌名'),

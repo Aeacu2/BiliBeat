@@ -226,70 +226,110 @@ class _NowPlayingSheetState extends State<NowPlayingSheet> {
           minimum: const EdgeInsets.only(top: 16),
           child: Column(
             children: [
-              if (_showEditor)
-                Expanded(
-                  child: LyricEditorDialog(
-                    songTitle: _displayTrack.title,
-                    artistName: _displayTrack.uploader,
-                    coverUrl: _displayTrack.coverUrl,
-                    positionNotifier:
-                        _isActive ? widget.positionNotifier : null,
-                    initialTabIndex: _editorLyricsTab ? 1 : 0,
-                    currentLines:
-                        _isActive ? widget.lyricsNotifier.value : const [],
-                    onClose: _closeEditor,
-                    onApplyLyrics: (result) async {
-                      if (_isActive) {
-                        widget.lyricsNotifier.value = result.lines;
-                      }
-                      await DatabaseService.cacheLyrics(
-                          _displayTrack.id, result);
-                      _closeEditor();
-                    },
-                    onUpdateMetadata:
-                        (newTitle, newArtist, newCoverUrl) async {
-                      final updated = _displayTrack.copyWith(
-                        title: newTitle,
-                        uploader: newArtist,
-                        coverUrl: newCoverUrl,
-                      );
-                      setState(() => _displayTrack = updated);
-                      await DatabaseService.updateTrackMetadata(updated);
-                      widget.handler.updateCurrentTrackMetadata(updated);
-                      _closeEditor();
-                    },
-                  ),
-                )
-              else ...[
-                _topBar(),
-                Expanded(
-                  child: Padding(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
-                    child: AnimatedSwitcher(
-                      duration: const Duration(milliseconds: 260),
-                      child: _showLyrics && _isActive
-                          ? ValueListenableBuilder<List<LyricLine>>(
-                              key: const ValueKey('lyrics'),
-                              valueListenable: widget.lyricsNotifier,
-                              builder: (context, lines, _) {
-                                return SyncedLyricsView(
-                                  lines: lines,
-                                  positionNotifier: widget.positionNotifier,
-                                  onSeek: (sec) => widget.handler.seek(
-                                    Duration(
-                                        milliseconds: (sec * 1000).toInt()),
+              Expanded(
+                child: AnimatedSwitcher(
+                  duration: const Duration(milliseconds: 360),
+                  switchInCurve: Curves.easeOutCubic,
+                  switchOutCurve: Curves.easeInCubic,
+                  transitionBuilder: (child, animation) {
+                    // Editor slides up from below; player content slides
+                    // down when editor appears and back up when it leaves.
+                    final isEditor = child.key == const ValueKey('editor');
+                    final offset = isEditor
+                        ? Tween<Offset>(begin: const Offset(0, 0.15), end: Offset.zero)
+                        : Tween<Offset>(begin: const Offset(0, -0.08), end: Offset.zero);
+                    return SlideTransition(
+                      position: offset.animate(animation),
+                      child: FadeTransition(opacity: animation, child: child),
+                    );
+                  },
+                  child: _showEditor
+                      ? KeyedSubtree(
+                          key: const ValueKey('editor'),
+                          child: LyricEditorDialog(
+                            songTitle: _displayTrack.title,
+                            artistName: _displayTrack.uploader,
+                            coverUrl: _displayTrack.coverUrl,
+                            positionNotifier:
+                                _isActive ? widget.positionNotifier : null,
+                            initialTabIndex: _editorLyricsTab ? 1 : 0,
+                            currentLines:
+                                _isActive ? widget.lyricsNotifier.value : const [],
+                            onClose: _closeEditor,
+                            onApplyLyrics: (result) async {
+                              if (_isActive) {
+                                widget.lyricsNotifier.value = result.lines;
+                              }
+                              await DatabaseService.cacheLyrics(
+                                  _displayTrack.id, result);
+                              _closeEditor();
+                            },
+                            onUpdateMetadata:
+                                (newTitle, newArtist, newCoverUrl) async {
+                              final updated = _displayTrack.copyWith(
+                                title: newTitle,
+                                uploader: newArtist,
+                                coverUrl: newCoverUrl,
+                              );
+                              setState(() => _displayTrack = updated);
+                              await DatabaseService.updateTrackMetadata(updated);
+                              widget.handler.updateCurrentTrackMetadata(updated);
+                              _closeEditor();
+                            },
+                          ),
+                        )
+                      : KeyedSubtree(
+                          key: const ValueKey('player'),
+                          child: Column(
+                            children: [
+                              _topBar(),
+                              Expanded(
+                                child: Padding(
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: 24, vertical: 8),
+                                  child: AnimatedSwitcher(
+                                    duration: const Duration(milliseconds: 300),
+                                    switchInCurve: Curves.easeOutCubic,
+                                    switchOutCurve: Curves.easeInCubic,
+                                    transitionBuilder: (child, animation) {
+                                      return FadeTransition(
+                                        opacity: animation,
+                                        child: ScaleTransition(
+                                          scale: Tween<double>(begin: 0.92, end: 1.0)
+                                              .animate(animation),
+                                          child: child,
+                                        ),
+                                      );
+                                    },
+                                    child: _showLyrics && _isActive
+                                        ? ValueListenableBuilder<List<LyricLine>>(
+                                            key: const ValueKey('lyrics'),
+                                            valueListenable: widget.lyricsNotifier,
+                                            builder: (context, lines, _) {
+                                              return SyncedLyricsView(
+                                                lines: lines,
+                                                positionNotifier:
+                                                    widget.positionNotifier,
+                                                onSeek: (sec) =>
+                                                    widget.handler.seek(
+                                                  Duration(
+                                                      milliseconds:
+                                                          (sec * 1000).toInt()),
+                                                ),
+                                                onOpenEditor: () =>
+                                                    _openEditor(lyricsTab: true),
+                                              );
+                                            },
+                                          )
+                                        : _albumArt(),
                                   ),
-                                  onOpenEditor: () =>
-                                      _openEditor(lyricsTab: true),
-                                );
-                              },
-                            )
-                          : _albumArt(),
-                    ),
-                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
                 ),
-              ],
+              ),
               _bottomPanel(),
             ],
           ),
@@ -418,7 +458,7 @@ class _NowPlayingSheetState extends State<NowPlayingSheet> {
                   icon: const Icon(Icons.edit_note_rounded,
                       color: AppColors.textSecondary, size: 24),
                   tooltip: '编辑',
-                  onPressed: _openEditor,
+                  onPressed: () => _openEditor(lyricsTab: _showLyrics),
                 ),
               ],
             ),

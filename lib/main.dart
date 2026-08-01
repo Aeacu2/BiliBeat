@@ -86,8 +86,6 @@ class _MainLayoutState extends State<MainLayout> {
   int _activeTabIndex = 0;
   final GlobalKey _tabRowKey = GlobalKey();
   final List<GlobalKey> _tabKeys = [GlobalKey(), GlobalKey()];
-  double _indicatorLeft = 0;
-  double _indicatorWidth = 0;
   late final BiliBeatAudioHandler _audioHandler = audioHandlerInstance;
 
   /// Player state is held in notifiers, not State fields. It changes on every
@@ -119,7 +117,6 @@ class _MainLayoutState extends State<MainLayout> {
     super.initState();
     _initListeners();
     _loadHistory();
-    WidgetsBinding.instance.addPostFrameCallback((_) => _updateIndicator());
   }
 
   @override
@@ -323,7 +320,6 @@ class _MainLayoutState extends State<MainLayout> {
           duration: const Duration(milliseconds: 300),
           curve: Curves.easeInOut,
         );
-        WidgetsBinding.instance.addPostFrameCallback((_) => _updateIndicator());
       },
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 7),
@@ -340,17 +336,6 @@ class _MainLayoutState extends State<MainLayout> {
     );
   }
 
-  void _updateIndicator() {
-    final rowBox = _tabRowKey.currentContext?.findRenderObject() as RenderBox?;
-    final tabBox = _tabKeys[_activeTabIndex].currentContext?.findRenderObject()
-        as RenderBox?;
-    if (rowBox == null || tabBox == null || !mounted) return;
-    final offset = tabBox.localToGlobal(Offset.zero, ancestor: rowBox);
-    setState(() {
-      _indicatorLeft = offset.dx;
-      _indicatorWidth = tabBox.size.width;
-    });
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -386,22 +371,44 @@ class _MainLayoutState extends State<MainLayout> {
                           child: Stack(
                             key: _tabRowKey,
                             children: [
-                              AnimatedPositioned(
-                                duration: const Duration(milliseconds: 260),
-                                curve: Curves.easeOutCubic,
-                                left: _indicatorLeft,
-                                width: _indicatorWidth,
-                                top: 0,
-                                bottom: 0,
-                                child: Container(
-                                  decoration: BoxDecoration(
-                                    color: AppColors.accent14,
-                                    borderRadius:
-                                        BorderRadius.circular(AppRadius.pill),
-                                    border:
-                                        Border.all(color: AppColors.accent30),
-                                  ),
-                                ),
+                              AnimatedBuilder(
+                                animation: _pageController,
+                                builder: (context, _) {
+                                  final rowBox = _tabRowKey.currentContext
+                                      ?.findRenderObject() as RenderBox?;
+                                  final box0 = _tabKeys[0].currentContext
+                                      ?.findRenderObject() as RenderBox?;
+                                  final box1 = _tabKeys[1].currentContext
+                                      ?.findRenderObject() as RenderBox?;
+                                  if (rowBox == null || box0 == null || box1 == null) {
+                                    return const SizedBox.shrink();
+                                  }
+                                  final off0 = box0.localToGlobal(Offset.zero, ancestor: rowBox);
+                                  final off1 = box1.localToGlobal(Offset.zero, ancestor: rowBox);
+                                  // PageController.page is null before the first frame
+                                  final t = (_pageController.hasClients
+                                      ? (_pageController.page ?? _activeTabIndex.toDouble())
+                                      : _activeTabIndex.toDouble())
+                                      .clamp(0.0, 1.0);
+                                  final left = off0.dx + (off1.dx - off0.dx) * t;
+                                  final width = box0.size.width +
+                                      (box1.size.width - box0.size.width) * t;
+                                  return Positioned(
+                                    left: left,
+                                    width: width,
+                                    top: 0,
+                                    bottom: 0,
+                                    child: Container(
+                                      decoration: BoxDecoration(
+                                        color: AppColors.accent14,
+                                        borderRadius:
+                                            BorderRadius.circular(AppRadius.pill),
+                                        border:
+                                            Border.all(color: AppColors.accent30),
+                                      ),
+                                    ),
+                                  );
+                                },
                               ),
                               Row(
                                 children: [
@@ -434,8 +441,6 @@ class _MainLayoutState extends State<MainLayout> {
                       setState(() {
                         _activeTabIndex = index;
                       });
-                      WidgetsBinding.instance.addPostFrameCallback(
-                          (_) => _updateIndicator());
                     },
                     children: [
                       RepaintBoundary(
