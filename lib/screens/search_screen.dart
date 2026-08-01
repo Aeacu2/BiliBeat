@@ -49,11 +49,28 @@ class _SearchScreenState extends State<SearchScreen> {
   /// of a later one.
   int _searchToken = 0;
 
+  // --- Pagination / infinite scroll ----------------------------------------
+  final ScrollController _scrollController = ScrollController();
+
+  /// Guards re-entrant "load more" fetches.
+  bool _isLoadingMore = false;
+
+  // Search pagination.
+  int _searchPage = 1;
+  final Set<String> _seenSearchIds = {};
+  bool _searchReachedEnd = false;
+
+  // Recommendation pagination.
+  int _recPage = 0;
+  final Set<String> _seenRecIds = {};
+  bool _recReachedEnd = false;
+
   @override
   void initState() {
     super.initState();
     _focusNode.addListener(_onFocusChange);
     _searchController.addListener(_onTextChange);
+    _scrollController.addListener(_onScroll);
     _loadSearchHistory();
   }
 
@@ -70,6 +87,7 @@ class _SearchScreenState extends State<SearchScreen> {
     _searchController.removeListener(_onTextChange);
     _focusNode.dispose();
     _searchController.dispose();
+    _scrollController.dispose();
     super.dispose();
   }
 
@@ -108,15 +126,22 @@ class _SearchScreenState extends State<SearchScreen> {
       return;
     }
     if (mounted) setState(() => _isLoadingRecommended = true);
+    // A fresh recommendation pass restarts pagination from page 1.
+    _recPage = 1;
+    _seenRecIds.clear();
+    _recReachedEnd = false;
     try {
       final tracks = await RecommendationEngine.recommend();
-      if (mounted) {
-        setState(() {
-          _recommendedTracks = tracks;
-          _isLoadingRecommended = false;
-          _recommendationsStale = false;
-        });
+      if (!mounted) return;
+      for (final t in tracks) {
+        _seenRecIds.add(t.id);
       }
+      setState(() {
+        _recommendedTracks = tracks;
+        _isLoadingRecommended = false;
+        _recommendationsStale = false;
+        if (tracks.isEmpty) _recReachedEnd = true;
+      });
     } catch (_) {
       if (mounted) {
         setState(() => _isLoadingRecommended = false);
@@ -164,19 +189,133 @@ class _SearchScreenState extends State<SearchScreen> {
       _isLoading = true;
       _hasSearched = true;
       _lastQuery = trimmed;
+      // A new query restarts pagination from page 1.
+      _searchResults = const [];
+      _seenSearchIds.clear();
+      _searchPage = 1;
+      _searchReachedEnd = false;
     });
 
     final token = ++_searchToken;
     final results = await BilibiliSdk.search(trimmed);
     if (mounted && token == _searchToken) {
+      for (final t in results) {
+        _seenSearchIds.add(t.id);
+      }
       setState(() {
         _searchResults = results;
         _isLoading = false;
         // This search is new evidence about taste; fold it in next time the
         // recommendation view is shown.
         _recommendationsStale = true;
+        if (results.isEmpty) _searchReachedEnd = true;
       });
     }
+  }
+
+  // --------------------------------------------------------------------------
+  // Infinite scroll + pull-to-refresh. Both append the *next* batch of tracks;
+  // a refresh never re-serves an earlier batch (seen ids are excluded).
+  // --------------------------------------------------------------------------
+
+  void _onScroll() {
+    final pos = _scrollController.position;
+    // Content that fits on screen has nothing to scroll towards — leave that
+    // case to pull-to-refresh instead of auto-paging on every overscroll.
+    if (pos.maxScrollExtent <= 0) return;
+    if (pos.pixels >= pos.maxScrollExtent - 240) _loadMore();
+  }
+
+  Future<void> _onRefresh() async {
+    if (_hasSearched) {
+      _searchReachedEnd = false;
+      await _loadMoreSearch();
+    } else if (_canRecommend) {
+      _recReachedEnd = false;
+      await _loadMoreRecommendations();
+    }
+  }
+
+  Future<void> _loadMore() async {
+    if (_isLoadingMore || _isLoading || _isLoadingRecommended) return;
+    if (_hasSearched) {
+      if (!_searchReachedEnd) await _loadMoreSearch();
+    } else if (_canRecommend) {
+      if (!_recReachedEnd) await _loadMoreRecommendations();
+    }
+  }
+
+  Future<void> _loadMoreSearch() async {
+    if (_lastQuery.isEmpty || _isLoadingMore) return;
+    setState(() => _isLoadingMore = true);
+    final page = _searchPage + 1;
+    final results = await BilibiliSdk.search(_lastQuery, page: page);
+    if (!mounted) return;
+    final fresh = <Track>[];
+    for (final t in results) {
+      if (_seenSearchIds.add(t.id)) fresh.add(t);
+    }
+    setState(() {
+      _searchResults = [..._searchResults, ...fresh];
+      _searchPage = page;
+      _isLoadingMore = false;
+      if (fresh.isEmpty) _searchReachedEnd = true;
+    });
+  }
+
+  Future<void> _loadMoreRecommendations() async {
+    if (_isLoadingMore) return;
+    setState(() => _isLoadingMore = true);
+    final page = _recPage + 1;
+    List<Track> tracks;
+    try {
+      tracks =
+          await RecommendationEngine.recommend(page: page, excludeIds: _seenRecIds);
+    } catch (_) {
+      tracks = const [];
+    }
+    if (!mounted) return;
+    final fresh = <Track>[];
+    for (final t in tracks) {
+      if (_seenRecIds.add(t.id)) fresh.add(t);
+    }
+    setState(() {
+      _recommendedTracks = [..._recommendedTracks, ...fresh];
+      _recPage = page;
+      _isLoadingMore = false;
+      if (fresh.isEmpty) _recReachedEnd = true;
+    });
+  }
+
+  /// Bottom-of-list feedback: a spinner while the next batch loads, or a quiet
+  /// "没有更多了" once a fetch came back with nothing new.
+  Widget _loadMoreFooter() {
+    final reachedEnd = _hasSearched ? _searchReachedEnd : _recReachedEnd;
+    final hasContent =
+        _hasSearched ? _searchResults.isNotEmpty : _recommendedTracks.isNotEmpty;
+    if (_isLoadingMore) {
+      return const Padding(
+        padding: EdgeInsets.symmetric(vertical: 22),
+        child: Center(
+          child: SizedBox(
+            width: 22,
+            height: 22,
+            child: CircularProgressIndicator(
+                strokeWidth: 2.5, color: AppColors.accent),
+          ),
+        ),
+      );
+    }
+    if (reachedEnd && hasContent) {
+      return const Padding(
+        padding: EdgeInsets.symmetric(vertical: 22),
+        child: Center(
+          child: Text('没有更多了',
+              style: TextStyle(color: AppColors.textFaint, fontSize: 12)),
+        ),
+      );
+    }
+    return const SizedBox.shrink();
   }
 
   /// Result rows that should be built lazily rather than all at once.
@@ -189,27 +328,35 @@ class _SearchScreenState extends State<SearchScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return CustomScrollView(
-      keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
-      slivers: [
-        SliverPadding(
-          padding: const EdgeInsets.only(left: 20, right: 20, top: 20),
-          sliver: SliverList(delegate: SliverChildListDelegate(_header())),
-        ),
-        // Rows are built on demand so a long result list costs only what is
-        // actually on screen.
-        SliverPadding(
-          padding: const EdgeInsets.symmetric(horizontal: 20),
-          sliver: SliverList.builder(
-            itemCount: _visibleTracks.length,
-            itemBuilder: (context, index) =>
-                _buildTrackTile(_visibleTracks[index], index),
+    return RefreshIndicator(
+      onRefresh: _onRefresh,
+      color: AppColors.accent,
+      child: CustomScrollView(
+        controller: _scrollController,
+        // Always scrollable so pull-to-refresh works even on a short list.
+        physics: const AlwaysScrollableScrollPhysics(),
+        keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+        slivers: [
+          SliverPadding(
+            padding: const EdgeInsets.only(left: 20, right: 20, top: 20),
+            sliver: SliverList(delegate: SliverChildListDelegate(_header())),
           ),
-        ),
-        SliverToBoxAdapter(
-          child: SizedBox(height: MiniPlayer.totalHeight(context) + 24),
-        ),
-      ],
+          // Rows are built on demand so a long result list costs only what is
+          // actually on screen.
+          SliverPadding(
+            padding: const EdgeInsets.symmetric(horizontal: 20),
+            sliver: SliverList.builder(
+              itemCount: _visibleTracks.length,
+              itemBuilder: (context, index) =>
+                  _buildTrackTile(_visibleTracks[index], index),
+            ),
+          ),
+          SliverToBoxAdapter(child: _loadMoreFooter()),
+          SliverToBoxAdapter(
+            child: SizedBox(height: MiniPlayer.totalHeight(context) + 24),
+          ),
+        ],
+      ),
     );
   }
 
@@ -241,10 +388,10 @@ class _SearchScreenState extends State<SearchScreen> {
               ),
               if (_searchController.text.isNotEmpty)
                 GestureDetector(
-                  onTap: () {
-                    _searchController.clear();
-                    setState(() => _searchResults = []);
-                  },
+                  // Clearing the query returns to the recommendation view and
+                  // resets search pagination, so a later scroll cannot re-fetch
+                  // the old query's next page.
+                  onTap: _showRecommendations,
                   child: const Icon(Icons.clear, color: AppColors.textMuted, size: 18),
                 ),
             ],
@@ -375,12 +522,6 @@ class _SearchScreenState extends State<SearchScreen> {
                 SkeletonTrackTile(),
                 SkeletonTrackTile(),
               ],
-            )
-          else if (_recommendedTracks.isEmpty)
-            const EmptyState(
-              icon: Icons.wifi_off_rounded,
-              title: '暂时没有推荐',
-              subtitle: '收藏几首歌之后会更准，也可以检查网络后重试',
             ),
         ],
       ];

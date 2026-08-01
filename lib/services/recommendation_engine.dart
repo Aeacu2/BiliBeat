@@ -142,7 +142,15 @@ class RecommendationEngine {
 
   /// Returns tracks similar to what the user favourites, plays and searches
   /// for, best match first. Empty when there is nothing to learn from.
-  static Future<List<Track>> recommend({int limit = 20}) async {
+  /// [page] drives infinite scroll: each refresh asks every seed for its next
+  /// Bilibili page, so consecutive calls return disjoint batches. [excludeIds]
+  /// drops tracks the caller has already shown, guaranteeing a refresh never
+  /// repeats an earlier one even when two seeds overlap.
+  static Future<List<Track>> recommend({
+    int limit = 20,
+    int page = 1,
+    Set<String> excludeIds = const {},
+  }) async {
     final favourites = (await DatabaseService.getFavoritesPlaylist()).tracks;
     final history = await DatabaseService.getRecentlyPlayed();
     final searches = await DatabaseService.getSearchHistory();
@@ -160,15 +168,15 @@ class RecommendationEngine {
     final candidates = <String, Track>{};
     for (final seed in seeds) {
       try {
-        for (final track in await BilibiliSdk.search(seed)) {
+        for (final track in await BilibiliSdk.search(seed, page: page)) {
           if (!isSongLength(track)) continue;
           if (profile.knownIds.contains(track.id)) continue; // already theirs
+          if (excludeIds.contains(track.id)) continue; // already shown
           candidates.putIfAbsent(track.id, () => track);
         }
       } catch (e) {
         debugPrint('Recommendation seed "$seed" failed: $e');
       }
-      if (candidates.length >= limit * 3) break;
     }
 
     // Score once per candidate, not twice per comparison: `score` tokenises

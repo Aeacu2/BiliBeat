@@ -173,7 +173,7 @@ class BilibiliSdk {
   }
 
   // Search Bilibili catalog for ANY query
-  static Future<List<Track>> search(String query) async {
+  static Future<List<Track>> search(String query, {int page = 1}) async {
     if (query.trim().isEmpty) return [];
 
     // A BV number or a link never goes through the keyword search: asking for
@@ -186,13 +186,13 @@ class BilibiliSdk {
     // Music zone first. If that comes back empty — no matches there, or an API
     // that quietly rejects the filter — fall back to an unfiltered search
     // rather than telling the user their song does not exist.
-    final musical = await _searchOnce(query, musicOnly: true);
+    final musical = await _searchOnce(query, musicOnly: true, page: page);
     if (musical.isNotEmpty) return musical;
-    return _searchOnce(query, musicOnly: false);
+    return _searchOnce(query, musicOnly: false, page: page);
   }
 
   static Future<List<Track>> _searchOnce(String query,
-      {required bool musicOnly}) async {
+      {required bool musicOnly, int page = 1}) async {
     try {
       // Obtain buvid3/buvid4 device fingerprint (required by B站 anti-bot)
       final cookieStr = await FingerprintService.getCookieString();
@@ -203,7 +203,7 @@ class BilibiliSdk {
       final rawParams = <String, dynamic>{
         'search_type': 'video',
         'keyword': query.trim(),
-        'page': 1,
+        'page': page,
         'order': 'totalrank',
         // This is a music player: a keyword search that returns lectures,
         // gameplay and news is noise.
@@ -223,6 +223,7 @@ class BilibiliSdk {
         final fallbackUrl = '$_baseUrl/x/web-interface/search/type'
             '?search_type=video'
             '${musicOnly ? "&tids=$_musicZoneId" : ""}'
+            '&page=$page'
             '&keyword=${Uri.encodeComponent(query.trim())}';
         body = await _httpGet(fallbackUrl, cookies: cookieStr);
       }

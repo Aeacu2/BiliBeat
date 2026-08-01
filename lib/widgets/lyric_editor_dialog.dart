@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:path_provider/path_provider.dart';
 import '../models/lyric_line.dart';
+import '../services/database_service.dart';
 import '../services/lyrics_engine.dart';
 import '../theme/app_theme.dart';
 import '../theme/haptics.dart';
@@ -22,6 +23,11 @@ class LyricEditorDialog extends StatefulWidget {
   /// Which tab to land on: 0 = 信息, 1 = 歌词.
   final int initialTabIndex;
 
+  /// The playing track's id, used to look up the real provider of the
+  /// currently-active lyrics so the pinned row shows it, not a redundant
+  /// "当前使用" label under a title that already says 当前歌词.
+  final String? currentTrackId;
+
   const LyricEditorDialog({
     super.key,
     required this.songTitle,
@@ -33,6 +39,7 @@ class LyricEditorDialog extends StatefulWidget {
     this.onUpdateMetadata,
     this.onClose,
     this.initialTabIndex = 0,
+    this.currentTrackId,
   });
 
   @override
@@ -59,6 +66,10 @@ class _LyricEditorDialogState extends State<LyricEditorDialog>
   bool _calibrating = false;
   bool _isSearching = false;
 
+  /// Real provider of the active lyrics (read from the cache); shown on the
+  /// pinned 当前歌词 row.
+  String? _currentSourceLabel;
+
   /// True while the full-screen LRC text editor is showing.
   bool _inLrcEditor = false;
 
@@ -82,6 +93,16 @@ class _LyricEditorDialogState extends State<LyricEditorDialog>
     _searchController.text = '${widget.artistName} ${widget.songTitle}'.trim();
     _searchResults = _pinnedResults();
     _performSearch();
+
+    // Surface the real provider of the active lyrics on the pinned row.
+    final trackId = widget.currentTrackId;
+    if (trackId != null) {
+      DatabaseService.getCachedLyrics(trackId).then((cached) {
+        if (mounted && cached != null && cached.source != 'none') {
+          setState(() => _currentSourceLabel = cached.source);
+        }
+      });
+    }
   }
 
   @override
@@ -489,7 +510,7 @@ class _LyricEditorDialogState extends State<LyricEditorDialog>
                     shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(12)),
                   ),
-                  child: const Text('取消',
+                  child: const Text('返回',
                       style:
                           TextStyle(fontSize: 15, fontWeight: FontWeight.w600)),
                 ),
@@ -507,7 +528,7 @@ class _LyricEditorDialogState extends State<LyricEditorDialog>
                     shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(12)),
                   ),
-                  child: const Text('保存',
+                  child: const Text('确认',
                       style: TextStyle(
                           color: AppColors.textPrimary,
                           fontWeight: FontWeight.bold,
@@ -615,8 +636,82 @@ class _LyricEditorDialogState extends State<LyricEditorDialog>
                       },
                     ),
         ),
+        const SizedBox(height: 12),
+        // 返回 / 确认 — mirrors the info tab. Tapping a row only previews it,
+        // so 确认 is the commit step that applies the highlighted result.
+        Row(
+          children: [
+            Expanded(
+              child: SizedBox(
+                height: 44,
+                child: OutlinedButton(
+                  onPressed: _close,
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: AppColors.textMuted,
+                    side: const BorderSide(color: Colors.white24),
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12)),
+                  ),
+                  child: const Text('返回',
+                      style:
+                          TextStyle(fontSize: 15, fontWeight: FontWeight.w600)),
+                ),
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              flex: 2,
+              child: SizedBox(
+                height: 44,
+                child: ElevatedButton(
+                  onPressed: _selectedResult == null
+                      ? null
+                      : () => _applyLyricResult(_selectedResult!),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppColors.accent,
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12)),
+                  ),
+                  child: const Text('确认',
+                      style: TextStyle(
+                          color: AppColors.textPrimary,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 15)),
+                ),
+              ),
+            ),
+          ],
+        ),
       ],
     );
+  }
+
+  /// The result highlighted for the 确认 button, or null when nothing is
+  /// selected (e.g. right after a fresh search).
+  LyricsResult? get _selectedResult => (_selectedIndex != null &&
+          _selectedIndex! >= 0 &&
+          _selectedIndex! < _searchResults.length)
+      ? _searchResults[_selectedIndex!]
+      : null;
+
+  /// Human-readable provider name. For the pinned current row we surface the
+  /// lyrics' real origin (read from the cache) rather than a redundant label.
+  String _sourceLabel(LyricsResult res) {
+    final raw = res.source == 'current'
+        ? (_currentSourceLabel ?? 'current')
+        : res.source;
+    switch (raw) {
+      case 'netease':
+        return '网易云';
+      case 'lrclib':
+        return 'LRCLIB';
+      case 'user':
+        return '自定义';
+      case 'current':
+        return '当前';
+      default:
+        return raw.toUpperCase();
+    }
   }
 
   Widget _resultRow(LyricsResult res, int index) {
@@ -642,7 +737,8 @@ class _LyricEditorDialogState extends State<LyricEditorDialog>
       ),
       child: Row(
         children: [
-          // Body → preview
+          // Body → preview / calibration. Editing lives on the preview page's
+          // top-right button, so the row carries no edit affordance of its own.
           Expanded(
             child: InkWell(
               borderRadius:
@@ -660,23 +756,42 @@ class _LyricEditorDialogState extends State<LyricEditorDialog>
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
-                      isCurrent
-                          ? '当前歌词'
-                          : (isUserPasted
-                              ? '粘贴歌词'
-                              : (res.songTitle ?? '未知歌曲')),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        color: isCurrent
-                            ? AppColors.success
-                            : (isUserPasted
-                                ? AppColors.pinkStart
-                                : AppColors.textPrimary),
-                        fontWeight: FontWeight.bold,
-                        fontSize: 14,
-                      ),
+                    // Title with source + line count inline on the same line —
+                    // they used to take a third line of their own.
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            isCurrent
+                                ? '当前歌词'
+                                : (isUserPasted
+                                    ? '粘贴歌词'
+                                    : (res.songTitle ?? '未知歌曲')),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              color: isCurrent
+                                  ? AppColors.success
+                                  : (isUserPasted
+                                      ? AppColors.pinkStart
+                                      : AppColors.textPrimary),
+                              fontWeight: FontWeight.bold,
+                              fontSize: 14,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Text(
+                          '${_sourceLabel(res)} · ${res.lines.length} 行',
+                          maxLines: 1,
+                          style: const TextStyle(
+                            color: AppColors.textFaint,
+                            fontSize: 11,
+                            fontWeight: FontWeight.w600,
+                            letterSpacing: 0.3,
+                          ),
+                        ),
+                      ],
                     ),
                     const SizedBox(height: 5),
                     Text(
@@ -689,38 +804,13 @@ class _LyricEditorDialogState extends State<LyricEditorDialog>
                         height: 1.35,
                       ),
                     ),
-                    const SizedBox(height: 6),
-                    Row(
-                      children: [
-                        Text(
-                          isCurrent ? '当前使用' : res.source.toUpperCase(),
-                          style: const TextStyle(
-                              color: AppColors.textFaint,
-                              fontSize: 11,
-                              fontWeight: FontWeight.w700,
-                              letterSpacing: 0.6),
-                        ),
-                        const SizedBox(width: 8),
-                        Text('${res.lines.length} 行',
-                            style: const TextStyle(
-                                color: AppColors.textFaint, fontSize: 11)),
-                      ],
-                    ),
                   ],
                 ),
               ),
             ),
           ),
 
-          // Edit button → LRC editor
-          IconButton(
-            icon: const Icon(Icons.edit_outlined, size: 20),
-            color: AppColors.textMuted,
-            tooltip: '编辑 LRC',
-            onPressed: () => _openLrcEditor(res),
-          ),
-
-          // Apply button
+          // Apply — the only per-row action; calibrate/edit happen in preview.
           IconButton(
             icon: Icon(
               isCurrent

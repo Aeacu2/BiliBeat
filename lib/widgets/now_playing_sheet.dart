@@ -256,6 +256,7 @@ class _NowPlayingSheetState extends State<NowPlayingSheet> {
                             initialTabIndex: _editorLyricsTab ? 1 : 0,
                             currentLines:
                                 _isActive ? widget.lyricsNotifier.value : const [],
+                            currentTrackId: _isActive ? _displayTrack.id : null,
                             onClose: _closeEditor,
                             onApplyLyrics: (result) async {
                               if (_isActive) {
