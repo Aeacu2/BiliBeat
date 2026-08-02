@@ -71,6 +71,10 @@ class _LyricEditorDialogState extends State<LyricEditorDialog>
   /// never overwrite the results of a newer one.
   int _searchToken = 0;
 
+  /// Monotonic guard for 智能识别: only the LAST tap's validated result may
+  /// write the fields, no matter which of several in-flight parses completes.
+  int _parseToken = 0;
+
   /// Real provider of the active lyrics (read from the cache); shown on the
   /// pinned 当前歌词 row.
   String? _currentSourceLabel;
@@ -193,17 +197,13 @@ class _LyricEditorDialogState extends State<LyricEditorDialog>
 
     final token = ++_searchToken;
 
-    // Both providers in parallel; only the newest search may commit.
-    final (netease, lrclib) = await (
-      LyricsEngine.fetchFromNetEase(query),
-      LyricsEngine.fetchFromLRCLIB(query),
-    ).wait;
+    // Only the newest search may commit.
+    final netease = await LyricsEngine.fetchFromNetEase(query);
 
     if (!mounted || token != _searchToken) return;
     final results = <LyricsResult>[
       ..._pinnedResults(),
       if (netease != null) netease,
-      if (lrclib != null) lrclib,
     ];
     setState(() {
       _searchResults = results;
@@ -504,6 +504,7 @@ class _LyricEditorDialogState extends State<LyricEditorDialog>
     // Always parse the original raw video title (widget.songTitle) so the operation
     // is 100% deterministic and idempotent no matter how many times the user taps.
     final raw = widget.songTitle;
+    final token = ++_parseToken;
 
     // Pass 1: Instant rule-based extraction for immediate UI feedback
     final syncParsed = LyricsEngine.cleanTitle(raw, defaultArtist: widget.artistName);
@@ -519,13 +520,14 @@ class _LyricEditorDialogState extends State<LyricEditorDialog>
       });
     }
 
-    // Pass 2: Official lyric DB cross-validation to refine song & artist
+    // Pass 2: Official lyric DB cross-validation to refine song & artist.
+    // Token-guarded: a slow first tap must not overwrite a faster second one.
     final asyncParsed = await LyricsEngine.cleanTitleWithValidation(
       raw,
       defaultArtist: widget.artistName,
     );
 
-    if (mounted) {
+    if (mounted && token == _parseToken) {
       setState(() {
         if ((asyncParsed['songTitle'] ?? '').isNotEmpty) {
           _titleController.text = asyncParsed['songTitle']!;
@@ -653,8 +655,6 @@ class _LyricEditorDialogState extends State<LyricEditorDialog>
     switch (raw) {
       case 'netease':
         return '网易云';
-      case 'lrclib':
-        return 'LRCLIB';
       case 'user':
         return '自定义';
       case 'current':

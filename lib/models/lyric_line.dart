@@ -27,7 +27,7 @@ class LyricLine {
 }
 
 class LyricsResult {
-  final String source; // 'lrclib' | 'netease' | 'user' | 'current' | 'none'
+  final String source; // 'netease' | 'user' | 'current' | 'none'
   final String? songTitle;
   final String? artistName;
   final List<LyricLine> lines;

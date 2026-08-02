@@ -90,4 +90,50 @@ void main() {
     expect(res['songTitle'], '只要平凡');
     expect(res['artist'], '张杰&张碧晨');
   });
+
+  test('cleanTitle: show《音乐缘计划》+ song《全世界下雨》multi-bracket', () {
+    final res = LyricsEngine.cleanTitle(
+      '【周深｜舞台】《音乐缘计划》第二季EP09带来《全世界下雨》舞台',
+      defaultArtist: '某UP主',
+    );
+    expect(res['songTitle'], '全世界下雨');
+    expect(res['artist'], '周深');
+  });
+
+  test('cleanTitleWithValidation: show-vs-song book brackets', () async {
+    final res = await LyricsEngine.cleanTitleWithValidation(
+      '【周深｜舞台】《音乐缘计划》第二季EP09带来《全世界下雨》舞台',
+      defaultArtist: '某UP主',
+    );
+    expect(res['songTitle'], '全世界下雨');
+    expect(res['artist'], '周深');
+  });
+
+  test('cleanTitleWithValidation: repeated taps are idempotent (memoized)', () async {
+    const raw = '【周深｜舞台】《音乐缘计划》第二季EP09带来《全世界下雨》舞台';
+    final a =
+        await LyricsEngine.cleanTitleWithValidation(raw, defaultArtist: '某UP主');
+    final b =
+        await LyricsEngine.cleanTitleWithValidation(raw, defaultArtist: '某UP主');
+    expect(a, b);
+    expect(a['songTitle'], isNotEmpty);
+  });
+
+  test('cleanTitle: show metadata after | separator is ignored', () {
+    final res = LyricsEngine.cleanTitle(
+      '【纯享】刘端端姚晓棠《霸王别姬》 舞台携手再现传世经典 | 音乐缘计划 | Melody Journey | iQIYI奇艺音悦台',
+      defaultArtist: '某UP主',
+    );
+    expect(res['songTitle'], '霸王别姬');
+    expect(res['artist'], '刘端端姚晓棠');
+  });
+
+  test('cleanTitleWithValidation: show metadata after | separator', () async {
+    final res = await LyricsEngine.cleanTitleWithValidation(
+      '【纯享】刘端端姚晓棠《霸王别姬》 舞台携手再现传世经典 | 音乐缘计划 | Melody Journey | iQIYI奇艺音悦台',
+      defaultArtist: '某UP主',
+    );
+    expect(res['songTitle'], '霸王别姬');
+    expect(res['artist'], '刘端端姚晓棠');
+  });
 }
