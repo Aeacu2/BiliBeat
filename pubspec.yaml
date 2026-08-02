@@ -1,7 +1,7 @@
 name: bilibeats
 description: "A premium Apple Music-inspired Bilibili audio player for Android & iOS."
 publish_to: 'none'
-version: 3.8.3+31
+version: 3.8.4+32
 
 environment:
   sdk: '>=3.0.0 <4.0.0'

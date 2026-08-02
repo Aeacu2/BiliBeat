@@ -286,21 +286,29 @@ class _LyricEditorDialogState extends State<LyricEditorDialog>
   // Metadata
   // ---------------------------------------------------------------------------
 
-  void _saveMetadata() {
+  void _saveAll() {
     final newTitle = _titleController.text.trim();
     final newArtist = _artistController.text.trim();
     final newCover = _coverUrlController.text.trim();
 
-    if (newTitle.isNotEmpty && widget.onUpdateMetadata != null) {
-      // The callback is responsible for closing the editor overlay.
+    final hasMetadataEdit = newTitle.isNotEmpty &&
+        (newTitle != widget.songTitle ||
+         newArtist != widget.artistName ||
+         newCover != (widget.coverUrl ?? ''));
+
+    if (hasMetadataEdit && widget.onUpdateMetadata != null) {
       widget.onUpdateMetadata!(
         newTitle,
         newArtist.isNotEmpty ? newArtist : '未知UP主',
         newCover,
       );
-    } else {
-      // Nothing to save; just close the editor overlay.
-      widget.onClose?.call();
+    }
+
+    final sel = _selectedResult;
+    if (sel != null) {
+      _applyLyricResult(sel);
+    } else if (!hasMetadataEdit) {
+      _close();
     }
   }
 
@@ -414,18 +422,7 @@ class _LyricEditorDialogState extends State<LyricEditorDialog>
             width: double.infinity,
             height: 44,
             child: ElevatedButton(
-              onPressed: () {
-                if (_tabController.index == 0) {
-                  _saveMetadata();
-                } else {
-                  final sel = _selectedResult;
-                  if (sel != null) {
-                    _applyLyricResult(sel);
-                  } else {
-                    _close();
-                  }
-                }
-              },
+              onPressed: _saveAll,
               style: ElevatedButton.styleFrom(
                 backgroundColor: AppColors.accent,
                 shape: RoundedRectangleBorder(

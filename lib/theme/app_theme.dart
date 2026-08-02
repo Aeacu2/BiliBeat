@@ -163,10 +163,10 @@ class AppTheme {
       ),
       iconTheme: const IconThemeData(color: AppColors.textSecondary),
       sliderTheme: const SliderThemeData(
-        activeTrackColor: AppColors.textPrimary,
+        activeTrackColor: AppColors.accent,
         inactiveTrackColor: AppColors.hairlineStrong,
-        thumbColor: AppColors.textPrimary,
-        overlayColor: Color(0x29FFFFFF),
+        thumbColor: AppColors.accent,
+        overlayColor: AppColors.accent22,
       ),
     );
   }

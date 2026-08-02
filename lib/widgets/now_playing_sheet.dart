@@ -505,6 +505,9 @@ class _NowPlayingSheetState extends State<NowPlayingSheet> {
             SliderTheme(
               data: SliderTheme.of(context).copyWith(
                 trackHeight: 4,
+                activeTrackColor: AppColors.accent,
+                thumbColor: AppColors.accent,
+                overlayColor: AppColors.accent22,
                 thumbShape:
                     const RoundSliderThumbShape(enabledThumbRadius: 6),
                 overlayShape:
