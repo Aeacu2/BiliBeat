@@ -382,6 +382,9 @@ class _MainLayoutState extends State<MainLayout> {
                                   final box1 = _tabKeys[1].currentContext
                                       ?.findRenderObject() as RenderBox?;
                                   if (rowBox == null || box0 == null || box1 == null) {
+                                    WidgetsBinding.instance.addPostFrameCallback((_) {
+                                      if (context.mounted) (context as Element).markNeedsBuild();
+                                    });
                                     return const SizedBox.shrink();
                                   }
                                   final off0 = box0.localToGlobal(Offset.zero, ancestor: rowBox);

@@ -355,6 +355,9 @@ class _LyricEditorDialogState extends State<LyricEditorDialog>
                         final box1 = _tabKeys[1].currentContext
                             ?.findRenderObject() as RenderBox?;
                         if (rowBox == null || box0 == null || box1 == null) {
+                          WidgetsBinding.instance.addPostFrameCallback((_) {
+                            if (context.mounted) (context as Element).markNeedsBuild();
+                          });
                           return const SizedBox.shrink();
                         }
                         final off0 = box0.localToGlobal(Offset.zero, ancestor: rowBox);
@@ -497,46 +500,22 @@ class _LyricEditorDialogState extends State<LyricEditorDialog>
           ),
         ),
         const SizedBox(height: 12),
-        Row(
-          children: [
-            Expanded(
-              child: SizedBox(
-                height: 44,
-                child: OutlinedButton(
-                  onPressed: _close,
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: AppColors.textMuted,
-                    side: const BorderSide(color: Colors.white24),
-                    shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12)),
-                  ),
-                  child: const Text('返回',
-                      style:
-                          TextStyle(fontSize: 15, fontWeight: FontWeight.w600)),
-                ),
-              ),
+        SizedBox(
+          width: double.infinity,
+          height: 44,
+          child: ElevatedButton(
+            onPressed: _saveMetadata,
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppColors.accent,
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12)),
             ),
-            const SizedBox(width: 12),
-            Expanded(
-              flex: 2,
-              child: SizedBox(
-                height: 44,
-                child: ElevatedButton(
-                  onPressed: _saveMetadata,
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: AppColors.accent,
-                    shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12)),
-                  ),
-                  child: const Text('确认',
-                      style: TextStyle(
-                          color: AppColors.textPrimary,
-                          fontWeight: FontWeight.bold,
-                          fontSize: 15)),
-                ),
-              ),
-            ),
-          ],
+            child: const Text('确认',
+                style: TextStyle(
+                    color: AppColors.textPrimary,
+                    fontWeight: FontWeight.bold,
+                    fontSize: 15)),
+          ),
         ),
       ],
     );
@@ -637,50 +616,31 @@ class _LyricEditorDialogState extends State<LyricEditorDialog>
                     ),
         ),
         const SizedBox(height: 12),
-        // 返回 / 确认 — mirrors the info tab. Tapping a row only previews it,
-        // so 确认 is the commit step that applies the highlighted result.
-        Row(
-          children: [
-            Expanded(
-              child: SizedBox(
-                height: 44,
-                child: OutlinedButton(
-                  onPressed: _close,
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: AppColors.textMuted,
-                    side: const BorderSide(color: Colors.white24),
-                    shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12)),
-                  ),
-                  child: const Text('返回',
-                      style:
-                          TextStyle(fontSize: 15, fontWeight: FontWeight.w600)),
-                ),
-              ),
+        // Single 确认 — applies the highlighted result, or simply closes when
+        // nothing is selected (the editor can also be dismissed by swipe-down).
+        SizedBox(
+          width: double.infinity,
+          height: 44,
+          child: ElevatedButton(
+            onPressed: () {
+              final sel = _selectedResult;
+              if (sel != null) {
+                _applyLyricResult(sel);
+              } else {
+                _close();
+              }
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppColors.accent,
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12)),
             ),
-            const SizedBox(width: 12),
-            Expanded(
-              flex: 2,
-              child: SizedBox(
-                height: 44,
-                child: ElevatedButton(
-                  onPressed: _selectedResult == null
-                      ? null
-                      : () => _applyLyricResult(_selectedResult!),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: AppColors.accent,
-                    shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12)),
-                  ),
-                  child: const Text('确认',
-                      style: TextStyle(
-                          color: AppColors.textPrimary,
-                          fontWeight: FontWeight.bold,
-                          fontSize: 15)),
-                ),
-              ),
-            ),
-          ],
+            child: const Text('确认',
+                style: TextStyle(
+                    color: AppColors.textPrimary,
+                    fontWeight: FontWeight.bold,
+                    fontSize: 15)),
+          ),
         ),
       ],
     );

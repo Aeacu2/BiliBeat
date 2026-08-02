@@ -249,18 +249,23 @@ class _SearchScreenState extends State<SearchScreen> {
     if (_lastQuery.isEmpty || _isLoadingMore) return;
     setState(() => _isLoadingMore = true);
     final page = _searchPage + 1;
-    final results = await BilibiliSdk.search(_lastQuery, page: page);
-    if (!mounted) return;
-    final fresh = <Track>[];
-    for (final t in results) {
-      if (_seenSearchIds.add(t.id)) fresh.add(t);
+    try {
+      final results = await BilibiliSdk.search(_lastQuery, page: page);
+      if (!mounted) return;
+      final fresh = <Track>[];
+      for (final t in results) {
+        if (_seenSearchIds.add(t.id)) fresh.add(t);
+      }
+      setState(() {
+        _searchResults = [..._searchResults, ...fresh];
+        _searchPage = page;
+        if (fresh.isEmpty) _searchReachedEnd = true;
+      });
+    } catch (e) {
+      debugPrint('Load more search error: $e');
+    } finally {
+      if (mounted) setState(() => _isLoadingMore = false);
     }
-    setState(() {
-      _searchResults = [..._searchResults, ...fresh];
-      _searchPage = page;
-      _isLoadingMore = false;
-      if (fresh.isEmpty) _searchReachedEnd = true;
-    });
   }
 
   Future<void> _loadMoreRecommendations() async {
