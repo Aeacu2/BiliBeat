@@ -81,9 +81,8 @@ class _LyricEditorDialogState extends State<LyricEditorDialog>
     super.initState();
     _tabController = TabController(
         length: 2, vsync: this, initialIndex: widget.initialTabIndex);
-    final parsed = LyricsEngine.cleanTitle(widget.songTitle, defaultArtist: widget.artistName);
-    _titleController = TextEditingController(text: parsed['songTitle'] ?? widget.songTitle);
-    _artistController = TextEditingController(text: (parsed['artist'] ?? '').isNotEmpty ? parsed['artist']! : widget.artistName);
+    _titleController = TextEditingController(text: widget.songTitle);
+    _artistController = TextEditingController(text: widget.artistName);
     _coverUrlController = TextEditingController(text: widget.coverUrl ?? '');
 
     _tabController.addListener(() {
