@@ -226,15 +226,7 @@ class _SearchScreenState extends State<SearchScreen> {
     if (pos.pixels >= pos.maxScrollExtent - 240) _loadMore();
   }
 
-  Future<void> _onRefresh() async {
-    if (_hasSearched) {
-      _searchReachedEnd = false;
-      await _loadMoreSearch();
-    } else if (_canRecommend) {
-      _recReachedEnd = false;
-      await _loadMoreRecommendations();
-    }
-  }
+
 
   Future<void> _loadMore() async {
     if (_isLoadingMore || _isLoading || _isLoadingRecommended) return;
@@ -333,35 +325,29 @@ class _SearchScreenState extends State<SearchScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return RefreshIndicator(
-      onRefresh: _onRefresh,
-      color: AppColors.accent,
-      child: CustomScrollView(
-        controller: _scrollController,
-        // Always scrollable so pull-to-refresh works even on a short list.
-        physics: const AlwaysScrollableScrollPhysics(),
-        keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
-        slivers: [
-          SliverPadding(
-            padding: const EdgeInsets.only(left: 20, right: 20, top: 20),
-            sliver: SliverList(delegate: SliverChildListDelegate(_header())),
+    return CustomScrollView(
+      controller: _scrollController,
+      keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+      slivers: [
+        SliverPadding(
+          padding: const EdgeInsets.only(left: 20, right: 20, top: 20),
+          sliver: SliverList(delegate: SliverChildListDelegate(_header())),
+        ),
+        // Rows are built on demand so a long result list costs only what is
+        // actually on screen.
+        SliverPadding(
+          padding: const EdgeInsets.symmetric(horizontal: 20),
+          sliver: SliverList.builder(
+            itemCount: _visibleTracks.length,
+            itemBuilder: (context, index) =>
+                _buildTrackTile(_visibleTracks[index], index),
           ),
-          // Rows are built on demand so a long result list costs only what is
-          // actually on screen.
-          SliverPadding(
-            padding: const EdgeInsets.symmetric(horizontal: 20),
-            sliver: SliverList.builder(
-              itemCount: _visibleTracks.length,
-              itemBuilder: (context, index) =>
-                  _buildTrackTile(_visibleTracks[index], index),
-            ),
-          ),
-          SliverToBoxAdapter(child: _loadMoreFooter()),
-          SliverToBoxAdapter(
-            child: SizedBox(height: MiniPlayer.totalHeight(context) + 24),
-          ),
-        ],
-      ),
+        ),
+        SliverToBoxAdapter(child: _loadMoreFooter()),
+        SliverToBoxAdapter(
+          child: SizedBox(height: MiniPlayer.totalHeight(context) + 24),
+        ),
+      ],
     );
   }
 
