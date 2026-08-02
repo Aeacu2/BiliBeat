@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/foundation.dart';
 import '../models/track.dart';
+import 'bili_http.dart';
 import 'fingerprint_service.dart';
 import 'wbi_signer.dart';
 
@@ -11,16 +12,17 @@ class BilibiliSdk {
   /// 音乐 partition. Covers 原创音乐 / 翻唱 / 演奏 / VOCALOID / 音乐现场 / MV /
   /// 音乐综合 — everything a music player has any business showing.
   static const int _musicZoneId = 3;
-  static final HttpClient _httpClient = HttpClient()
-    ..idleTimeout = const Duration(seconds: 30)
-    ..maxConnectionsPerHost = 10;
+  static final HttpClient _httpClient =
+      biliHttpClient(connectionTimeout: const Duration(seconds: 15),
+          maxConnectionsPerHost: 10);
+
+  static final RegExp _htmlTagRegex = RegExp(r'<[^>]+>');
 
   static Future<String?> _httpGet(String rawUrl, {String? cookies}) async {
     try {
       final req = await _httpClient.getUrl(Uri.parse(rawUrl));
       req.headers.set('Referer', 'https://www.bilibili.com');
-      req.headers.set('User-Agent',
-          'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36');
+      req.headers.set('User-Agent', kBiliUserAgent);
       if (cookies != null && cookies.isNotEmpty) {
         req.headers.set('Cookie', cookies);
       }
@@ -44,7 +46,8 @@ class BilibiliSdk {
     if (bvMatch != null) return bvMatch.group(1);
 
     final avMatch = RegExp(r'av(\d+)', caseSensitive: false).firstMatch(trimmed);
-    if (avMatch != null) return avMatch.group(0);
+    // The API's `aid` parameter expects bare digits, not the "av" prefix.
+    if (avMatch != null) return avMatch.group(1);
 
     return null;
   }
@@ -155,7 +158,15 @@ class BilibiliSdk {
           if (audioList.isNotEmpty) {
             audioList.sort((a, b) => (b['bandwidth'] as int? ?? 0) - (a['bandwidth'] as int? ?? 0));
             final best = audioList.first;
-            final streamUrl = (best['baseUrl'] ?? best['base_url'] ?? best['backupUrl']?[0]) as String?;
+            // backupUrl is a List; reading it via the ?? chain would make
+            // `as String?` throw a TypeError when only the backup exists.
+            String? streamUrl = best['baseUrl'] as String? ?? best['base_url'] as String?;
+            if (streamUrl == null || streamUrl.isEmpty) {
+              final backup = best['backupUrl'];
+              if (backup is List && backup.isNotEmpty) {
+                streamUrl = backup.first as String?;
+              }
+            }
             if (streamUrl != null && streamUrl.isNotEmpty) {
               return {
                 'url': streamUrl.replaceAll('http:', 'https:'),
@@ -216,9 +227,13 @@ class BilibiliSdk {
       final queryStr = signed.entries.map((e) => '${e.key}=${Uri.encodeComponent(e.value.toString())}').join('&');
       final searchUrl = '$_baseUrl/x/web-interface/wbi/search/type?$queryStr';
 
-
       var body = await _httpGet(searchUrl, cookies: cookieStr);
-      if (body == null || body.contains('"code":-352') || body.contains('"code":412')) {
+      // -352 / 412 are B站 risk-control codes; check them on the decoded JSON
+      // rather than string-matching (which breaks on whitespace variations).
+      if (_riskControlled(body)) {
+        body = null;
+      }
+      if (body == null) {
         // Fallback: standard web search API
         final fallbackUrl = '$_baseUrl/x/web-interface/search/type'
             '?search_type=video'
@@ -247,7 +262,7 @@ class BilibiliSdk {
             if (bvid == null || bvid.isEmpty) continue;
 
             final rawTitle = item['title'] as String? ?? '';
-            final cleanTitle = rawTitle.replaceAll(RegExp(r'<[^>]+>'), '');
+            final cleanTitle = rawTitle.replaceAll(_htmlTagRegex, '');
             final author = item['author'] as String? ?? 'UP主';
             final pic = (item['pic'] as String? ?? '').replaceAll('http:', 'https:');
 
@@ -288,5 +303,21 @@ class BilibiliSdk {
     }
 
     return [];
+  }
+
+  /// True when the response is B站's risk-control rejection (-352 / 412),
+  /// which should trigger the unfiltered fallback search API.
+  static bool _riskControlled(String? body) {
+    if (body == null) return false;
+    try {
+      final decoded = jsonDecode(body);
+      if (decoded is Map) {
+        final code = decoded['code'];
+        return code == -352 || code == 412;
+      }
+    } catch (_) {
+      // Not JSON at all — not a clean rejection, treat as a normal response.
+    }
+    return false;
   }
 }

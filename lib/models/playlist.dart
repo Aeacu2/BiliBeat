@@ -5,6 +5,10 @@ import 'track.dart';
 /// `createdAt` and `updatedAt` were carried on every playlist and persisted to
 /// disk, but nothing ever read them — nothing sorted by date. They are gone.
 class Playlist {
+  /// The built-in favorites playlist's stable id. Magic-string comparisons
+  /// scattered through the UI and database layer all point at this.
+  static const String favoritesId = 'favorites';
+
   final String id;
   final String name;
 

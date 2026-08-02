@@ -1,5 +1,7 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
+
 import '../models/track.dart';
 import 'audio_download_service.dart';
 
@@ -34,9 +36,15 @@ class DownloadManager {
 
   final Map<String, DownloadTask> _tasks = {};
   final StreamController<void> _controller = StreamController<void>.broadcast();
+  final StreamController<String> _errorController = StreamController<String>.broadcast();
 
   /// Emits whenever the task set or any task's progress changes.
   Stream<void> get updates => _controller.stream;
+
+  /// Emits a human-readable message when a user-initiated download fails —
+  /// without this a failure was indistinguishable from a success (the ring
+  /// simply disappeared).
+  Stream<String> get errors => _errorController.stream;
 
   /// Currently in-flight tasks, newest first.
   List<DownloadTask> get activeTasks => _tasks.values.toList().reversed.toList();
@@ -56,8 +64,9 @@ class DownloadManager {
     try {
       // ensureDownloaded is itself a no-op when the file is already on disk.
       await AudioDownloadService.ensureDownloaded(track);
-    } catch (_) {
-      // Surfaced by the progress stream; the task simply ends either way.
+    } catch (e) {
+      debugPrint('Download failed: $e');
+      if (!_errorController.isClosed) _errorController.add('$e');
     } finally {
       _tasks.remove(track.id);
       _notify();
@@ -67,7 +76,8 @@ class DownloadManager {
   void _onProgress(DownloadProgress p) {
     final task = _tasks[p.trackId];
     if (task == null) return;
-    if (p.done || p.error != null) return; // startDownload's finally clears it
+    // Error events are preludes to startDownload's catch, which reports them.
+    if (p.done || p.error != null) return;
     _tasks[p.trackId] = task.copyWith(fraction: p.fraction);
     _notify();
   }

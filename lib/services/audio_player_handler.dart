@@ -177,13 +177,19 @@ class BiliBeatAudioHandler extends BaseAudioHandler with SeekHandler {
 
   /// Called whenever the actively-playing track changes (manual or auto).
   void _onActiveTrackChanged(Track track) {
+    _announce(track);
+    _prefetchNext();
+  }
+
+  /// Announce the newly active track to every observer: the UI stream, the
+  /// system media session, the recently-played history and the duration.
+  void _announce(Track track) {
     _currentTrackController.add(track);
     _updateMediaItem(track);
-    DatabaseService.addRecentlyPlayed(track);
+    unawaited(DatabaseService.addRecentlyPlayed(track));
     _duration = Duration(seconds: track.duration > 0 ? track.duration : 180);
     _durationController.add(_duration);
     _broadcastState();
-    _prefetchNext();
   }
 
   // ---------------------------------------------------------------------------
@@ -211,12 +217,8 @@ class BiliBeatAudioHandler extends BaseAudioHandler with SeekHandler {
 
     // Announce immediately so the UI updates while the file downloads.
     final active = _playlist[index];
-    _currentTrackController.add(active);
-    _updateMediaItem(active);
-    _duration = Duration(seconds: active.duration > 0 ? active.duration : 180);
-    _durationController.add(_duration);
+    _announce(active);
     _positionController.add(Duration.zero);
-    unawaited(DatabaseService.addRecentlyPlayed(active));
 
     await _startCurrent(autoplay: true);
   }
@@ -325,10 +327,8 @@ class BiliBeatAudioHandler extends BaseAudioHandler with SeekHandler {
     }
     _currentIndex = index;
     final active = _playlist[index];
-    _currentTrackController.add(active);
-    _updateMediaItem(active);
+    _announce(active);
     _positionController.add(Duration.zero);
-    unawaited(DatabaseService.addRecentlyPlayed(active));
     await _startCurrent(autoplay: true);
   }
 
@@ -502,8 +502,13 @@ class BiliBeatAudioHandler extends BaseAudioHandler with SeekHandler {
     _prefetchingId = next.id;
     try {
       final path = await AudioDownloadService.ensureDownloaded(next);
-      // Re-validate after the download: the user may have navigated meanwhile.
-      if (_currentIndex == _queueBaseIndex + _queueSource.length - 1) {
+      // Re-validate after the download: the user may have navigated, or the
+      // playlist may have been replaced while we were fetching — the index
+      // guard alone can pass for a *new* window and append a stale track.
+      final succIndex = _currentIndex + 1;
+      if (_currentIndex == _queueBaseIndex + _queueSource.length - 1 &&
+          succIndex < _playlist.length &&
+          _playlist[succIndex].id == next.id) {
         await _queueSource.add(ja.AudioSource.file(path, tag: next));
       }
     } catch (e) {

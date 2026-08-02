@@ -39,10 +39,7 @@ void main() {
   });
 
   test('cleanTitle: book bracket with artist after', () {
-    final res = LyricsEngine.cleanTitle(
-      '《大鱼》周深',
-      defaultArtist: '',
-    );
+    final res = LyricsEngine.cleanTitle('《大鱼》周深');
     expect(res['songTitle'], '大鱼');
     expect(res['artist'], '周深');
   });
@@ -64,5 +61,33 @@ void main() {
     expect(res['songTitle'], '世界赠予我的');
     // Artist should be 周深 from either rule-based or cross-validation
     expect(res['artist'], '周深');
+  });
+
+  test('cleanTitleWithValidation: 【姚贝娜&amp;单依纯 心火】collab bracket (DB disambiguation)', () async {
+    final res = await LyricsEngine.cleanTitleWithValidation(
+      '【姚贝娜&amp;单依纯 心火】音乐是我们最珍贵的琥珀，致敬。',
+      defaultArtist: '某UP主',
+    );
+    expect(res['songTitle'], '心火');
+    expect(res['artist'], contains('姚贝娜'));
+    expect(res['artist'], contains('单依纯'));
+  });
+
+  test('cleanTitle: 【姚贝娜&amp;单依纯 心火】with HTML entity & collab', () {
+    final res = LyricsEngine.cleanTitle(
+      '【姚贝娜&amp;单依纯 心火】音乐是我们最珍贵的琥珀，致敬。',
+      defaultArtist: '某UP主',
+    );
+    expect(res['songTitle'], '心火');
+    expect(res['artist'], '姚贝娜&单依纯');
+  });
+
+  test('cleanTitle: 【Artist&Artist Song】without HTML entity', () {
+    final res = LyricsEngine.cleanTitle(
+      '【张杰&张碧晨 只要平凡】我不是药神',
+      defaultArtist: '某UP主',
+    );
+    expect(res['songTitle'], '只要平凡');
+    expect(res['artist'], '张杰&张碧晨');
   });
 }

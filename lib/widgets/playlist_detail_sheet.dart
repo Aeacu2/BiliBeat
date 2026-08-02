@@ -17,6 +17,7 @@ import 'mini_player.dart';
 import 'track_options_menu.dart';
 import 'cached_cover_image.dart';
 import 'track_download_button.dart';
+import '../utils/snack.dart';
 
 class PlaylistDetailSheet extends StatefulWidget {
   final Playlist playlist;
@@ -140,7 +141,7 @@ class _PlaylistDetailSheetState extends State<PlaylistDetailSheet> {
 
   @override
   Widget build(BuildContext context) {
-    final isFav = _currentPlaylist.id == 'favorites';
+    final isFav = _currentPlaylist.id == Playlist.favoritesId;
     final dockedPlayerHeight = MiniPlayer.totalHeight(context);
 
     return GestureDetector(
@@ -160,7 +161,7 @@ class _PlaylistDetailSheetState extends State<PlaylistDetailSheet> {
             : EdgeInsets.only(bottom: dockedPlayerHeight),
         height: MediaQuery.of(context).size.height * 0.76,
         decoration: const BoxDecoration(
-          color: Color(0xFF141416),
+          color: AppColors.surfaceDeep,
           borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
           boxShadow: [
             BoxShadow(
@@ -302,7 +303,8 @@ class _PlaylistDetailSheetState extends State<PlaylistDetailSheet> {
                 padding:
                     const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
                 child: ElevatedButton.icon(
-                  onPressed: _playableQueue.isEmpty
+                  onPressed: (_playableQueue.isEmpty ||
+                          widget.onPlayCollection == null)
                       ? null
                       : () {
                           Haptics.medium();
@@ -566,7 +568,7 @@ class _PlaylistDetailSheetState extends State<PlaylistDetailSheet> {
   }
 
   bool get _isVirtualDownloads => _currentPlaylist.id == 'downloaded';
-  bool get _isFavorites => _currentPlaylist.id == 'favorites';
+  bool get _isFavorites => _currentPlaylist.id == Playlist.favoritesId;
 
   /// The playlist's artwork. 本地 is rebuilt from
   /// the download library on every refresh and has no row to store a cover on,
@@ -582,7 +584,7 @@ class _PlaylistDetailSheetState extends State<PlaylistDetailSheet> {
       gradient = [AppColors.accent, const Color(0xFFFF5252)];
       icon = Icons.favorite;
     } else {
-      gradient = [const Color(0xFF3A3A40), const Color(0xFF232327)];
+      gradient = [AppColors.surfaceNeutral, AppColors.surfaceNeutralDeep];
       icon = Icons.queue_music;
     }
     return SizedBox(
@@ -631,11 +633,10 @@ class _PlaylistDetailSheetState extends State<PlaylistDetailSheet> {
     if (!mounted) return;
 
     if (downloaded.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('暂无本地已下载曲目，去搜索下载音乐吧'),
-          backgroundColor: AppColors.backgroundElevated,
-        ),
+      showAppSnackBar(
+        ScaffoldMessenger.of(context),
+        message: '暂无本地已下载曲目，去搜索下载音乐吧',
+        backgroundColor: AppColors.backgroundElevated,
       );
       return;
     }
@@ -799,6 +800,9 @@ class _PlaylistDetailSheetState extends State<PlaylistDetailSheet> {
       }
     }
 
+    // The sheet may have been dismissed while the confirm dialog or the
+    // delete loop was up.
+    if (!mounted) return;
     setState(() {
       _selectedTrackIds.clear();
       _isEditMode = false;

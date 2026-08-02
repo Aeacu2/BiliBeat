@@ -32,8 +32,10 @@ class DatabaseService {
   static const int _maxLyricsCacheEntries = 200;
 
   static final List<Playlist> _playlists = [
-    Playlist(id: 'favorites', name: '收藏', tracks: [])
+    Playlist(id: Playlist.favoritesId, name: '收藏', tracks: [])
   ];
+
+  static int _playlistSeq = 0;
 
   /// Cached documents directory. The path is fixed for the lifetime of the
   /// app, yet every persist used to re-fetch it across the platform channel.
@@ -51,110 +53,134 @@ class DatabaseService {
     try {
       final dir = await _docs();
 
-      // Load Downloaded Tracks
-      final downloadedFile = File('$dir/bilibeat_downloaded.json');
-      if (await downloadedFile.exists()) {
-        final content = await downloadedFile.readAsString();
-        final List<dynamic> list = jsonDecode(content);
-        _downloadedTracks.clear();
-        for (final item in list) {
-          final t = Track.fromMap(Map<String, dynamic>.from(item));
-          _downloadedTracks.add(t);
-        }
-      }
-
-      // Auto-discover any downloaded audio files on disk
-      final audioDir = Directory('$dir/bilibeat_audio');
-      if (await audioDir.exists()) {
-        final List<FileSystemEntity> entities = await audioDir.list().toList();
-        for (final entity in entities) {
-          if (entity is File && entity.path.endsWith('.ready')) {
-            final readyPath = entity.path;
-            final audioPath = readyPath.replaceAll('.ready', '.m4a');
-            final metaPath = readyPath.replaceAll('.ready', '.json');
-            final audioFile = File(audioPath);
-            final metaFile = File(metaPath);
-
-            if (await audioFile.exists() && (await audioFile.length()) > 0 && await metaFile.exists()) {
-              try {
-                final metaContent = await metaFile.readAsString();
-                final trackMap = Map<String, dynamic>.from(jsonDecode(metaContent));
-                final track = Track.fromMap(trackMap);
-                if (!_downloadedTracks.any((t) => t.id == track.id)) {
-                  _downloadedTracks.add(track);
-                }
-              } catch (e) {
-                debugPrint('Auto-discover track error: $e');
-              }
-            }
-          }
-        }
-      }
-
-      // Load Recently Played
-      final recentFile = File('$dir/bilibeat_recently_played.json');
-      if (await recentFile.exists()) {
-        final content = await recentFile.readAsString();
-        final List<dynamic> list = jsonDecode(content);
-        _recentlyPlayed.clear();
-        for (final item in list) {
-          final t = Track.fromMap(Map<String, dynamic>.from(item));
-          _recentlyPlayed.add(t);
-        }
-      }
-
-      // Load Playlists
-      final playlistFile = File('$dir/bilibeat_playlists.json');
-      if (await playlistFile.exists()) {
-        final content = await playlistFile.readAsString();
-        final List<dynamic> list = jsonDecode(content);
-        _playlists.clear();
-        for (final item in list) {
-          final map = Map<String, dynamic>.from(item);
-          final List<dynamic> trackList = map['tracks'] ?? [];
-          final tracks = trackList.map((t) => Track.fromMap(Map<String, dynamic>.from(t))).toList();
-          _playlists.add(Playlist.fromMap(map, tracks: tracks));
-        }
-        if (!_playlists.any((p) => p.id == 'favorites')) {
-          _playlists.insert(0, Playlist(id: 'favorites', name: '收藏', tracks: []));
-        }
-      }
-      // Load Search History
-      final historyFile = File('$dir/bilibeat_search_history.json');
-      if (await historyFile.exists()) {
-        final content = await historyFile.readAsString();
-        final List<dynamic> list = jsonDecode(content);
-        _searchHistory
-          ..clear()
-          ..addAll(list.map((e) => e.toString()));
-      }
-
-      // Load the lyrics cache so a restart does not re-hit the network for
-      // every track the user already has lyrics for.
-      final lyricsFile = File('$dir/bilibeat_lyrics.json');
-      if (await lyricsFile.exists()) {
-        final content = await lyricsFile.readAsString();
-        final Map<String, dynamic> map = jsonDecode(content);
-        map.forEach((key, value) {
-          try {
-            _lyricsCache[key] =
-                LyricsResult.fromMap(Map<String, dynamic>.from(value as Map));
-          } catch (e) {
-            debugPrint('Lyrics cache entry $key skipped: $e');
-          }
-        });
-      }
+      // Each file is parsed into a local list first, then swapped into the
+      // store: one corrupt file must not wipe the whole in-memory library
+      // (a truncated write is easy with whole-file rewrites).
+      await _loadTracks('$dir/bilibeat_downloaded.json', _downloadedTracks);
+      await _discoverAudioFiles(dir);
+      await _loadTracks('$dir/bilibeat_recently_played.json', _recentlyPlayed);
+      await _loadPlaylists('$dir/bilibeat_playlists.json');
+      await _loadSearchHistory('$dir/bilibeat_search_history.json');
+      await _loadLyricsCache('$dir/bilibeat_lyrics.json');
     } catch (e) {
       debugPrint('DatabaseService _ensureLoaded error: $e');
     }
   }
 
+  static Future<void> _loadTracks(String path, List<Track> store) async {
+    try {
+      final file = File(path);
+      if (!await file.exists()) return;
+      final list = jsonDecode(await file.readAsString()) as List<dynamic>? ?? [];
+      final tracks = list.map((item) => Track.fromMap(Map<String, dynamic>.from(item))).toList();
+      store
+        ..clear()
+        ..addAll(tracks);
+    } catch (e) {
+      debugPrint('DatabaseService load $path skipped: $e');
+    }
+  }
+
+  static Future<void> _discoverAudioFiles(String dir) async {
+    try {
+      final audioDir = Directory('$dir/bilibeat_audio');
+      if (!await audioDir.exists()) return;
+      final entities = await audioDir.list().toList();
+      for (final entity in entities) {
+        if (entity is File && entity.path.endsWith('.ready')) {
+          final readyPath = entity.path;
+          final audioPath = readyPath.replaceFirst('.ready', '.m4a');
+          final metaPath = readyPath.replaceFirst('.ready', '.json');
+          final audioFile = File(audioPath);
+          final metaFile = File(metaPath);
+
+          if (await audioFile.exists() && (await audioFile.length()) > 0 && await metaFile.exists()) {
+            try {
+              final metaContent = await metaFile.readAsString();
+              final trackMap = Map<String, dynamic>.from(jsonDecode(metaContent));
+              final track = Track.fromMap(trackMap);
+              if (!_downloadedTracks.any((t) => t.id == track.id)) {
+                _downloadedTracks.add(track);
+              }
+            } catch (e) {
+              debugPrint('Auto-discover track error: $e');
+            }
+          }
+        }
+      }
+    } catch (e) {
+      debugPrint('DatabaseService audio discovery skipped: $e');
+    }
+  }
+
+  static Future<void> _loadPlaylists(String path) async {
+    try {
+      final file = File(path);
+      if (!await file.exists()) return;
+      final list = jsonDecode(await file.readAsString()) as List<dynamic>? ?? [];
+      final playlists = list.map((item) {
+        final map = Map<String, dynamic>.from(item);
+        final tracks = (map['tracks'] as List<dynamic>? ?? [])
+            .map((t) => Track.fromMap(Map<String, dynamic>.from(t)))
+            .toList();
+        return Playlist.fromMap(map, tracks: tracks);
+      }).toList();
+      if (!playlists.any((p) => p.id == Playlist.favoritesId)) {
+        playlists.insert(0, Playlist(id: Playlist.favoritesId, name: '收藏', tracks: []));
+      }
+      _playlists
+        ..clear()
+        ..addAll(playlists);
+    } catch (e) {
+      debugPrint('DatabaseService load $path skipped: $e');
+    }
+  }
+
+  static Future<void> _loadSearchHistory(String path) async {
+    try {
+      final file = File(path);
+      if (!await file.exists()) return;
+      final list = jsonDecode(await file.readAsString()) as List<dynamic>? ?? [];
+      _searchHistory
+        ..clear()
+        ..addAll(list.map((e) => e.toString()));
+    } catch (e) {
+      debugPrint('DatabaseService load $path skipped: $e');
+    }
+  }
+
+  static Future<void> _loadLyricsCache(String path) async {
+    try {
+      final file = File(path);
+      if (!await file.exists()) return;
+      final map = jsonDecode(await file.readAsString()) as Map<String, dynamic>? ?? {};
+      map.forEach((key, value) {
+        try {
+          _lyricsCache[key] =
+              LyricsResult.fromMap(Map<String, dynamic>.from(value as Map));
+        } catch (e) {
+          debugPrint('Lyrics cache entry $key skipped: $e');
+        }
+      });
+    } catch (e) {
+      debugPrint('DatabaseService load $path skipped: $e');
+    }
+  }
+
+  /// Whole-file rewrites are truncated-then-written by default; a crash in the
+  /// middle corrupts the file. Writing to a temp file and renaming keeps the
+  /// previous snapshot intact instead.
+  static Future<void> _writeJsonAtomically(String path, Object data) async {
+    final tmp = File('$path.tmp');
+    await tmp.writeAsString(jsonEncode(data));
+    await tmp.rename(path);
+  }
+
   static Future<void> _persistDownloaded() async {
     try {
       final dir = await _docs();
-      final downloadedFile = File('$dir/bilibeat_downloaded.json');
-      final list = _downloadedTracks.map((t) => t.toMap()).toList();
-      await downloadedFile.writeAsString(jsonEncode(list));
+      await _writeJsonAtomically(
+          '$dir/bilibeat_downloaded.json', _downloadedTracks.map((t) => t.toMap()).toList());
     } catch (e) {
       debugPrint('DatabaseService _persistDownloaded error: $e');
     }
@@ -163,9 +189,8 @@ class DatabaseService {
   static Future<void> _persistRecentlyPlayed() async {
     try {
       final dir = await _docs();
-      final recentFile = File('$dir/bilibeat_recently_played.json');
-      final list = _recentlyPlayed.map((t) => t.toMap()).toList();
-      await recentFile.writeAsString(jsonEncode(list));
+      await _writeJsonAtomically(
+          '$dir/bilibeat_recently_played.json', _recentlyPlayed.map((t) => t.toMap()).toList());
     } catch (e) {
       debugPrint('DatabaseService _persistRecentlyPlayed error: $e');
     }
@@ -174,24 +199,22 @@ class DatabaseService {
   static Future<void> _persistPlaylists() async {
     try {
       final dir = await _docs();
-      final playlistFile = File('$dir/bilibeat_playlists.json');
       final list = _playlists.map((p) {
         final map = p.toMap();
         map['tracks'] = p.tracks.map((t) => t.toMap()).toList();
         return map;
       }).toList();
-      await playlistFile.writeAsString(jsonEncode(list));
+      await _writeJsonAtomically('$dir/bilibeat_playlists.json', list);
     } catch (e) {
       debugPrint('DatabaseService _persistPlaylists error: $e');
     }
-    _libraryUpdateController.add(null);
+    if (!_libraryUpdateController.isClosed) _libraryUpdateController.add(null);
   }
 
   static Future<void> _persistSearchHistory() async {
     try {
       final dir = await _docs();
-      final historyFile = File('$dir/bilibeat_search_history.json');
-      await historyFile.writeAsString(jsonEncode(_searchHistory));
+      await _writeJsonAtomically('$dir/bilibeat_search_history.json', _searchHistory);
     } catch (e) {
       debugPrint('DatabaseService _persistSearchHistory error: $e');
     }
@@ -202,14 +225,15 @@ class DatabaseService {
     return List<String>.from(_searchHistory);
   }
 
-  static Future<void> addSearchHistory(String query) async {
+  static Future<List<String>> addSearchHistory(String query) async {
     await _ensureLoaded();
     final q = query.trim();
-    if (q.isEmpty) return;
+    if (q.isEmpty) return List<String>.from(_searchHistory);
     _searchHistory.remove(q);
     _searchHistory.insert(0, q);
     if (_searchHistory.length > 12) _searchHistory.removeLast();
     await _persistSearchHistory();
+    return List<String>.from(_searchHistory);
   }
 
   static Future<void> clearSearchHistory() async {
@@ -243,8 +267,8 @@ class DatabaseService {
       await _persistRecentlyPlayed();
     }
 
-    _libraryUpdateController.add(null);
-    _historyUpdateController.add(null);
+    // _persistPlaylists above already emitted the library update.
+    if (!_historyUpdateController.isClosed) _historyUpdateController.add(null);
   }
 
   static Future<List<Playlist>> getPlaylists() async {
@@ -255,15 +279,15 @@ class DatabaseService {
   static Future<Playlist> getFavoritesPlaylist() async {
     await _ensureLoaded();
     return _playlists.firstWhere(
-      (p) => p.id == 'favorites',
-      orElse: () => _playlists.first,
+      (p) => p.id == Playlist.favoritesId,
+      orElse: () => Playlist(id: Playlist.favoritesId, name: '收藏', tracks: []),
     );
   }
 
   static Future<Playlist> createPlaylist(String name) async {
     await _ensureLoaded();
     final newPlaylist = Playlist(
-      id: 'pl_\${DateTime.now().millisecondsSinceEpoch}',
+      id: 'pl_${DateTime.now().millisecondsSinceEpoch}_${_playlistSeq++}',
       name: name.trim().isEmpty ? '新建歌单' : name.trim(),
       tracks: [],
     );
@@ -320,7 +344,7 @@ class DatabaseService {
     await _ensureLoaded();
     _moveWithin(_downloadedTracks, oldIndex, newIndex);
     await _persistDownloaded();
-    _libraryUpdateController.add(null);
+    if (!_libraryUpdateController.isClosed) _libraryUpdateController.add(null);
   }
 
   static void _moveWithin(List<Track> list, int oldIndex, int newIndex) {
@@ -331,7 +355,7 @@ class DatabaseService {
 
   static Future<void> deletePlaylist(String playlistId) async {
     await _ensureLoaded();
-    if (playlistId == 'favorites') return;
+    if (playlistId == Playlist.favoritesId) return;
     _playlists.removeWhere((p) => p.id == playlistId);
     await _persistPlaylists();
   }
@@ -408,7 +432,7 @@ class DatabaseService {
     if (_downloadedTracks.any((t) => t.id == track.id)) return;
     _downloadedTracks.insert(0, track);
     await _persistDownloaded();
-    _libraryUpdateController.add(null);
+    if (!_libraryUpdateController.isClosed) _libraryUpdateController.add(null);
   }
 
   /// Deletes the local audio for [track] and forgets it from the library & playlists.
@@ -421,7 +445,7 @@ class DatabaseService {
       pl.tracks.removeWhere((t) => t.id == track.id);
     }
     await _persistPlaylists();
-    _libraryUpdateController.add(null);
+    if (!_libraryUpdateController.isClosed) _libraryUpdateController.add(null);
   }
 
   static Future<List<Track>> getDownloadedTracks() async {
@@ -452,9 +476,8 @@ class DatabaseService {
   static Future<void> _persistLyrics() async {
     try {
       final dir = await _docs();
-      final file = File('$dir/bilibeat_lyrics.json');
       final map = _lyricsCache.map((k, v) => MapEntry(k, v.toMap()));
-      await file.writeAsString(jsonEncode(map));
+      await _writeJsonAtomically('$dir/bilibeat_lyrics.json', map);
     } catch (e) {
       debugPrint('DatabaseService _persistLyrics error: $e');
     }

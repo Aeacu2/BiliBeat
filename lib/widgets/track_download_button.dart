@@ -66,6 +66,9 @@ class _TrackDownloadButtonState extends State<TrackDownloadButton> {
   void didUpdateWidget(covariant TrackDownloadButton oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.track.id != widget.track.id) {
+      // Reset synchronously: _refresh() is async and the old track's flag
+      // would otherwise paint one stale frame.
+      _isDownloaded = false;
       _wasDownloading = false;
       _fraction = 0.0;
       _refresh();

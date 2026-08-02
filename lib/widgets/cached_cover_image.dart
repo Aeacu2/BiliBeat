@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:crypto/crypto.dart';
 import 'package:flutter/material.dart';
 import 'package:path_provider/path_provider.dart';
+import '../services/bili_http.dart';
 import '../theme/app_theme.dart';
 import '../theme/motion.dart';
 
@@ -60,12 +61,17 @@ class CachedCoverImage extends StatefulWidget {
 enum _CoverStatus { loading, ready, failed }
 
 class _CachedCoverImageState extends State<CachedCoverImage> {
-  static final HttpClient _client = HttpClient()
-    ..idleTimeout = const Duration(seconds: 30)
-    ..maxConnectionsPerHost = 8;
+  static final HttpClient _client =
+      biliHttpClient(connectionTimeout: const Duration(seconds: 15),
+          maxConnectionsPerHost: 8);
 
   // Avoid requesting absurdly large thumbnails.
   static const int _maxEdge = 1080;
+
+  // Deduplicates concurrent downloads of the same URL: two list rows showing
+  // the same cover would otherwise both write to the same `.part` file and
+  // interleave truncate/append, renaming a corrupt file into the cache.
+  static final Map<String, Future<File?>> _inFlight = {};
 
   File? _file;
   _CoverStatus _status = _CoverStatus.loading;
@@ -147,39 +153,62 @@ class _CachedCoverImageState extends State<CachedCoverImage> {
         return;
       }
 
+      final File? cached;
+      final existing = _inFlight[fetchUrl];
+      if (existing != null) {
+        cached = await existing;
+      } else {
+        final future = _downloadAndCache(fetchUrl, file);
+        _inFlight[fetchUrl] = future;
+        try {
+          cached = await future;
+        } finally {
+          _inFlight.remove(fetchUrl);
+        }
+      }
+      _settle(token, cached);
+    } catch (_) {
+      _settle(token, null);
+    }
+  }
+
+  /// Downloads [fetchUrl] into [file] via a `.part` sibling + rename, so a
+  /// kill mid-write can never leave a truncated file cached forever.
+  static Future<File?> _downloadAndCache(String fetchUrl, File file) async {
+    try {
       final req = await _client.getUrl(Uri.parse(fetchUrl));
       req.headers.set('Referer', 'https://www.bilibili.com/');
-      req.headers.set(
-        'User-Agent',
-        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 '
-        '(KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36',
-      );
+      req.headers.set('User-Agent', kBiliUserAgent);
       final res = await req.close();
 
       if (res.statusCode != 200) {
         await res.drain<void>();
-        _settle(token, null);
-        return;
+        return null;
       }
 
-      // Download to a temp sibling and rename into place, so a kill mid-write
-      // can never leave a truncated file cached forever.
       final part = File('${file.path}.part');
-      final sink = part.openWrite();
       try {
-        await res.pipe(sink);
+        final sink = part.openWrite();
+        try {
+          await res.pipe(sink);
+        } finally {
+          await sink.close();
+        }
+        if (await part.length() == 0) {
+          return null;
+        }
+        await part.rename(file.path);
+        return file;
       } finally {
-        await sink.close();
+        // A failed download must not leave a `.part` file in temp forever.
+        if (await part.exists()) {
+          try {
+            await part.delete();
+          } catch (_) {}
+        }
       }
-      if (await part.length() == 0) {
-        await part.delete();
-        _settle(token, null);
-        return;
-      }
-      await part.rename(file.path);
-      _settle(token, file);
     } catch (_) {
-      _settle(token, null);
+      return null;
     }
   }
 
@@ -242,7 +271,7 @@ class _CachedCoverImageState extends State<CachedCoverImage> {
     return Container(
       width: widget.width,
       height: widget.height,
-      color: const Color(0xFF17171C),
+      color: AppColors.surfaceDeep,
       child: Center(
         child: Icon(
           Icons.music_note_rounded,
@@ -261,7 +290,7 @@ class _CachedCoverImageState extends State<CachedCoverImage> {
             gradient: LinearGradient(
               colors: [
                 AppColors.accent.withValues(alpha: 0.35),
-                const Color(0xFF1E1E24),
+                AppColors.surfaceNeutralDeep,
               ],
               begin: Alignment.topLeft,
               end: Alignment.bottomRight,

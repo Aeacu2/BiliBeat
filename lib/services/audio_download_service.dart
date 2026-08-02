@@ -6,6 +6,7 @@ import 'package:flutter/foundation.dart';
 import 'package:path_provider/path_provider.dart';
 
 import '../models/track.dart';
+import 'bili_http.dart';
 import 'bilibili_sdk.dart';
 import 'database_service.dart';
 
@@ -43,13 +44,10 @@ class DownloadProgress {
 class AudioDownloadService {
   AudioDownloadService._();
 
-  static final HttpClient _client = HttpClient()
-    ..idleTimeout = const Duration(seconds: 60)
-    ..maxConnectionsPerHost = 4;
-
-  static const String _userAgent =
-      'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 '
-      '(KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36';
+  static final HttpClient _client = biliHttpClient(
+    connectionTimeout: const Duration(seconds: 15),
+    idleTimeout: const Duration(seconds: 60),
+  );
 
   static String? _dirPath;
 
@@ -118,6 +116,10 @@ class AudioDownloadService {
   /// something outside the app deleting files under us.
   static final Map<String, bool> _downloadedMemo = {};
 
+  /// Bounds for the memo: every search row ever queried would otherwise
+  /// accumulate for the whole app lifetime.
+  static const int _memoCap = 1024;
+
   /// True when a complete, verified audio file exists on disk for [track].
   static Future<bool> isDownloaded(Track track) => isDownloadedById(_key(track));
 
@@ -127,6 +129,9 @@ class AudioDownloadService {
     if (memo != null) return memo;
     final result = await _statDownloaded(id);
     _downloadedMemo[id] = result;
+    if (_downloadedMemo.length > _memoCap) {
+      _downloadedMemo.remove(_downloadedMemo.keys.first);
+    }
     return result;
   }
 
@@ -174,8 +179,10 @@ class AudioDownloadService {
     final id = _key(track);
     final path = _audioPath(dir, id);
     await saveTrackMetadata(track);
+    // Already on disk: no DB write either — registration happens at download
+    // time (below) and at library load, so replaying every track start would
+    // just be an O(n) scan over the library for nothing.
     if (await isDownloadedById(id)) {
-      await DatabaseService.saveDownloadedTrack(track);
       return path;
     }
 
@@ -208,7 +215,7 @@ class AudioDownloadService {
     try {
       final req = await _client.getUrl(Uri.parse(url));
       req.headers.set('Referer', 'https://www.bilibili.com/');
-      req.headers.set('User-Agent', _userAgent);
+      req.headers.set('User-Agent', kBiliUserAgent);
       req.headers.set('Accept', '*/*');
       req.headers.set('Accept-Encoding', 'identity');
 

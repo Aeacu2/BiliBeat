@@ -2,11 +2,12 @@ import 'dart:convert';
 import 'dart:io';
 import 'package:crypto/crypto.dart';
 import 'package:flutter/foundation.dart';
+import 'bili_http.dart';
 
 class WbiSigner {
-  static final HttpClient _client = HttpClient()
-    ..idleTimeout = const Duration(seconds: 30)
-    ..maxConnectionsPerHost = 4;
+  static final HttpClient _client = biliHttpClient();
+
+  static final RegExp _stripChars = RegExp(r"[!'()*]");
 
   static const List<int> mixinKeyEncTab = [
     46, 47, 18, 2, 53, 8, 23, 32, 15, 50, 10, 31, 58, 3, 45, 35, 27, 43, 5, 49,
@@ -36,7 +37,7 @@ class WbiSigner {
 
     for (final k in sortedKeys) {
       var val = newParams[k].toString();
-      val = val.replaceAll(RegExp(r"[!'()*]"), '');
+      val = val.replaceAll(_stripChars, '');
       queryParts.add('${Uri.encodeComponent(k)}=${Uri.encodeComponent(val)}');
     }
 

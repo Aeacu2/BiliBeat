@@ -25,20 +25,27 @@ class AppColors {
   static const Color accent50 = Color(0x80FF3366);   // accent 50%
   static const Color success12 = Color(0x1F34C77B);  // success 12%
   static const Color success50 = Color(0x8034C77B);  // success 50%
-  static const Color black30 = Color(0x4D000000);     // black 30%
   static const Color black45 = Color(0x73000000);     // black 45%
   static const Color black50 = Color(0x80000000);     // black 50%
   static const Color black55 = Color(0x8C000000);     // black 55%
-  static const Color white06 = Color(0x0FFFFFFF);     // white 6%
   static const Color white05 = Color(0x0DFFFFFF);     // white 5%
+  static const Color white06 = Color(0x0FFFFFFF);     // white 6%
+  static const Color white10 = Color(0x1AFFFFFF);     // white 10%
+  static const Color white12 = Color(0x1FFFFFFF);     // white 12%
+  static const Color white24 = Color(0x3DFFFFFF);     // white 24%
 
   // Neutral ramp (cool near-black, not pure #000 — reads more refined).
   static const Color background = Color(0xFF08080A);
   static const Color backgroundElevated = Color(0xFF101014);
+  /// One step deeper than [backgroundElevated]: nested surfaces and the cover
+  /// placeholder read as "card on card" instead of fighting for the same tone.
+  static const Color surfaceDeep = Color(0xFF141416);
   static const Color surfaceCard = Color(0x0AFFFFFF); // ~4% white
-  static const Color surfaceHighlight = Color(0x1FFFFFFF); // ~12% white
   static const Color hairline = Color(0x14FFFFFF); // subtle borders
   static const Color hairlineStrong = Color(0x26FFFFFF);
+  /// Neutral pair for muted two-stop gradients (track-placeholder art, etc.).
+  static const Color surfaceNeutral = Color(0xFF3A3A40);
+  static const Color surfaceNeutralDeep = Color(0xFF232327);
 
   // Text
   static const Color textPrimary = Color(0xFFFFFFFF);

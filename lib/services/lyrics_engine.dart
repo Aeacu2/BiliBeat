@@ -2,11 +2,10 @@ import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/foundation.dart';
 import '../models/lyric_line.dart';
+import 'bili_http.dart';
 
 class LyricsEngine {
-  static final HttpClient _client = HttpClient()
-    ..idleTimeout = const Duration(seconds: 30)
-    ..maxConnectionsPerHost = 4;
+  static final HttpClient _client = biliHttpClient();
 
   static Future<String?> _httpGet(String urlStr, {Map<String, String>? headers}) async {
     try {
@@ -16,228 +15,263 @@ class LyricsEngine {
       if (res.statusCode == 200) {
         return await res.transform(utf8.decoder).join();
       }
+      // Drain non-200 bodies so the connection returns to the pool; with
+      // maxConnectionsPerHost = 4, a few un-drained 4xx/5xx responses would
+      // exhaust it and later requests would queue behind idleTimeout.
+      await res.drain<void>();
     } catch (e) {
       debugPrint('Lyrics HTTP error: $e');
     }
     return null;
   }
 
+  // Common noise words in B站 titles
+  static final RegExp noiseKeywords = RegExp(
+    r'(?:4K|1080P|720P|60帧|50帧|杜比视界|杜比全景声|Hi-?Res|无损音质|无损|高音质|HQ|SQ|'
+    r'官方MV|MV|纯享版|纯享|动态歌词|LRC|全场|完整版|片段|精剪|多机位|直拍|现场|Live|'
+    r'首唱|单曲循环|单曲|纯音频|Audio|字幕组|字幕|重置|超清|高清|录音棚|在.*大声听|'
+    r'主题曲|片尾曲|片头曲|插曲|推广曲|印象曲|角色曲|宣传曲|ED|OP|OST)',
+    caseSensitive: false,
+  );
+
+  // Token-level noise: if a space-separated token contains any of these, the
+  // whole token is noise (spaces are the atomic unit of titles).
+  static final RegExp tokenNoise = RegExp(
+    noiseKeywords.pattern + r'|(?:Cover|翻唱|原唱|词/曲|混音|演唱|UP主|版本)',
+    caseSensitive: false,
+  );
+
+  static final RegExp bracketCategory = RegExp(
+    r'合集|歌单|珍藏|榜|反应|点评|解析|试听',
+    caseSensitive: false,
+  );
+
+  // Shared structural regexes: cleaning and candidate generation must strip
+  // exactly the same brackets, or the two paths disagree on the same title.
+  static final RegExp htmlTag = RegExp(r'<[^>]+>');
+  static final RegExp bracketContent = RegExp(r'[【\[]([^】\]]+)[】\]]');
+  static final RegExp bookBracket = RegExp(r'《([^》]+)》');
+  static final RegExp bracketStripper =
+      RegExp(r'【[^】]+】|\[[^\]]+\]|（[^）]+）|\([^)]+\)');
+  static final RegExp parenSubtitle = RegExp(r'\s*[\(（][^\)）]+[\)）]');
+  static final RegExp separator =
+      RegExp(r'^(.+?)\s*[-–—/︱|丨_]\s*(\S.*)$');
+
+  static String _preprocess(String raw) {
+    return raw
+        .trim()
+        .replaceAll(htmlTag, '')
+        .replaceAll('&amp;', '&')
+        .replaceAll('&lt;', '<')
+        .replaceAll('&gt;', '>')
+        .replaceAll('&quot;', '"')
+        .replaceAll('&#39;', "'")
+        .replaceAll(RegExp(r'\s+'), ' ')
+        .trim();
+  }
+
+  /// Drops brackets, parens and whole-token noise from [s], preserving the
+  /// space-separated tokens that survive.
+  static String _noisyClean(String s) {
+    return s
+        .replaceAll(bracketStripper, ' ')
+        .split(RegExp(r'\s+'))
+        .where((t) => t.isNotEmpty && !tokenNoise.hasMatch(t))
+        .join(' ');
+  }
+
   // Title cleaner to extract clean song name & artist from Bilibili video titles
+  //
+  // Deliberately structural: brackets supply the artist, 《》 supplies the
+  // song, separators split "Artist - Song", and space-separated tokens are the
+  // unit of noise removal. All semantic disambiguation (which 《》 is the song,
+  // who the singer is, collaboration brackets like 【A&B 歌名】) is delegated to
+  // [cleanTitleWithValidation]'s lyric-DB search; this method is only the
+  // offline fallback and the instant first pass.
   static Map<String, String> cleanTitle(String rawTitle, {String defaultArtist = ''}) {
-    var title = rawTitle.trim();
+    final title = _preprocess(rawTitle);
     var artist = defaultArtist.trim();
     if (artist == '未知UP主' || artist == '未知歌手' || artist == 'UP主') {
       artist = '';
     }
 
-    // 1. Remove HTML tags like <em class="keyword">...</em>
-    title = title.replaceAll(RegExp(r'<[^>]+>'), '');
+    String? song;
 
-    // Common noise words in B站 titles
-    final noiseKeywords = RegExp(
-      r'(?:4K|1080P|720P|60帧|50帧|杜比视界|杜比全景声|Hi-?Res|无损音质|无损|高音质|HQ|SQ|'
-      r'官方MV|MV|纯享版|纯享|动态歌词|LRC|全场|完整版|片段|精剪|多机位|直拍|现场|Live|'
-      r'首唱|单曲循环|单曲|纯音频|Audio|字幕组|字幕|重置|超清|高清|录音棚|在.*大声听|'
-      r'主题曲|片尾曲|片头曲|插曲|推广曲|印象曲|角色曲|宣传曲|ED|OP|OST)',
-      caseSensitive: false,
-    );
-
-    // 2. Extract artist from brackets like 【周深】, [周深], 【歌手：周深】
-    final bracketMatch = RegExp(r'[【\[]([^】\]]+)[】\]]').firstMatch(title);
+    // 2. Artist from brackets like 【周深】, [周深], or space-split
+    //    【Artist1&Artist2 SongTitle】 patterns.
+    final bracketMatch = bracketContent.firstMatch(title);
     if (bracketMatch != null) {
       final content = bracketMatch.group(1)!.trim();
-      if (!noiseKeywords.hasMatch(content) &&
-          !RegExp(r'合集|歌单|珍藏|榜|反应|点评|解析|试听', caseSensitive: false).hasMatch(content)) {
-        final cleanBracket = content
-            .replaceAll(RegExp(r'^(歌手|演唱|UP主|原唱|Singer|Vocal)[：:]\s*', caseSensitive: false), '')
-            .replaceAll(RegExp(r'\s*([|︱丨/]\s*).*$'), '')
-            .trim();
-        if (cleanBracket.isNotEmpty && cleanBracket.length <= 15) {
-          artist = cleanBracket;
-        }
-      }
-    }
-
-    // 3. Extract song from book brackets 《...》
-    final bookTitleMatches = RegExp(r'《([^》]+)》').allMatches(title).toList();
-    if (bookTitleMatches.isNotEmpty) {
-      final showPrefixes = RegExp(r'(电视剧|电影|纪录片|综艺|游戏|动漫|动画|央视|节目)');
-      final showSuffixes = RegExp(r'(?:[\u4e00-\u9fa5]{1,4}曲|ED|OP|OST|原声带|原声|项目|节目|特辑)');
-
-      Match? mainBookMatch;
-      for (final m in bookTitleMatches) {
-        final beforeText = title.substring((m.start - 10).clamp(0, m.start), m.start);
-        final afterText = title.substring(m.end, (m.end + 15).clamp(m.end, title.length));
-
-        final isPrecededByShow = showPrefixes.hasMatch(beforeText);
-        final isFollowedByThemeTag = RegExp(r'^\s*[\(（]?[^《\)）]*' + showSuffixes.pattern).hasMatch(afterText);
-
-        if (!isPrecededByShow && !isFollowedByThemeTag) {
-          mainBookMatch = m;
-          break;
-        }
-      }
-
-      mainBookMatch ??= bookTitleMatches.last;
-      final extractedSong = mainBookMatch.group(1)!.trim();
-
-      if (artist.isEmpty) {
-        // Look for artist immediately preceding 《...》: e.g. "邓紫棋《11》" or "在百万豪装录音棚大声听 毛不易《一程山路》"
-        final beforeBook = title.substring(0, mainBookMatch.start).trim();
-        final cleanBefore = beforeBook
-            .replaceAll(RegExp(r'【[^】]*】|\[[^\]]*\]'), '')
-            .replaceAll(noiseKeywords, ' ')
-            .trim();
-        final trailingArtistMatch = RegExp(r'([\u4e00-\u9fa5A-Za-z0-9_·•.]{2,10})\s*$').firstMatch(cleanBefore);
-        if (trailingArtistMatch != null) {
-          final cand = trailingArtistMatch.group(1)!.trim();
-          if (!noiseKeywords.hasMatch(cand) && cand.length <= 12) {
-            artist = cand;
+      if (!tokenNoise.hasMatch(content) && !bracketCategory.hasMatch(content)) {
+        final tokens = content.split(RegExp(r'\s+')).where((t) => t.isNotEmpty).toList();
+        if (tokens.length >= 2) {
+          final nonNoise = tokens.where((t) => !tokenNoise.hasMatch(t)).toList();
+          if (nonNoise.length >= 2) {
+            artist = nonNoise.sublist(0, nonNoise.length - 1).join(' ');
+            song = nonNoise.last;
+          } else if (nonNoise.isNotEmpty) {
+            artist = nonNoise.join(' ');
           }
-        }
-
-        // Look for artist immediately following 《...》: e.g. "《欧若拉》邓紫棋纯享完整版" or "《起风了》- 买辣椒也用券"
-        if (artist.isEmpty) {
-          final afterBook = title.substring(mainBookMatch.end).trim();
-          final leadingArtistMatch = RegExp(r'^\s*[-–—/︱|丨_]?\s*([\u4e00-\u9fa5A-Za-z0-9_·•.]{2,10})').firstMatch(afterBook);
-          if (leadingArtistMatch != null) {
-            final cand = leadingArtistMatch.group(1)!.trim();
-            if (!noiseKeywords.hasMatch(cand) && cand.length <= 12) {
-              artist = cand;
-            }
-          }
-        }
-      }
-
-      if (extractedSong.isNotEmpty) {
-        return {
-          'songTitle': extractedSong,
-          'artist': artist.isNotEmpty ? artist : defaultArtist,
-        };
-      }
-    }
-
-    // 4. No book brackets 《...》: clean noise and split Artist - SongTitle
-    var clean = title
-        .replaceAll(RegExp(r'^[A-Za-z0-9_\-\.\s]*[\u4e00-\u9fa5A-Za-z0-9]+(站|图文站|字幕组|工作室|应援会|后援会|FanClub|粉丝团)[_︱|丨\s_-]*', caseSensitive: false), ' ')
-        .replaceAll(RegExp(r'【[^】]+】|\[[^\]]+\]|（[^）]+）|\([^)]+\)'), ' ')
-        .replaceAll(RegExp(r'\b\d{4}[.\-_]?\d{2}[.\-_]?\d{2}\b|\b\d{8}\b'), ' ')
-        .replaceAll(RegExp(r'(巡演|演唱会|呼和浩特站|北京站|上海站|广州站|深圳站|天津站|沈阳站|南京站|武汉站|重庆站|杭州站)\b'), ' ');
-
-    // Token-level noise filtering: if a space-separated token contains any
-    // noise keyword, the entire token is almost certainly noise (e.g.
-    // "4k最高音质无损纯享" or "重混音修音版本") and is dropped wholesale.
-    // This avoids single-character residue from substring replacement.
-    final tokenNoise = RegExp(
-      noiseKeywords.pattern + r'|(?:Cover|翻唱|原唱|词/曲|混音|演唱|UP主|版本)',
-      caseSensitive: false,
-    );
-    clean = clean
-        .split(RegExp(r'\s+'))
-        .where((t) => t.isNotEmpty && !tokenNoise.hasMatch(t))
-        .join(' ');
-
-    if (artist.isEmpty || artist == defaultArtist) {
-      // Try space-padded separator first: "Artist - Song"
-      var parts = clean.split(RegExp(r'\s+[-–—/︱|丨_]\s+'));
-      // Fallback: bare dash with no spaces: "Artist-Song"
-      if (parts.length < 2) {
-        final dashMatch = RegExp(r'^([\u4e00-\u9fa5A-Za-z0-9·•.]{2,10})\s*[-–—]\s*(.+)$').firstMatch(clean);
-        if (dashMatch != null) {
-          parts = [dashMatch.group(1)!, dashMatch.group(2)!];
-        }
-      }
-      if (parts.length >= 2) {
-        final p0 = parts[0].trim();
-        final p1 = parts[1].trim();
-        if (p0.isNotEmpty && p1.isNotEmpty) {
-          artist = p0;
-          clean = p1;
+        } else {
+          artist = content;
         }
       }
     }
 
-    clean = clean.replaceAll(RegExp(r'[︱|丨~_─—\-]\s*'), ' ').trim();
-    clean = clean.replaceAll(RegExp(r'\s+'), ' ');
+    // 3. Song from the first book bracket 《...》. Artist, if still unknown,
+    //    comes from the text immediately before or after it.
+    final bookMatch = bookBracket.firstMatch(title);
+    if (bookMatch != null) {
+      song = bookMatch.group(1)!.trim();
+      if (artist.isEmpty || artist == defaultArtist) {
+        final beforeTokens = _noisyClean(title.substring(0, bookMatch.start))
+            .split(RegExp(r'\s+'))
+            .where((t) => t.isNotEmpty)
+            .toList();
+        // The token nearest the 《》 is most likely the artist's name; when
+        // several precede it ("周深 古风《大鱼》") the leading one wins.
+        if (beforeTokens.isNotEmpty) {
+          artist = beforeTokens.first;
+        }
+      }
+      if (artist.isEmpty || artist == defaultArtist) {
+        final after = _noisyClean(title.substring(bookMatch.end));
+        final leading = RegExp(r'^([\u4e00-\u9fa5A-Za-z0-9_·•.]{2,12})').firstMatch(after);
+        if (leading != null && !tokenNoise.hasMatch(leading.group(1)!)) {
+          artist = leading.group(1)!;
+        }
+      }
+    }
 
+    // 4. No book brackets: split "Artist - SongTitle" on the cleaned title.
+    if (song == null) {
+      final clean = _noisyClean(title);
+      final parts = clean.split(RegExp(r'\s+[-–—/︱|丨_]\s+'));
+      if (parts.length >= 2 && parts[0].isNotEmpty && parts[1].isNotEmpty) {
+        if (artist.isEmpty || artist == defaultArtist) artist = parts[0];
+        song = parts[1];
+      } else {
+        final dash = RegExp(r'^([\u4e00-\u9fa5A-Za-z0-9·•.]{2,10})\s*[-–—]\s*(.+)$')
+            .firstMatch(clean);
+        if (dash != null) {
+          if (artist.isEmpty || artist == defaultArtist) artist = dash.group(1)!;
+          song = dash.group(2)!;
+        }
+      }
+      song ??= clean;
+    }
+
+    final finalSong = song.trim();
     return {
-      'songTitle': clean.isEmpty ? rawTitle : clean,
+      'songTitle': finalSong.isEmpty ? rawTitle : finalSong,
       'artist': artist.isNotEmpty ? artist : defaultArtist,
     };
   }
 
+  /// Structural candidate extraction for DB-backed validation: every 《…》
+  /// content, every 【…】 content (whole and space-split), the part after an
+  /// "Artist - Song" separator, and every surviving space-separated token.
+  static List<Map<String, String>> _generateCandidates(String rawTitle) {
+    final title = _preprocess(rawTitle);
+    final candidates = <Map<String, String>>[];
+
+    void add(String song, [String artistHint = '']) {
+      final s = song.trim();
+      final hint = artistHint.trim();
+      final norm = _normalize(s);
+      if (s.isEmpty || norm.isEmpty || norm.length > 24) return;
+      if (tokenNoise.hasMatch(s)) return;
+      if (candidates.any((c) => _normalize(c['song']!) == norm)) return;
+      candidates.add({'song': s, 'artistHint': hint});
+    }
+
+    for (final m in bookBracket.allMatches(title)) {
+      add(m.group(1)!);
+    }
+    for (final m in bracketContent.allMatches(title)) {
+      final content = m.group(1)!.trim();
+      if (content.isEmpty) continue;
+      add(content);
+      final tokens = content.split(RegExp(r'\s+')).where((t) => t.isNotEmpty).toList();
+      if (tokens.length >= 2) {
+        add(tokens.last, tokens.sublist(0, tokens.length - 1).join(' '));
+      }
+    }
+    final sep = separator.firstMatch(title);
+    if (sep != null) {
+      add(sep.group(2)!, sep.group(1)!);
+    }
+    final bare = title.replaceAll(bracketStripper, ' ');
+    for (final t in bare.split(RegExp(r'\s+'))) {
+      add(t);
+    }
+    return candidates.length > 8 ? candidates.sublist(0, 8) : candidates;
+  }
+
   /// Advanced title & artist extractor using lyric database cross-validation.
   ///
-  /// 1. Extracts initial candidate song & artist using rule-based parsing.
-  /// 2. Searches NetEase / LRCLIB lyric databases for official track metadata.
-  /// 3. Cross-validates official metadata against the raw video title:
-  ///    - If both official song & artist appear in raw video title -> applies both.
-  ///    - If only official song matches (e.g. cover song) -> applies song title, preserving cover artist.
+  /// Generates every plausible song candidate structurally (see
+  /// [_generateCandidates]), searches each against NetEase / LRCLIB, and picks
+  /// the candidate whose official metadata best matches the raw video title:
+  /// an official song name or artist that appears verbatim in the raw title is
+  /// the strongest signal. [cleanTitle]'s rule-based result is only the artist
+  /// fallback and the offline result.
   static Future<Map<String, String>> cleanTitleWithValidation(
     String rawTitle, {
     String defaultArtist = '',
   }) async {
-    final initial = cleanTitle(rawTitle, defaultArtist: defaultArtist);
-    final ruleSong = initial['songTitle'] ?? rawTitle;
-    final ruleArtist = initial['artist'] ?? defaultArtist;
+    final fallback = cleanTitle(rawTitle, defaultArtist: defaultArtist);
+    final normRaw = _normalize(rawTitle);
 
-    final query = (ruleArtist.isNotEmpty && ruleArtist != defaultArtist)
-        ? '$ruleArtist $ruleSong'
-        : ruleSong;
+    String? bestSong;
+    String? bestArtist;
+    var bestScore = 0;
 
-    try {
-      final lyricsRes = await fetchFromNetEase(query) ??
-          await fetchFromLRCLIB(query, artist: ruleArtist);
+    for (final candidate in _generateCandidates(rawTitle)) {
+      final song = candidate['song']!;
+      final hint = candidate['artistHint'];
+      final artistQuery = (hint != null && hint.isNotEmpty) ? hint : null;
 
-      if (lyricsRes != null) {
-        final officialSong = (lyricsRes.songTitle ?? '').trim();
-        final officialArtist = (lyricsRes.artistName ?? '').trim();
+      final result = await fetchFromNetEase(song, artist: artistQuery) ??
+          await fetchFromLRCLIB(song, artist: artistQuery);
+      if (result == null) continue;
 
-        // Strip NetEase parentheses subtitles like " (Live)" or " (电影《...》)"
-        final cleanOfficialSong = officialSong.replaceAll(RegExp(r'\s*[\(（][^\)）]+[\)）]'), '').trim();
+      final officialSong = (result.songTitle ?? '').trim();
+      final officialArtist = (result.artistName ?? '').trim();
+      // Strip provider parentheses subtitles like "心火 (Live)" or " (电影《...》)"
+      final cleanOfficialSong = officialSong.replaceAll(parenSubtitle, '').trim();
+      final offSongNorm = _normalize(cleanOfficialSong);
+      final offArtistNorm = _normalize(officialArtist);
+      final candNorm = _normalize(song);
 
-        final rawNorm = _normalize(rawTitle);
-        final ruleSongNorm = _normalize(ruleSong);
-        final offSongNorm = _normalize(officialSong);
-        final cleanOffSongNorm = _normalize(cleanOfficialSong);
-        final offArtistNorm = _normalize(officialArtist);
+      if (offSongNorm.isEmpty) continue;
 
-        final songMatches = (offSongNorm.isNotEmpty &&
-                (rawNorm.contains(offSongNorm) ||
-                    ruleSongNorm.contains(offSongNorm) ||
-                    offSongNorm.contains(ruleSongNorm))) ||
-            (cleanOffSongNorm.isNotEmpty &&
-                (rawNorm.contains(cleanOffSongNorm) ||
-                    ruleSongNorm.contains(cleanOffSongNorm) ||
-                    cleanOffSongNorm.contains(ruleSongNorm)));
+      final songInRaw = normRaw.contains(offSongNorm);
+      final songMatchesCandidate = offSongNorm == candNorm ||
+          candNorm.contains(offSongNorm) ||
+          offSongNorm.contains(candNorm);
+      final artistInRaw = offArtistNorm.isNotEmpty && normRaw.contains(offArtistNorm);
+      final hasLyrics = result.lines.isNotEmpty;
 
-        final artistMatches = offArtistNorm.isNotEmpty &&
-            (rawNorm.contains(offArtistNorm) ||
-                _normalize(ruleArtist).contains(offArtistNorm));
+      var score = 0;
+      if (hasLyrics) score += 1;
+      if (songInRaw) score += 2;
+      if (artistInRaw) score += 2;
+      if (songMatchesCandidate) score += 1;
 
-        if (songMatches) {
-          // Only prefer ruleSong when it's essentially the same length as officialSong
-          // (i.e. they represent the same name). If ruleSong is much longer, it likely
-          // contains noise residue and the official name is cleaner.
-          final lengthClose = (ruleSongNorm.length - cleanOffSongNorm.length).abs() <= 3;
-          final appliedSong = (cleanOffSongNorm == ruleSongNorm || (lengthClose && ruleSongNorm.contains(cleanOffSongNorm)))
-              ? ruleSong
-              : (cleanOfficialSong.isNotEmpty ? cleanOfficialSong : officialSong);
-          return {
-            'songTitle': appliedSong,
-            'artist': artistMatches
-                ? officialArtist
-                : (ruleArtist.isNotEmpty ? ruleArtist : defaultArtist),
-          };
-        }
+      // Without the song matching the title (or the candidate), an artist-only
+      // search would happily return that artist's arbitrary song.
+      if ((songInRaw || songMatchesCandidate) && score > bestScore) {
+        bestScore = score;
+        bestSong = cleanOfficialSong.isNotEmpty ? cleanOfficialSong : officialSong;
+        bestArtist = artistInRaw ? officialArtist : fallback['artist']!;
       }
-    } catch (e) {
-      debugPrint('Cross validation error: $e');
     }
 
+    if (bestSong == null) return fallback;
     return {
-      'songTitle': ruleSong,
-      'artist': ruleArtist,
+      'songTitle': bestSong,
+      'artist': bestArtist!,
     };
   }
 
@@ -250,6 +284,11 @@ class LyricsEngine {
     final cand = _normalize(candidateName);
     final target = _normalize(targetTitle);
     if (cand.isEmpty || target.isEmpty) return false;
+    // A 2-char target like "11" would substring-match "2011"/"11月…" and pull
+    // the wrong track's lyrics; exact equality is still trusted for short
+    // names, but contains-matching requires a longer (specific) name.
+    if (cand == target) return true;
+    if (cand.length < 4 || target.length < 4) return false;
     return cand.contains(target) || target.contains(cand);
   }
 
@@ -299,10 +338,16 @@ class LyricsEngine {
   static String toLrc(List<LyricLine> lines) {
     final sb = StringBuffer();
     for (final line in lines) {
-      final min = (line.time / 60).floor();
-      final sec = line.time - min * 60;
-      final tag =
-          '[${min.toString().padLeft(2, '0')}:${sec.toStringAsFixed(2).padLeft(5, '0')}]';
+      // Round to whole milliseconds first: `sec.toStringAsFixed(2)` on a value
+      // like 59.9996s would otherwise round up to "[mm:60.00]", which parseLrc
+      // cannot read back.
+      final totalMillis = (line.time * 1000).round();
+      final min = totalMillis ~/ 60000;
+      final secMillis = totalMillis % 60000;
+      final sec = (secMillis / 1000).floor();
+      final centis = (secMillis % 1000) ~/ 10;
+      final tag = '[${min.toString().padLeft(2, '0')}:'
+          '${sec.toString().padLeft(2, '0')}.${centis.toString().padLeft(2, '0')}]';
       sb.writeln('$tag${line.text}');
       if (line.translation != null && line.translation!.isNotEmpty) {
         sb.writeln('$tag${line.translation}');
@@ -367,6 +412,7 @@ class LyricsEngine {
             final songName = (song['name'] ?? '') as String;
             if (isTitleMatching(songName, title)) {
               final songId = song['id'];
+              if (songId is! int || songId <= 0) continue;
               final lyricUrl = 'https://music.163.com/api/song/lyric?id=$songId&lv=-1&tv=-1';
 
               final lyricBody = await _httpGet(lyricUrl, headers: {'Referer': 'https://music.163.com'});
@@ -379,27 +425,34 @@ class LyricsEngine {
                 final transLines = parseLrc(rawTrans);
 
                 if (transLines.isNotEmpty) {
-                  // Index loop, not `lines.indexOf(line)`: indexOf is O(n) per
-                  // line (and relied on instance identity), making the merge
-                  // O(n^2) over the lyric count.
+                  // Both lists are time-sorted, so a single advancing pointer
+                  // keeps the merge O(n) instead of the previous O(n²)
+                  // firstWhere-scan per line.
+                  var ti = 0;
                   for (var i = 0; i < lines.length; i++) {
                     final line = lines[i];
-                    final matchTrans = transLines.firstWhere(
-                      (t) => (t.time - line.time).abs() < 0.5,
-                      orElse: () => LyricLine(time: -1, text: ''),
-                    );
-                    if (matchTrans.time >= 0) {
+                    // Skip translations that are too early for this line.
+                    while (ti < transLines.length &&
+                        transLines[ti].time < line.time - 0.5) {
+                      ti++;
+                    }
+                    // ti is now the first translation inside the window, if any.
+                    if (ti < transLines.length &&
+                        (transLines[ti].time - line.time).abs() < 0.5) {
                       lines[i] = LyricLine(
                         time: line.time,
                         text: line.text,
-                        translation: matchTrans.text,
+                        translation: transLines[ti].text,
                       );
                     }
                   }
                 }
 
                 if (lines.isNotEmpty) {
-                  final artists = (song['artists'] as List? ?? []).map((a) => a['name']).join(', ');
+                  final artists = (song['artists'] as List? ?? [])
+                      .where((a) => a is Map && a['name'] is String)
+                      .map((a) => a['name'] as String)
+                      .join(', ');
                   return LyricsResult(
                     source: 'netease',
                     songTitle: songName,

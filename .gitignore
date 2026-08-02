@@ -43,6 +43,7 @@ app.*.map.json
 /android/app/debug
 /android/app/profile
 /android/app/release
+/android/build/
 
 # Obfuscation symbol files: large, per-build binaries. Archive them with the
 # GitHub release instead — they are required to read crashes from that build.

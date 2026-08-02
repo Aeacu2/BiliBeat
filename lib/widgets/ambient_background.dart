@@ -5,6 +5,7 @@ import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
 
+import '../services/bili_http.dart';
 import '../theme/app_theme.dart';
 import '../theme/motion.dart';
 import 'cached_cover_image.dart';
@@ -28,13 +29,7 @@ class AmbientBackground extends StatefulWidget {
 }
 
 class _AmbientBackgroundState extends State<AmbientBackground> {
-  static final HttpClient _client = HttpClient()
-    ..idleTimeout = const Duration(seconds: 30)
-    ..maxConnectionsPerHost = 4;
-
-  static const String _userAgent =
-      'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 '
-      '(KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36';
+  static final HttpClient _client = biliHttpClient();
 
   static final Map<String, Color> _colorCache = {};
   static const int _maxCacheSize = 100;
@@ -64,6 +59,9 @@ class _AmbientBackgroundState extends State<AmbientBackground> {
   }
 
   Future<void> _resolve(String? url) async {
+    // Bump the token before every branch: a fallback/cache apply from an old
+    // coverUrl must not be able to win over a newer one still extracting.
+    final token = ++_token;
     if (url == null || url.isEmpty) {
       _apply(_fallback);
       return;
@@ -73,7 +71,6 @@ class _AmbientBackgroundState extends State<AmbientBackground> {
       _apply(cached);
       return;
     }
-    final token = ++_token;
     try {
       final color = await _extractDominantColor(url);
       // Evict oldest entries when cache grows too large.
@@ -106,7 +103,7 @@ class _AmbientBackgroundState extends State<AmbientBackground> {
       final req = await _client
           .getUrl(Uri.parse(CachedCoverImage.sizedUrl(url, 64, 64)));
       req.headers.set('Referer', 'https://www.bilibili.com/');
-      req.headers.set('User-Agent', _userAgent);
+      req.headers.set('User-Agent', kBiliUserAgent);
       final res = await req.close();
       if (res.statusCode != HttpStatus.ok) {
         await res.drain<void>();

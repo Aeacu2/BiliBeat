@@ -30,7 +30,7 @@ class GlassCard extends StatelessWidget {
         gradient: const LinearGradient(
           begin: Alignment.topCenter,
           end: Alignment.bottomCenter,
-          colors: [AppColors.surfaceHighlight, AppColors.surfaceCard],
+          colors: [AppColors.white12, AppColors.surfaceCard],
         ),
         border: Border.all(color: AppColors.hairline),
       ),

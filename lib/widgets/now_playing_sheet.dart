@@ -17,6 +17,7 @@ import 'marquee_text.dart';
 import 'progress_ring.dart';
 import 'synced_lyrics_view.dart';
 import 'lyric_editor_dialog.dart';
+import '../utils/format.dart';
 
 /// Full-screen "now playing" surface.
 class NowPlayingSheet extends StatefulWidget {
@@ -194,13 +195,6 @@ class _NowPlayingSheetState extends State<NowPlayingSheet> {
     _editorRelease?.call();
     _editorRelease = null;
     setState(() => _showEditor = false);
-  }
-
-  static String _formatDuration(Duration d) {
-    final hours = d.inHours;
-    final minutes = d.inMinutes.remainder(60).toString().padLeft(2, '0');
-    final seconds = d.inSeconds.remainder(60).toString().padLeft(2, '0');
-    return hours > 0 ? '$hours:$minutes:$seconds' : '$minutes:$seconds';
   }
 
   @override
@@ -533,7 +527,7 @@ class _NowPlayingSheetState extends State<NowPlayingSheet> {
               child: Slider(
                 value: posSec,
                 max: maxSec,
-                label: _formatDuration(Duration(seconds: posSec.round())),
+                label: formatDuration(Duration(seconds: posSec.round())),
                 // Seeking a track that is not the one playing is meaningless.
                 onChanged: _isActive
                     ? (v) => setState(() => _dragValue = v)
@@ -551,9 +545,9 @@ class _NowPlayingSheetState extends State<NowPlayingSheet> {
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  Text(_formatDuration(Duration(seconds: posSec.round())),
+                  Text(formatDuration(Duration(seconds: posSec.round())),
                       style: timeStyle),
-                  Text('-${_formatDuration(remaining)}', style: timeStyle),
+                  Text('-${formatDuration(remaining)}', style: timeStyle),
                 ],
               ),
             ),
@@ -637,7 +631,7 @@ class _NowPlayingSheetState extends State<NowPlayingSheet> {
         child: Icon(
           playing ? Icons.pause_rounded : Icons.play_arrow_rounded,
           key: ValueKey<bool>(playing),
-          color: Colors.white,
+          color: AppColors.textPrimary,
           size: 40,
         ),
       ),
@@ -659,7 +653,7 @@ class _NowPlayingSheetState extends State<NowPlayingSheet> {
       decoration: BoxDecoration(
         shape: BoxShape.circle,
         gradient: filled ? AppColors.primaryGradient : null,
-        color: filled ? null : AppColors.surfaceHighlight,
+        color: filled ? null : AppColors.white12,
         border: filled
             ? null
             : Border.all(color: AppColors.hairlineStrong),

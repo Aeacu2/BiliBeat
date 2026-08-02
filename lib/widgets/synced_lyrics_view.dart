@@ -269,16 +269,17 @@ class _SyncedLyricsViewState extends State<SyncedLyricsView> {
                 }
                 return false;
               },
-              child: ListView(
+              child: ListView.builder(
                 controller: _scrollController,
                 padding: EdgeInsets.only(
                   top: _topPadding,
                   bottom: _viewportHeight * 0.5,
                 ),
-                children: List.generate(
-                  widget.lines.length,
-                  _lineTile,
-                ),
+                // builder instead of List.generate: only visible lines are
+                // built, so a long song does not instantiate (and animate)
+                // hundreds of off-screen tiles.
+                itemCount: widget.lines.length,
+                itemBuilder: (context, index) => _lineTile(index),
               ),
             ),
             if (_canCalibrate)

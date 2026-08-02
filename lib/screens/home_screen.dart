@@ -130,7 +130,7 @@ class _HomeScreenState extends State<HomeScreen> {
   /// Long-pressing a playlist card offers to delete it — previously a playlist
   /// could be created but never removed.
   Future<void> _confirmDeletePlaylist(Playlist pl) async {
-    if (pl.id == 'favorites') return;
+    if (pl.id == Playlist.favoritesId) return;
     Haptics.medium();
     final confirmed = await showDialog<bool>(
       context: context,
@@ -267,7 +267,7 @@ class _HomeScreenState extends State<HomeScreen> {
               ],
             ),
             child: const Icon(Icons.play_arrow_rounded,
-                color: Colors.white, size: 20),
+                color: AppColors.textPrimary, size: 20),
           ),
         ),
       ),
@@ -296,7 +296,7 @@ class _HomeScreenState extends State<HomeScreen> {
                       height: 54,
                       decoration: const BoxDecoration(
                         gradient: LinearGradient(
-                          colors: [Color(0xFF3A3A40), Color(0xFF232327)],
+                          colors: [AppColors.surfaceNeutral, AppColors.surfaceNeutralDeep],
                         ),
                       ),
                       child: const Icon(Icons.queue_music_rounded,
@@ -363,7 +363,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Playlist? get _favorites {
     for (final pl in _playlists) {
-      if (pl.id == 'favorites') return pl;
+      if (pl.id == Playlist.favoritesId) return pl;
     }
     return null;
   }
@@ -372,7 +372,7 @@ class _HomeScreenState extends State<HomeScreen> {
   Widget build(BuildContext context) {
     // Playlists other than 收藏, which has its own quick-access card.
     final otherPlaylists =
-        _playlists.where((p) => p.id != 'favorites').toList();
+        _playlists.where((p) => p.id != Playlist.favoritesId).toList();
 
     return ListView(
       padding: EdgeInsets.only(

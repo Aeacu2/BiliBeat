@@ -8,6 +8,7 @@ import '../services/lyrics_engine.dart';
 import '../theme/app_theme.dart';
 import '../theme/haptics.dart';
 import 'cached_cover_image.dart';
+import 'segment_tabs.dart';
 import 'synced_lyrics_view.dart';
 
 class LyricEditorDialog extends StatefulWidget {
@@ -66,15 +67,16 @@ class _LyricEditorDialogState extends State<LyricEditorDialog>
   bool _calibrating = false;
   bool _isSearching = false;
 
+  /// Monotonic guard so a slow provider response from an older query can
+  /// never overwrite the results of a newer one.
+  int _searchToken = 0;
+
   /// Real provider of the active lyrics (read from the cache); shown on the
   /// pinned 当前歌词 row.
   String? _currentSourceLabel;
 
   /// True while the full-screen LRC text editor is showing.
   bool _inLrcEditor = false;
-
-  final GlobalKey _tabRowKey = GlobalKey();
-  final List<GlobalKey> _tabKeys = [GlobalKey(), GlobalKey()];
 
   @override
   void initState() {
@@ -189,20 +191,24 @@ class _LyricEditorDialogState extends State<LyricEditorDialog>
       _previewingResult = null;
     });
 
-    final results = <LyricsResult>[..._pinnedResults()];
+    final token = ++_searchToken;
 
-    final netease = await LyricsEngine.fetchFromNetEase(query);
-    if (netease != null) results.add(netease);
+    // Both providers in parallel; only the newest search may commit.
+    final (netease, lrclib) = await (
+      LyricsEngine.fetchFromNetEase(query),
+      LyricsEngine.fetchFromLRCLIB(query),
+    ).wait;
 
-    final lrclib = await LyricsEngine.fetchFromLRCLIB(query);
-    if (lrclib != null) results.add(lrclib);
-
-    if (mounted) {
-      setState(() {
-        _searchResults = results;
-        _isSearching = false;
-      });
-    }
+    if (!mounted || token != _searchToken) return;
+    final results = <LyricsResult>[
+      ..._pinnedResults(),
+      if (netease != null) netease,
+      if (lrclib != null) lrclib,
+    ];
+    setState(() {
+      _searchResults = results;
+      _isSearching = false;
+    });
   }
 
   String _snippet(LyricsResult res) {
@@ -318,7 +324,10 @@ class _LyricEditorDialogState extends State<LyricEditorDialog>
 
     if (sel != null) {
       _applyLyricResult(sel, offset: _previewOffset);
-    } else if (!hasMetadataEdit) {
+    } else if (!hasMetadataEdit ||
+        // Metadata-only save with no caller-side handler: nobody else is
+        // going to close this dialog, so it must close itself.
+        widget.onUpdateMetadata == null) {
       _close();
     }
   }
@@ -360,55 +369,10 @@ class _LyricEditorDialogState extends State<LyricEditorDialog>
           Row(
             children: [
               Expanded(
-                child: Stack(
-                  key: _tabRowKey,
-                  children: [
-                    // Animated indicator driven by TabController.animation
-                    AnimatedBuilder(
-                      animation: _tabController.animation!,
-                      builder: (context, _) {
-                        final rowBox = _tabRowKey.currentContext
-                            ?.findRenderObject() as RenderBox?;
-                        final box0 = _tabKeys[0].currentContext
-                            ?.findRenderObject() as RenderBox?;
-                        final box1 = _tabKeys[1].currentContext
-                            ?.findRenderObject() as RenderBox?;
-                        if (rowBox == null || box0 == null || box1 == null) {
-                          WidgetsBinding.instance.addPostFrameCallback((_) {
-                            if (context.mounted) (context as Element).markNeedsBuild();
-                          });
-                          return const SizedBox.shrink();
-                        }
-                        final off0 = box0.localToGlobal(Offset.zero, ancestor: rowBox);
-                        final off1 = box1.localToGlobal(Offset.zero, ancestor: rowBox);
-                        final t = _tabController.animation!.value;
-                        final left = off0.dx + (off1.dx - off0.dx) * t;
-                        final width = box0.size.width +
-                            (box1.size.width - box0.size.width) * t;
-                        return Positioned(
-                          left: left,
-                          width: width,
-                          top: 0,
-                          bottom: 0,
-                          child: Container(
-                            decoration: BoxDecoration(
-                              color: AppColors.accent14,
-                              borderRadius:
-                                  BorderRadius.circular(AppRadius.pill),
-                              border: Border.all(color: AppColors.accent30),
-                            ),
-                          ),
-                        );
-                      },
-                    ),
-                    Row(
-                      children: [
-                        _tabItem(0, '信息'),
-                        const SizedBox(width: 8),
-                        _tabItem(1, '歌词'),
-                      ],
-                    ),
-                  ],
+                child: SegmentTabs(
+                  labels: const ['信息', '歌词'],
+                  animation: _tabController.animation!,
+                  onTap: (i) => _tabController.animateTo(i),
                 ),
               ),
               Padding(
@@ -447,34 +411,6 @@ class _LyricEditorDialogState extends State<LyricEditorDialog>
             ),
           ),
         ],
-      ),
-    );
-  }
-
-  // ---------------------------------------------------------------------------
-  // Segment tab helper
-  // ---------------------------------------------------------------------------
-
-  Widget _tabItem(int index, String label) {
-    final active = _tabController.index == index;
-    return GestureDetector(
-      key: _tabKeys[index],
-      behavior: HitTestBehavior.opaque,
-      onTap: () {
-        Haptics.selection();
-        _tabController.animateTo(index);
-      },
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 7),
-        child: Text(
-          label,
-          style: TextStyle(
-            color: active ? AppColors.textPrimary : AppColors.textMuted,
-            fontSize: 23,
-            fontWeight: FontWeight.w700,
-            letterSpacing: -0.3,
-          ),
-        ),
       ),
     );
   }
@@ -617,7 +553,7 @@ class _LyricEditorDialogState extends State<LyricEditorDialog>
           style: const TextStyle(color: AppColors.textPrimary, fontSize: 14),
           decoration: InputDecoration(
             filled: true,
-            fillColor: Colors.white.withValues(alpha: 0.06),
+            fillColor: AppColors.white06,
             border: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(12),
                 borderSide: BorderSide.none),
@@ -666,7 +602,7 @@ class _LyricEditorDialogState extends State<LyricEditorDialog>
                     onPressed: _performSearch,
                   ),
             filled: true,
-            fillColor: Colors.white10,
+            fillColor: AppColors.white12,
             border: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(12),
                 borderSide: BorderSide.none),
@@ -745,7 +681,7 @@ class _LyricEditorDialogState extends State<LyricEditorDialog>
               ? AppColors.accent
               : (isCurrent
                   ? AppColors.success50
-                  : (isUserPasted ? AppColors.accent50 : Colors.white12)),
+                  : (isUserPasted ? AppColors.accent50 : AppColors.white12)),
           width: isSelected || isUserPasted || isCurrent ? 1.5 : 1.0,
         ),
       ),
@@ -862,7 +798,7 @@ class _LyricEditorDialogState extends State<LyricEditorDialog>
         decoration: BoxDecoration(
           color: AppColors.white05,
           borderRadius: BorderRadius.circular(14),
-          border: Border.all(color: Colors.white12),
+          border: Border.all(color: AppColors.white12),
         ),
         child: const Row(
           children: [
@@ -905,7 +841,7 @@ class _LyricEditorDialogState extends State<LyricEditorDialog>
               hintText: '[00:12.34]歌词内容\n[00:16.00]下一行\n\n粘贴或编辑 LRC 文本',
               hintStyle: const TextStyle(color: AppColors.textFaint, fontSize: 13),
               filled: true,
-              fillColor: Colors.white10,
+              fillColor: AppColors.white12,
               border: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(12),
                 borderSide: BorderSide.none,
@@ -925,7 +861,7 @@ class _LyricEditorDialogState extends State<LyricEditorDialog>
                   onPressed: () => setState(() => _inLrcEditor = false),
                   style: OutlinedButton.styleFrom(
                     foregroundColor: AppColors.textMuted,
-                    side: const BorderSide(color: Colors.white24),
+                    side: const BorderSide(color: AppColors.white24),
                     shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(12)),
                   ),
@@ -1029,7 +965,7 @@ class _LyricEditorDialogState extends State<LyricEditorDialog>
                       : () => setState(() => _calibrating = true),
                   style: OutlinedButton.styleFrom(
                     foregroundColor: _calibrating ? AppColors.accent : AppColors.textMuted,
-                    side: BorderSide(color: _calibrating ? AppColors.accent30 : Colors.white24),
+                    side: BorderSide(color: _calibrating ? AppColors.accent30 : AppColors.white24),
                     shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(12)),
                   ),

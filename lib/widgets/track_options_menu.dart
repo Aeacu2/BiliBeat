@@ -7,6 +7,7 @@ import '../models/playlist.dart';
 import '../services/database_service.dart';
 import '../services/audio_download_service.dart';
 import '../services/download_manager.dart';
+import '../utils/snack.dart';
 import 'cached_cover_image.dart';
 
 class TrackOptionsMenu extends StatefulWidget {
@@ -105,12 +106,8 @@ class TrackOptionsMenu extends StatefulWidget {
                             }
                             if (ctx.mounted) Navigator.pop(ctx);
                             onTrackChanged?.call();
-                            parentMessenger.showSnackBar(
-                              SnackBar(
-                                content: Text('已加入「${created.name}」'),
-                                backgroundColor: AppColors.accent,
-                              ),
-                            );
+                            showAppSnackBar(parentMessenger,
+                                message: '已加入「${created.name}」');
                           }
                         },
                       ),
@@ -126,8 +123,8 @@ class TrackOptionsMenu extends StatefulWidget {
                         final pl = playlists[index];
                         return ListTile(
                           leading: Icon(
-                            pl.id == 'favorites' ? Icons.favorite : Icons.queue_music,
-                            color: pl.id == 'favorites' ? AppColors.accent : AppColors.textSecondary,
+                            pl.id == Playlist.favoritesId ? Icons.favorite : Icons.queue_music,
+                            color: pl.id == Playlist.favoritesId ? AppColors.accent : AppColors.textSecondary,
                           ),
                           title: Text(pl.name, style: const TextStyle(color: AppColors.textPrimary)),
                           subtitle: Text('${pl.tracks.length} 首', style: const TextStyle(color: AppColors.textMuted, fontSize: 12)),
@@ -138,12 +135,8 @@ class TrackOptionsMenu extends StatefulWidget {
                             }
                             if (ctx.mounted) Navigator.pop(ctx);
                             onTrackChanged?.call();
-                            parentMessenger.showSnackBar(
-                              SnackBar(
-                                content: Text('已加入「${pl.name}」'),
-                                backgroundColor: AppColors.accent,
-                              ),
-                            );
+                            showAppSnackBar(parentMessenger,
+                                message: '已加入「${pl.name}」');
                           },
                         );
                       },
@@ -193,13 +186,9 @@ class _TrackOptionsMenuState extends State<TrackOptionsMenu> {
     if (_isDownloaded) {
       await DatabaseService.removeDownloadedTrack(track);
       widget.onTrackChanged?.call();
-      messenger.showSnackBar(
-        const SnackBar(
-          content: Text('已删除本地音频'),
-          backgroundColor: AppColors.backgroundElevated,
-          duration: Duration(seconds: 2),
-        ),
-      );
+      showAppSnackBar(messenger,
+          message: '已删除本地音频',
+          backgroundColor: AppColors.backgroundElevated);
       return;
     }
 
@@ -209,13 +198,7 @@ class _TrackOptionsMenuState extends State<TrackOptionsMenu> {
     unawaited(DownloadManager.instance.startDownload(track));
     widget.onTrackChanged?.call();
 
-    messenger.showSnackBar(
-      const SnackBar(
-        content: Text('已开始下载'),
-        backgroundColor: AppColors.accent,
-        duration: Duration(seconds: 2),
-      ),
-    );
+    showAppSnackBar(messenger, message: '已开始下载');
   }
 
   Future<void> _handleFavorite() async {
@@ -230,28 +213,11 @@ class _TrackOptionsMenuState extends State<TrackOptionsMenu> {
     final msg = nowFav
         ? '已收藏'
         : '已取消收藏';
-    messenger.showSnackBar(
-      SnackBar(
-        behavior: SnackBarBehavior.floating,
-        margin: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-        backgroundColor: AppColors.backgroundElevated,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        content: Row(
-          children: [
-            Icon(nowFav ? Icons.favorite : Icons.favorite_border, color: AppColors.accent, size: 20),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Text(
-                msg,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(color: AppColors.textPrimary, fontSize: 14, fontWeight: FontWeight.w500),
-              ),
-            ),
-          ],
-        ),
-        duration: const Duration(seconds: 2),
-      ),
+    showAppSnackBar(
+      messenger,
+      message: msg,
+      icon: nowFav ? Icons.favorite : Icons.favorite_border,
+      backgroundColor: AppColors.backgroundElevated,
     );
   }
 
@@ -329,7 +295,7 @@ class _TrackOptionsMenuState extends State<TrackOptionsMenu> {
 
           const Padding(
             padding: EdgeInsets.symmetric(vertical: 12),
-            child: Divider(color: Colors.white12, height: 1),
+            child: Divider(color: AppColors.white12, height: 1),
           ),
 
           // Action Items

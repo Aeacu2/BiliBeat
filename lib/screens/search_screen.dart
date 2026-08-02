@@ -3,6 +3,7 @@ import '../models/track.dart';
 import '../services/bilibili_sdk.dart';
 import '../services/database_service.dart';
 import '../services/recommendation_engine.dart';
+import '../utils/format.dart';
 import '../widgets/glass_card.dart';
 import '../widgets/track_options_menu.dart';
 import '../theme/app_theme.dart';
@@ -177,8 +178,7 @@ class _SearchScreenState extends State<SearchScreen> {
     final trimmed = query.trim();
     if (trimmed.isEmpty) return;
 
-    await DatabaseService.addSearchHistory(trimmed);
-    final history = await DatabaseService.getSearchHistory();
+    final history = await DatabaseService.addSearchHistory(trimmed);
     // Leaving the tab during those awaits would otherwise unfocus a disposed
     // FocusNode and setState on a dead State.
     if (!mounted) return;
@@ -197,19 +197,27 @@ class _SearchScreenState extends State<SearchScreen> {
     });
 
     final token = ++_searchToken;
-    final results = await BilibiliSdk.search(trimmed);
-    if (mounted && token == _searchToken) {
-      for (final t in results) {
-        _seenSearchIds.add(t.id);
+    try {
+      final results = await BilibiliSdk.search(trimmed);
+      if (mounted && token == _searchToken) {
+        for (final t in results) {
+          _seenSearchIds.add(t.id);
+        }
+        setState(() {
+          _searchResults = results;
+          _isLoading = false;
+          // This search is new evidence about taste; fold it in next time the
+          // recommendation view is shown.
+          _recommendationsStale = true;
+          if (results.isEmpty) _searchReachedEnd = true;
+        });
       }
-      setState(() {
-        _searchResults = results;
-        _isLoading = false;
-        // This search is new evidence about taste; fold it in next time the
-        // recommendation view is shown.
-        _recommendationsStale = true;
-        if (results.isEmpty) _searchReachedEnd = true;
-      });
+    } catch (e) {
+      debugPrint('Search error: $e');
+      // Without this the skeleton spinner would stay up forever.
+      if (mounted && token == _searchToken) {
+        setState(() => _isLoading = false);
+      }
     }
   }
 
@@ -413,7 +421,7 @@ class _SearchScreenState extends State<SearchScreen> {
             children: _searchHistory.map((tag) {
               return ActionChip(
                 label: Text(tag, style: const TextStyle(color: AppColors.textSecondary, fontSize: 12)),
-                backgroundColor: const Color(0x1AFFFFFF),
+                backgroundColor: AppColors.white10,
                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
                 onPressed: () {
                   _searchController.text = tag;
@@ -560,7 +568,7 @@ class _SearchScreenState extends State<SearchScreen> {
                       ),
                       const SizedBox(height: 4),
                       Text(
-                        '${track.uploader} • ${(track.duration / 60).floor()}:${(track.duration % 60).toString().padLeft(2, '0')}',
+                        '${track.uploader} • ${formatDuration(Duration(seconds: track.duration))}',
                         style: const TextStyle(color: AppColors.textMuted, fontSize: 13),
                       ),
                     ],

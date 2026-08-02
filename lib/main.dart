@@ -17,12 +17,42 @@ import 'widgets/expand_from_card.dart';
 import 'widgets/mini_player.dart';
 import 'widgets/now_playing_sheet.dart';
 import 'widgets/playlist_detail_sheet.dart';
+import 'widgets/segment_tabs.dart';
 import 'screens/home_screen.dart';
 import 'screens/search_screen.dart';
 
 import 'package:audio_service/audio_service.dart';
 
 BiliBeatAudioHandler? _audioHandlerInstance;
+
+/// Adapts a [PageController] — a Listenable whose `page` is null until the
+/// first frame — into the [Animation] [SegmentTabs] drives its pill with.
+/// The fallback index covers the brief window before the view attaches.
+class _PageFraction extends Animation<double> with ChangeNotifier {
+  _PageFraction(this._controller, this._fallbackIndex) {
+    _controller.addListener(notifyListeners);
+  }
+
+  final PageController _controller;
+  final int _fallbackIndex;
+
+  @override
+  double get value {
+    if (!_controller.hasClients) return _fallbackIndex.toDouble();
+    return (_controller.page ?? _fallbackIndex.toDouble()).clamp(0.0, 1.0);
+  }
+
+  // A drag-following fraction has no discrete status; nothing in SegmentTabs
+  // reads it, so it stays permanently "active".
+  @override
+  AnimationStatus get status => AnimationStatus.forward;
+
+  @override
+  void addStatusListener(AnimationStatusListener listener) {}
+
+  @override
+  void removeStatusListener(AnimationStatusListener listener) {}
+}
 
 /// The one handler registered with `audio_service`. Reading this before
 /// [main] has initialised it is a programming error — lazily constructing a
@@ -85,8 +115,6 @@ class MainLayout extends StatefulWidget {
 
 class _MainLayoutState extends State<MainLayout> {
   int _activeTabIndex = 0;
-  final GlobalKey _tabRowKey = GlobalKey();
-  final List<GlobalKey> _tabKeys = [GlobalKey(), GlobalKey()];
   late final BiliBeatAudioHandler _audioHandler = audioHandlerInstance;
 
   /// Player state is held in notifiers, not State fields. It changes on every
@@ -146,7 +174,8 @@ class _MainLayoutState extends State<MainLayout> {
         // subscription in dispose() stops *new* events, but an event already
         // being handled resumes after its await regardless — and writing to a
         // disposed ValueNotifier throws.
-        final cleanSongTitle = LyricsEngine.cleanTitle(track.title)['songTitle']!;
+        final cleanSongTitle =
+            LyricsEngine.cleanTitle(track.title)['songTitle'] ?? '';
         final cached = await DatabaseService.getCachedLyrics(track.id);
         if (!mounted || _currentTrack.value?.id != track.id) return;
 
@@ -308,32 +337,14 @@ class _MainLayoutState extends State<MainLayout> {
 
 
 
-  Widget _tabItem(int index, String label) {
-    final active = _activeTabIndex == index;
-    return GestureDetector(
-      key: _tabKeys[index],
-      behavior: HitTestBehavior.opaque,
-      onTap: () {
-        Haptics.selection();
-        setState(() => _activeTabIndex = index);
-        _pageController.animateToPage(
-          index,
-          duration: AppMotion.base,
-          curve: AppMotion.emphasized,
-        );
-      },
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 7),
-        child: Text(
-          label,
-          style: TextStyle(
-            color: active ? AppColors.textPrimary : AppColors.textMuted,
-            fontSize: 23,
-            fontWeight: FontWeight.w700,
-            letterSpacing: -0.3,
-          ),
-        ),
-      ),
+  void _onTabTap(int index) {
+    if (index == _activeTabIndex) return;
+    Haptics.selection();
+    setState(() => _activeTabIndex = index);
+    _pageController.animateToPage(
+      index,
+      duration: AppMotion.base,
+      curve: AppMotion.emphasized,
     );
   }
 
@@ -369,59 +380,13 @@ class _MainLayoutState extends State<MainLayout> {
                     child: Row(
                       children: [
                         Expanded(
-                          child: Stack(
-                            key: _tabRowKey,
-                            children: [
-                              AnimatedBuilder(
-                                animation: _pageController,
-                                builder: (context, _) {
-                                  final rowBox = _tabRowKey.currentContext
-                                      ?.findRenderObject() as RenderBox?;
-                                  final box0 = _tabKeys[0].currentContext
-                                      ?.findRenderObject() as RenderBox?;
-                                  final box1 = _tabKeys[1].currentContext
-                                      ?.findRenderObject() as RenderBox?;
-                                  if (rowBox == null || box0 == null || box1 == null) {
-                                    WidgetsBinding.instance.addPostFrameCallback((_) {
-                                      if (context.mounted) (context as Element).markNeedsBuild();
-                                    });
-                                    return const SizedBox.shrink();
-                                  }
-                                  final off0 = box0.localToGlobal(Offset.zero, ancestor: rowBox);
-                                  final off1 = box1.localToGlobal(Offset.zero, ancestor: rowBox);
-                                  // PageController.page is null before the first frame
-                                  final t = (_pageController.hasClients
-                                      ? (_pageController.page ?? _activeTabIndex.toDouble())
-                                      : _activeTabIndex.toDouble())
-                                      .clamp(0.0, 1.0);
-                                  final left = off0.dx + (off1.dx - off0.dx) * t;
-                                  final width = box0.size.width +
-                                      (box1.size.width - box0.size.width) * t;
-                                  return Positioned(
-                                    left: left,
-                                    width: width,
-                                    top: 0,
-                                    bottom: 0,
-                                    child: Container(
-                                      decoration: BoxDecoration(
-                                        color: AppColors.accent14,
-                                        borderRadius:
-                                            BorderRadius.circular(AppRadius.pill),
-                                        border:
-                                            Border.all(color: AppColors.accent30),
-                                      ),
-                                    ),
-                                  );
-                                },
-                              ),
-                              Row(
-                                children: [
-                                  _tabItem(0, '聆听'),
-                                  const SizedBox(width: 8),
-                                  _tabItem(1, '搜索'),
-                                ],
-                              ),
-                            ],
+                          child: SegmentTabs(
+                            labels: const ['聆听', '搜索'],
+                            animation: _PageFraction(
+                              _pageController,
+                              _activeTabIndex,
+                            ),
+                            onTap: _onTabTap,
                           ),
                         ),
                         // The right-hand end of this row was dead space. The
