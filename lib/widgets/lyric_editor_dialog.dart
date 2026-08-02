@@ -408,6 +408,36 @@ class _LyricEditorDialogState extends State<LyricEditorDialog>
               ],
             ),
           ),
+          const SizedBox(height: 12),
+          // Single stationary 确认 button fixed at the bottom of the dialog
+          SizedBox(
+            width: double.infinity,
+            height: 44,
+            child: ElevatedButton(
+              onPressed: () {
+                if (_tabController.index == 0) {
+                  _saveMetadata();
+                } else {
+                  final sel = _selectedResult;
+                  if (sel != null) {
+                    _applyLyricResult(sel);
+                  } else {
+                    _close();
+                  }
+                }
+              },
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppColors.accent,
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12)),
+              ),
+              child: const Text('确认',
+                  style: TextStyle(
+                      color: AppColors.textPrimary,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 15)),
+            ),
+          ),
         ],
       ),
     );
@@ -500,23 +530,6 @@ class _LyricEditorDialogState extends State<LyricEditorDialog>
           ),
         ),
         const SizedBox(height: 12),
-        SizedBox(
-          width: double.infinity,
-          height: 44,
-          child: ElevatedButton(
-            onPressed: _saveMetadata,
-            style: ElevatedButton.styleFrom(
-              backgroundColor: AppColors.accent,
-              shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12)),
-            ),
-            child: const Text('确认',
-                style: TextStyle(
-                    color: AppColors.textPrimary,
-                    fontWeight: FontWeight.bold,
-                    fontSize: 15)),
-          ),
-        ),
       ],
     );
   }
@@ -614,33 +627,6 @@ class _LyricEditorDialogState extends State<LyricEditorDialog>
                         return _resultRow(_searchResults[index], index);
                       },
                     ),
-        ),
-        const SizedBox(height: 12),
-        // Single 确认 — applies the highlighted result, or simply closes when
-        // nothing is selected (the editor can also be dismissed by swipe-down).
-        SizedBox(
-          width: double.infinity,
-          height: 44,
-          child: ElevatedButton(
-            onPressed: () {
-              final sel = _selectedResult;
-              if (sel != null) {
-                _applyLyricResult(sel);
-              } else {
-                _close();
-              }
-            },
-            style: ElevatedButton.styleFrom(
-              backgroundColor: AppColors.accent,
-              shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12)),
-            ),
-            child: const Text('确认',
-                style: TextStyle(
-                    color: AppColors.textPrimary,
-                    fontWeight: FontWeight.bold,
-                    fontSize: 15)),
-          ),
         ),
       ],
     );
