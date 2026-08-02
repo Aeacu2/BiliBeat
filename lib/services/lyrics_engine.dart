@@ -33,75 +33,85 @@ class LyricsEngine {
     // 1. Remove HTML tags like <em class="keyword">...</em>
     title = title.replaceAll(RegExp(r'<[^>]+>'), '');
 
-    // 2. Extract artist from prefix/suffix keywords like 歌手：周深 / 演唱：周深 / by Aimer
-    final prefixArtistMatch = RegExp(
-      r'(?:歌手|演唱|原唱|UP主|Singer|Vocal)[：:]\s*([\u4e00-\u9fa5A-Za-z0-9_\s·•.]+)',
+    // Common noise words in B站 titles
+    final noiseKeywords = RegExp(
+      r'(?:4K|1080P|720P|60帧|50帧|杜比视界|杜比全景声|Hi-?Res|无损音质|无损|高音质|HQ|SQ|'
+      r'官方MV|MV|纯享版|纯享|动态歌词|LRC|全场|完整版|片段|精剪|多机位|直拍|现场|Live|'
+      r'首唱|单曲循环|单曲|纯音频|Audio|字幕组|字幕|重置|超清|高清|录音棚|在.*大声听|'
+      r'主题曲|片尾曲|片头曲|插曲|推广曲|印象曲|角色曲|宣传曲|ED|OP|OST)',
       caseSensitive: false,
-    ).firstMatch(title);
-    if (prefixArtistMatch != null && artist.isEmpty) {
-      artist = prefixArtistMatch.group(1)!.trim();
-    }
+    );
 
-    // 3. Extract artist from brackets like 【周深】, [周深]
+    // 2. Extract artist from brackets like 【周深】, [周深], 【歌手：周深】
     final bracketMatch = RegExp(r'[【\[]([^】\]]+)[】\]]').firstMatch(title);
-    if (bracketMatch != null && artist.isEmpty) {
+    if (bracketMatch != null) {
       final content = bracketMatch.group(1)!.trim();
-      if (!RegExp(r'MV|4K|1080P|Live|官方|高音质|原纯|完整版|字幕|重置|翻唱|Cover|纯享|60帧|超清|单曲|高清|剪辑', caseSensitive: false).hasMatch(content)) {
-        artist = content.replaceAll(RegExp(r'^(歌手|演唱|UP主)[：:]\s*'), '').trim();
-      }
-    }
-
-    // 4. Check for book-title brackets 《...》
-    final bookTitleMatch = RegExp(r'《([^》]+)》').firstMatch(title);
-    String? extractedSongFromBook;
-    if (bookTitleMatch != null) {
-      extractedSongFromBook = bookTitleMatch.group(1)!.trim();
-
-      // Look for artist outside the book brackets:
-      // e.g. "买辣椒也用券《起风了》" or "《起风了》- 买辣椒也用券"
-      if (artist.isEmpty) {
-        final beforeBook = title.substring(0, bookTitleMatch.start).trim();
-        final afterBook = title.substring(bookTitleMatch.end).trim();
-
-        final cleanBefore = beforeBook
-            .replaceAll(RegExp(r'【[^】]*】|\[[^\]]*\]'), '')
-            .replaceAll(RegExp(r'^\s*[-–—/︱|丨_]\s*|\s*[-–—/︱|丨_]\s*$'), '')
+      if (!noiseKeywords.hasMatch(content) &&
+          !RegExp(r'合集|歌单|珍藏|榜|反应|点评|解析|试听', caseSensitive: false).hasMatch(content)) {
+        final cleanBracket = content
+            .replaceAll(RegExp(r'^(歌手|演唱|UP主|原唱|Singer|Vocal)[：:]\s*', caseSensitive: false), '')
+            .replaceAll(RegExp(r'\s*([|︱丨/]\s*).*$'), '')
             .trim();
-        if (cleanBefore.isNotEmpty &&
-            !RegExp(r'4K|1080P|Live|官方|高音质|完整版|字幕|翻唱|Cover|纯享|60帧|高清', caseSensitive: false).hasMatch(cleanBefore)) {
-          artist = cleanBefore;
-        } else {
-          final cleanAfter = afterBook
-              .replaceAll(RegExp(r'^\s*[-–—/︱|丨_]\s*'), '')
-              .replaceAll(RegExp(r'(4K|1080P|Live|官方|高音质|完整版|字幕|翻唱|Cover|纯享|60帧|高清|MV|演唱会|单曲).*$', caseSensitive: false), '')
-              .trim();
-          if (cleanAfter.isNotEmpty && cleanAfter.length <= 20) {
-            artist = cleanAfter;
-          }
+        if (cleanBracket.isNotEmpty && cleanBracket.length <= 15) {
+          artist = cleanBracket;
         }
       }
     }
 
-    // If we got a clean song from 《...》, we return early with it and extracted artist
-    if (extractedSongFromBook != null && extractedSongFromBook.isNotEmpty) {
-      return {
-        'songTitle': extractedSongFromBook,
-        'artist': artist.isNotEmpty ? artist : defaultArtist,
-      };
+    // 3. Extract song from book brackets 《...》
+    final bookTitleMatches = RegExp(r'《([^》]+)》').allMatches(title).toList();
+    if (bookTitleMatches.isNotEmpty) {
+      // Pick the last book title as song title
+      final mainBookMatch = bookTitleMatches.last;
+      final extractedSong = mainBookMatch.group(1)!.trim();
+
+      if (artist.isEmpty) {
+        // Look for artist immediately preceding 《...》: e.g. "邓紫棋《11》" or "在百万豪装录音棚大声听 毛不易《一程山路》"
+        final beforeBook = title.substring(0, mainBookMatch.start).trim();
+        final cleanBefore = beforeBook
+            .replaceAll(RegExp(r'【[^】]*】|\[[^\]]*\]'), '')
+            .replaceAll(noiseKeywords, ' ')
+            .trim();
+        final trailingArtistMatch = RegExp(r'([\u4e00-\u9fa5A-Za-z0-9_·•.]{2,10})\s*$').firstMatch(cleanBefore);
+        if (trailingArtistMatch != null) {
+          final cand = trailingArtistMatch.group(1)!.trim();
+          if (!noiseKeywords.hasMatch(cand) && cand.length <= 12) {
+            artist = cand;
+          }
+        }
+
+        // Look for artist immediately following 《...》: e.g. "《欧若拉》邓紫棋纯享完整版" or "《起风了》- 买辣椒也用券"
+        if (artist.isEmpty) {
+          final afterBook = title.substring(mainBookMatch.end).trim();
+          final leadingArtistMatch = RegExp(r'^\s*[-–—/︱|丨_]?\s*([\u4e00-\u9fa5A-Za-z0-9_·•.]{2,10})').firstMatch(afterBook);
+          if (leadingArtistMatch != null) {
+            final cand = leadingArtistMatch.group(1)!.trim();
+            if (!noiseKeywords.hasMatch(cand) && cand.length <= 12) {
+              artist = cand;
+            }
+          }
+        }
+      }
+
+      if (extractedSong.isNotEmpty) {
+        return {
+          'songTitle': extractedSong,
+          'artist': artist.isNotEmpty ? artist : defaultArtist,
+        };
+      }
     }
 
-    // 5. Clean uploader/fan station noise, dates, brackets, video tags
-    var clean = title;
-    clean = clean.replaceAll(RegExp(r'^[A-Za-z0-9_\-\.\s]*[\u4e00-\u9fa5A-Za-z0-9]+(站|图文站|字幕组|工作室|应援会|后援会|FanClub|粉丝团)[_︱|丨\s_-]*', caseSensitive: false), ' ');
-    clean = clean.replaceAll(RegExp(r'【[^】]+】|\[[^\]]+\]|（[^）]+）|\([^)]+\)'), ' ');
-    clean = clean.replaceAll(RegExp(r'\b\d{4}[.\-_]?\d{2}[.\-_]?\d{2}\b|\b\d{8}\b'), ' ');
-    clean = clean.replaceAll(RegExp(r'(深深的|巡演|演唱会|呼和浩特站|北京站|上海站|广州站|深圳站|成都站|南京站|武汉站|重庆站|杭州站)\b'), ' ');
-    clean = clean.replaceAll(RegExp(r'(4K|1080P|720P|60帧|高音质|无损|纯享|单曲循环|完整版|官方MV|动态歌词|LRC|P\d+|多机位|精剪|直拍|现场|Live|全场|片段|高清|超清|重置|首唱|视频)', caseSensitive: false), ' ');
-    clean = clean.replaceAll(RegExp(r'(Cover|翻唱|原唱|词/曲|混音|演唱|UP主)', caseSensitive: false), ' ');
+    // 4. No book brackets 《...》: clean noise and split Artist - SongTitle
+    var clean = title
+        .replaceAll(RegExp(r'^[A-Za-z0-9_\-\.\s]*[\u4e00-\u9fa5A-Za-z0-9]+(站|图文站|字幕组|工作室|应援会|后援会|FanClub|粉丝团)[_︱|丨\s_-]*', caseSensitive: false), ' ')
+        .replaceAll(RegExp(r'【[^】]+】|\[[^\]]+\]|（[^）]+）|\([^)]+\)'), ' ')
+        .replaceAll(RegExp(r'\b\d{4}[.\-_]?\d{2}[.\-_]?\d{2}\b|\b\d{8}\b'), ' ')
+        .replaceAll(RegExp(r'(巡演|演唱会|呼和浩特站|北京站|上海站|广州站|深圳站|天津站|沈阳站|南京站|武汉站|重庆站|杭州站)\b'), ' ')
+        .replaceAll(noiseKeywords, ' ')
+        .replaceAll(RegExp(r'(Cover|翻唱|原唱|词/曲|混音|演唱|UP主)', caseSensitive: false), ' ');
 
-    // 6. Split "Artist - SongTitle" or "SongTitle - Artist"
     if (artist.isEmpty) {
-      final parts = clean.split(RegExp(r'\s+[-–—/]\s+'));
+      final parts = clean.split(RegExp(r'\s+[-–—/︱|丨_]\s+'));
       if (parts.length >= 2) {
         final p0 = parts[0].trim();
         final p1 = parts[1].trim();

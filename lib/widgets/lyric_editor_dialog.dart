@@ -519,40 +519,31 @@ class _LyricEditorDialogState extends State<LyricEditorDialog>
                     );
                   },
                 ),
-                const SizedBox(height: 16),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    const SizedBox.shrink(),
-                    GestureDetector(
-                      onTap: _autoParseTitleAndArtist,
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                        decoration: BoxDecoration(
-                          color: AppColors.accent14,
-                          borderRadius: BorderRadius.circular(AppRadius.pill),
-                          border: Border.all(color: AppColors.accent30),
-                        ),
-                        child: const Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Icon(Icons.auto_awesome, color: AppColors.accent, size: 14),
-                            SizedBox(width: 4),
-                            Text('智能识别',
-                                style: TextStyle(
-                                    color: AppColors.accent,
-                                    fontSize: 12,
-                                    fontWeight: FontWeight.w600)),
-                          ],
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 8),
+                const SizedBox(height: 24),
                 _infoField(_titleController, '歌名'),
                 const SizedBox(height: 12),
                 _infoField(_artistController, '歌手 / UP主'),
+                const SizedBox(height: 16),
+                SizedBox(
+                  width: double.infinity,
+                  height: 44,
+                  child: OutlinedButton.icon(
+                    onPressed: _autoParseTitleAndArtist,
+                    icon: const Icon(Icons.auto_awesome, color: AppColors.accent, size: 18),
+                    label: const Text('智能识别歌名与歌手',
+                        style: TextStyle(
+                            color: AppColors.accent,
+                            fontSize: 14,
+                            fontWeight: FontWeight.w600)),
+                    style: OutlinedButton.styleFrom(
+                      side: const BorderSide(color: AppColors.accent30),
+                      backgroundColor: AppColors.accent14,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(AppRadius.md),
+                      ),
+                    ),
+                  ),
+                ),
               ],
             ),
           ),
