@@ -13,6 +13,10 @@ import 'synced_lyrics_view.dart';
 
 class LyricEditorDialog extends StatefulWidget {
   final String songTitle;
+  /// The B站 raw video title. 智能识别 must parse this, never [songTitle]:
+  /// metadata edits overwrite [songTitle] but the parse has to stay
+  /// deterministic against the original title.
+  final String rawTitle;
   final String artistName;
   final String? coverUrl;
   final ValueNotifier<Duration>? positionNotifier;
@@ -32,6 +36,7 @@ class LyricEditorDialog extends StatefulWidget {
   const LyricEditorDialog({
     super.key,
     required this.songTitle,
+    required this.rawTitle,
     required this.artistName,
     this.coverUrl,
     this.positionNotifier,
@@ -501,9 +506,11 @@ class _LyricEditorDialogState extends State<LyricEditorDialog>
 
   Future<void> _autoParseTitleAndArtist() async {
     Haptics.selection();
-    // Always parse the original raw video title (widget.songTitle) so the operation
-    // is 100% deterministic and idempotent no matter how many times the user taps.
-    final raw = widget.songTitle;
+    // Always parse the B站 raw video title, never the display title: metadata
+    // edits overwrite the latter (a wrong song name saved earlier would then
+    // be re-parsed forever), but the parse must stay deterministic against the
+    // original title no matter how many times the user taps.
+    final raw = widget.rawTitle;
     final token = ++_parseToken;
 
     // Pass 1: Instant rule-based extraction for immediate UI feedback

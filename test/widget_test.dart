@@ -45,7 +45,7 @@ void main() {
       final pl = Playlist(id: 'favorites', name: '收藏', tracks: const []);
       expect(
         () => pl.tracks.add(const Track(
-            id: 'a', bvid: 'a', cid: 1, title: 't', uploader: 'u',
+            id: 'a', bvid: 'a', cid: 1, title: 't', rawTitle: 't', uploader: 'u',
             coverUrl: '', duration: 1)),
         returnsNormally,
       );
@@ -56,7 +56,7 @@ void main() {
       final source = <Track>[];
       final pl = Playlist(id: 'p', name: 'n', tracks: source);
       pl.tracks.add(const Track(
-          id: 'a', bvid: 'a', cid: 1, title: 't', uploader: 'u',
+          id: 'a', bvid: 'a', cid: 1, title: 't', rawTitle: 't', uploader: 'u',
           coverUrl: '', duration: 1));
       expect(source, isEmpty);
     });
@@ -66,7 +66,7 @@ void main() {
     test('copyWith preserves identity and only changes what is passed', () {
       const original = Track(
           id: 'BV1_2', bvid: 'BV1', cid: 2, title: '旧标题',
-          uploader: '旧UP', coverUrl: 'c', duration: 100);
+          rawTitle: '旧标题', uploader: '旧UP', coverUrl: 'c', duration: 100);
       final edited = original.copyWith(title: '新标题', uploader: '新UP');
 
       expect(edited.id, original.id);
@@ -83,7 +83,7 @@ void main() {
     test('survives a round trip through fromMap/toMap', () {
       const t = Track(
           id: 'BV1_2', bvid: 'BV1', cid: 2, title: '标题',
-          uploader: 'UP', coverUrl: 'http://x', duration: 42);
+          rawTitle: '标题', uploader: 'UP', coverUrl: 'http://x', duration: 42);
       final back = Track.fromMap(t.toMap());
       expect(back.title, t.title);
       expect(back.uploader, t.uploader);
@@ -111,6 +111,7 @@ void main() {
           bvid: id,
           cid: 1,
           title: title,
+          rawTitle: title,
           uploader: uploader,
           coverUrl: '',
           duration: duration,
@@ -186,7 +187,7 @@ void main() {
 
   group('RecommendationEngine.isSongLength', () {
     Track withDuration(int d) => Track(
-        id: 'x', bvid: 'x', cid: 1, title: 't', uploader: 'u',
+        id: 'x', bvid: 'x', cid: 1, title: 't', rawTitle: 't', uploader: 'u',
         coverUrl: '', duration: d);
 
     test('keeps song-length uploads and drops long-form ones', () {
@@ -259,7 +260,7 @@ void main() {
 
   group('TrackNotifier', () {
     Track track({String title = 't', String cover = ''}) => Track(
-        id: 'a', bvid: 'a', cid: 1, title: title, uploader: 'u',
+        id: 'a', bvid: 'a', cid: 1, title: title, rawTitle: title, uploader: 'u',
         coverUrl: cover, duration: 1);
 
     test('notifies when only the metadata of the same track changes', () {
@@ -567,6 +568,7 @@ void main() {
       bvid: 'BV1',
       cid: 1,
       title: '一首标题非常非常长的歌曲用来触发滚动效果',
+      rawTitle: '一首标题非常非常长的歌曲用来触发滚动效果',
       uploader: '某位 UP 主',
       coverUrl: '',
       duration: 200,
@@ -634,6 +636,7 @@ void main() {
           bvid: 'BV1',
           cid: 1,
           title: '一首标题非常非常长的歌曲用来触发滚动效果',
+          rawTitle: '一首标题非常非常长的歌曲用来触发滚动效果',
           uploader: '某位 UP 主',
           coverUrl: '',
           duration: 200,

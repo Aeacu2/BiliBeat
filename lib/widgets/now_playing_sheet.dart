@@ -256,6 +256,7 @@ class _NowPlayingSheetState extends State<NowPlayingSheet> {
                           key: const ValueKey('editor'),
                           child: LyricEditorDialog(
                             songTitle: _displayTrack.title,
+                            rawTitle: _displayTrack.rawTitle,
                             artistName: _displayTrack.uploader,
                             coverUrl: _displayTrack.coverUrl,
                             positionNotifier:

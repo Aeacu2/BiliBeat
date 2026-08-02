@@ -18,6 +18,10 @@ class Track {
   final String bvid;
   final int cid;
   final String title;
+  /// The B站 raw video title, immutable after fetch. Metadata edits overwrite
+  /// [title] (the display name) but must never touch this field — 智能识别
+  /// parses THIS, or a polluted display title would be re-parsed forever.
+  final String rawTitle;
   final String uploader;
   final String coverUrl;
   final int duration; // in seconds
@@ -28,6 +32,7 @@ class Track {
     required this.bvid,
     required this.cid,
     required this.title,
+    required this.rawTitle,
     required this.uploader,
     required this.coverUrl,
     required this.duration,
@@ -40,6 +45,7 @@ class Track {
       'bvid': bvid,
       'cid': cid,
       'title': title,
+      'rawTitle': rawTitle,
       'uploader': uploader,
       'coverUrl': coverUrl,
       'duration': duration,
@@ -55,6 +61,7 @@ class Track {
       bvid: map['bvid'] ?? '',
       cid: map['cid'] ?? 0,
       title: map['title'] ?? '未知曲目',
+      rawTitle: map['rawTitle'] as String? ?? map['title'] as String? ?? '',
       uploader: map['uploader'] ?? '未知UP主',
       coverUrl: map['coverUrl'] ?? '',
       duration: map['duration'] ?? 0,
@@ -74,6 +81,7 @@ class Track {
       bvid: bvid,
       cid: cid,
       title: title ?? this.title,
+      rawTitle: rawTitle,
       uploader: uploader ?? this.uploader,
       coverUrl: coverUrl ?? this.coverUrl,
       duration: duration ?? this.duration,

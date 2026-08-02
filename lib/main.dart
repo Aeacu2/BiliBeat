@@ -175,7 +175,7 @@ class _MainLayoutState extends State<MainLayout> {
         // being handled resumes after its await regardless — and writing to a
         // disposed ValueNotifier throws.
         final cleanSongTitle =
-            LyricsEngine.cleanTitle(track.title)['songTitle'] ?? '';
+            LyricsEngine.cleanTitle(track.rawTitle)['songTitle'] ?? '';
         final cached = await DatabaseService.getCachedLyrics(track.id);
         if (!mounted || _currentTrack.value?.id != track.id) return;
 
@@ -191,7 +191,7 @@ class _MainLayoutState extends State<MainLayout> {
           _lyricsNotifier.value = cached!.lines;
         } else {
           _lyricsNotifier.value = const [];
-          final freshLyrics = await LyricsEngine.autoFetchLyrics(track.title);
+          final freshLyrics = await LyricsEngine.autoFetchLyrics(track.rawTitle);
           if (!mounted || _currentTrack.value?.id != track.id) return;
           // A "not found" result carries placeholder lines; showing an empty
           // list instead lets the lyrics view offer its search/paste action.

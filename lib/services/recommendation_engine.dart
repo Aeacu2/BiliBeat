@@ -75,7 +75,7 @@ class TasteProfile {
       if (t.uploader.isNotEmpty) {
         uploaders[t.uploader] = (uploaders[t.uploader] ?? 0) + weight;
       }
-      for (final token in tokenize(t.title)) {
+      for (final token in tokenize(t.rawTitle)) {
         terms[token] = (terms[token] ?? 0) + weight;
       }
     }
@@ -99,7 +99,7 @@ class TasteProfile {
   /// How well [track] matches this profile. 0 means no overlap at all.
   double score(Track track) {
     var score = (uploaders[track.uploader] ?? 0) * 2.0;
-    for (final token in tokenize(track.title)) {
+    for (final token in tokenize(track.rawTitle)) {
       score += terms[token] ?? 0;
     }
     return score;
