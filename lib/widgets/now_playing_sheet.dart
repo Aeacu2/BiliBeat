@@ -210,19 +210,32 @@ class _NowPlayingSheetState extends State<NowPlayingSheet> {
       // below — rather than a flat black page. The route morph paints its own
       // opaque surface underneath, so this stays honest during the transition.
       backgroundColor: AppColors.background,
-      body: Stack(
-        children: [
-          Positioned.fill(
-            child: AmbientBackground(coverUrl: _displayTrack.coverUrl),
-          ),
-          GestureDetector(
-        // Swipe down anywhere on the chrome to dismiss, like the system sheets.
-        onVerticalDragEnd: (details) {
-          if ((details.primaryVelocity ?? 0) > 320) {
+      body: PopScope(
+        canPop: !_showEditor,
+        onPopInvokedWithResult: (didPop, result) {
+          if (didPop) return;
+          if (_showEditor) {
             Haptics.selection();
-            Navigator.of(context).maybePop();
+            _closeEditor();
           }
         },
+        child: Stack(
+          children: [
+            Positioned.fill(
+              child: AmbientBackground(coverUrl: _displayTrack.coverUrl),
+            ),
+            GestureDetector(
+              // Swipe down anywhere on the chrome to dismiss, like the system sheets.
+              onVerticalDragEnd: (details) {
+                if ((details.primaryVelocity ?? 0) > 320) {
+                  Haptics.selection();
+                  if (_showEditor) {
+                    _closeEditor();
+                  } else {
+                    Navigator.of(context).maybePop();
+                  }
+                }
+              },
         child: SafeArea(
           minimum: const EdgeInsets.only(top: 16),
           child: Column(
@@ -337,11 +350,12 @@ class _NowPlayingSheetState extends State<NowPlayingSheet> {
             ],
           ),
         ),
-          ),
-        ],
       ),
-    );
-  }
+    ],
+  ),
+),
+);
+}
 
   Widget _topBar() {
     return Padding(

@@ -304,9 +304,20 @@ class _LyricEditorDialogState extends State<LyricEditorDialog>
       );
     }
 
-    final sel = _selectedResult;
+    final sel = _selectedResult ??
+        (_previewOffset != 0.0 &&
+                widget.currentLines != null &&
+                widget.currentLines!.isNotEmpty
+            ? LyricsResult(
+                source: 'current',
+                songTitle: newTitle.isNotEmpty ? newTitle : widget.songTitle,
+                artistName: newArtist.isNotEmpty ? newArtist : widget.artistName,
+                lines: widget.currentLines!,
+              )
+            : null);
+
     if (sel != null) {
-      _applyLyricResult(sel);
+      _applyLyricResult(sel, offset: _previewOffset);
     } else if (!hasMetadataEdit) {
       _close();
     }
