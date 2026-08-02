@@ -62,7 +62,7 @@ class LyricsEngine {
     final bookTitleMatches = RegExp(r'《([^》]+)》').allMatches(title).toList();
     if (bookTitleMatches.isNotEmpty) {
       final showPrefixes = RegExp(r'(电视剧|电影|纪录片|综艺|游戏|动漫|动画|央视|节目)');
-      final showSuffixes = RegExp(r'(?:主题曲|片尾曲|片头曲|插曲|推广曲|印象曲|角色曲|宣传曲|ED|OP|OST|原声带|原声|项目|节目)');
+      final showSuffixes = RegExp(r'(?:[\u4e00-\u9fa5]{1,4}曲|ED|OP|OST|原声带|原声|项目|节目|特辑)');
 
       Match? mainBookMatch;
       for (final m in bookTitleMatches) {
