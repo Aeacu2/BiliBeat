@@ -155,26 +155,37 @@ class LyricsEngine {
           await fetchFromLRCLIB(query, artist: ruleArtist);
 
       if (lyricsRes != null) {
-        final officialSong = lyricsRes.songTitle ?? '';
-        final officialArtist = lyricsRes.artistName ?? '';
+        final officialSong = (lyricsRes.songTitle ?? '').trim();
+        final officialArtist = (lyricsRes.artistName ?? '').trim();
+
+        // Strip NetEase parentheses subtitles like " (Live)" or " (电影《...》)"
+        final cleanOfficialSong = officialSong.replaceAll(RegExp(r'\s*[\(（][^\)）]+[\)）]'), '').trim();
 
         final rawNorm = _normalize(rawTitle);
         final ruleSongNorm = _normalize(ruleSong);
         final offSongNorm = _normalize(officialSong);
+        final cleanOffSongNorm = _normalize(cleanOfficialSong);
         final offArtistNorm = _normalize(officialArtist);
 
-        final songMatches = offSongNorm.isNotEmpty &&
-            (rawNorm.contains(offSongNorm) ||
-                ruleSongNorm.contains(offSongNorm) ||
-                offSongNorm.contains(ruleSongNorm));
+        final songMatches = (offSongNorm.isNotEmpty &&
+                (rawNorm.contains(offSongNorm) ||
+                    ruleSongNorm.contains(offSongNorm) ||
+                    offSongNorm.contains(ruleSongNorm))) ||
+            (cleanOffSongNorm.isNotEmpty &&
+                (rawNorm.contains(cleanOffSongNorm) ||
+                    ruleSongNorm.contains(cleanOffSongNorm) ||
+                    cleanOffSongNorm.contains(ruleSongNorm)));
 
         final artistMatches = offArtistNorm.isNotEmpty &&
             (rawNorm.contains(offArtistNorm) ||
                 _normalize(ruleArtist).contains(offArtistNorm));
 
         if (songMatches) {
+          final appliedSong = (cleanOffSongNorm == ruleSongNorm || ruleSongNorm.contains(cleanOffSongNorm))
+              ? ruleSong
+              : (cleanOfficialSong.isNotEmpty ? cleanOfficialSong : officialSong);
           return {
-            'songTitle': officialSong,
+            'songTitle': appliedSong,
             'artist': artistMatches
                 ? officialArtist
                 : (ruleArtist.isNotEmpty ? ruleArtist : defaultArtist),

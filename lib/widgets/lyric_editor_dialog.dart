@@ -565,15 +565,9 @@ class _LyricEditorDialogState extends State<LyricEditorDialog>
 
   Future<void> _autoParseTitleAndArtist() async {
     Haptics.selection();
-    // Always prefer parsing the original raw video title (which contains all
-    // brackets like 【周深】《大鱼》) rather than the already-cleaned song title.
-    final textToParse = _titleController.text.trim();
-    final raw = (textToParse.contains('《') ||
-            textToParse.contains('【') ||
-            textToParse.contains('[') ||
-            textToParse.contains('-'))
-        ? textToParse
-        : widget.songTitle;
+    // Always parse the original raw video title (widget.songTitle) so the operation
+    // is 100% deterministic and idempotent no matter how many times the user taps.
+    final raw = widget.songTitle;
 
     // Pass 1: Instant rule-based extraction for immediate UI feedback
     final syncParsed = LyricsEngine.cleanTitle(raw, defaultArtist: widget.artistName);
