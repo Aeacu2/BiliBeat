@@ -61,8 +61,24 @@ class LyricsEngine {
     // 3. Extract song from book brackets 《...》
     final bookTitleMatches = RegExp(r'《([^》]+)》').allMatches(title).toList();
     if (bookTitleMatches.isNotEmpty) {
-      // Pick the last book title as song title
-      final mainBookMatch = bookTitleMatches.last;
+      final showPrefixes = RegExp(r'(电视剧|电影|纪录片|综艺|游戏|动漫|动画|央视|节目)');
+      final showSuffixes = RegExp(r'(?:主题曲|片尾曲|片头曲|插曲|推广曲|印象曲|角色曲|宣传曲|ED|OP|OST|原声带|原声|项目|节目)');
+
+      Match? mainBookMatch;
+      for (final m in bookTitleMatches) {
+        final beforeText = title.substring((m.start - 10).clamp(0, m.start), m.start);
+        final afterText = title.substring(m.end, (m.end + 15).clamp(m.end, title.length));
+
+        final isPrecededByShow = showPrefixes.hasMatch(beforeText);
+        final isFollowedByThemeTag = RegExp(r'^\s*[\(（]?[^《\)）]*' + showSuffixes.pattern).hasMatch(afterText);
+
+        if (!isPrecededByShow && !isFollowedByThemeTag) {
+          mainBookMatch = m;
+          break;
+        }
+      }
+
+      mainBookMatch ??= bookTitleMatches.last;
       final extractedSong = mainBookMatch.group(1)!.trim();
 
       if (artist.isEmpty) {
