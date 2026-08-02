@@ -555,16 +555,27 @@ class _LyricEditorDialogState extends State<LyricEditorDialog>
 
   void _autoParseTitleAndArtist() {
     Haptics.selection();
-    final raw = _titleController.text.trim().isNotEmpty
-        ? _titleController.text
+    // Always prefer parsing the original raw video title (which contains all
+    // brackets like 【周深】《大鱼》) rather than the already-cleaned song title.
+    final textToParse = _titleController.text.trim();
+    final raw = (textToParse.contains('《') ||
+            textToParse.contains('【') ||
+            textToParse.contains('[') ||
+            textToParse.contains('-'))
+        ? textToParse
         : widget.songTitle;
+
     final parsed = LyricsEngine.cleanTitle(raw, defaultArtist: widget.artistName);
     setState(() {
       if ((parsed['songTitle'] ?? '').isNotEmpty) {
         _titleController.text = parsed['songTitle']!;
       }
-      if ((parsed['artist'] ?? '').isNotEmpty) {
-        _artistController.text = parsed['artist']!;
+      final extractedArtist = parsed['artist'] ?? '';
+      if (extractedArtist.isNotEmpty) {
+        // Only update artist if an artist was actually extracted or artist field is empty
+        if (extractedArtist != widget.artistName || _artistController.text.isEmpty) {
+          _artistController.text = extractedArtist;
+        }
       }
     });
   }
