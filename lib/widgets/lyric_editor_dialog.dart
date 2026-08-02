@@ -81,8 +81,9 @@ class _LyricEditorDialogState extends State<LyricEditorDialog>
     super.initState();
     _tabController = TabController(
         length: 2, vsync: this, initialIndex: widget.initialTabIndex);
-    _titleController = TextEditingController(text: widget.songTitle);
-    _artistController = TextEditingController(text: widget.artistName);
+    final parsed = LyricsEngine.cleanTitle(widget.songTitle, defaultArtist: widget.artistName);
+    _titleController = TextEditingController(text: parsed['songTitle'] ?? widget.songTitle);
+    _artistController = TextEditingController(text: (parsed['artist'] ?? '').isNotEmpty ? parsed['artist']! : widget.artistName);
     _coverUrlController = TextEditingController(text: widget.coverUrl ?? '');
 
     _tabController.addListener(() {
@@ -518,7 +519,37 @@ class _LyricEditorDialogState extends State<LyricEditorDialog>
                     );
                   },
                 ),
-                const SizedBox(height: 24),
+                const SizedBox(height: 16),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    const SizedBox.shrink(),
+                    GestureDetector(
+                      onTap: _autoParseTitleAndArtist,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: AppColors.accent14,
+                          borderRadius: BorderRadius.circular(AppRadius.pill),
+                          border: Border.all(color: AppColors.accent30),
+                        ),
+                        child: const Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(Icons.auto_awesome, color: AppColors.accent, size: 14),
+                            SizedBox(width: 4),
+                            Text('智能识别',
+                                style: TextStyle(
+                                    color: AppColors.accent,
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w600)),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
                 _infoField(_titleController, '歌名'),
                 const SizedBox(height: 12),
                 _infoField(_artistController, '歌手 / UP主'),
@@ -529,6 +560,22 @@ class _LyricEditorDialogState extends State<LyricEditorDialog>
         const SizedBox(height: 12),
       ],
     );
+  }
+
+  void _autoParseTitleAndArtist() {
+    Haptics.selection();
+    final raw = _titleController.text.trim().isNotEmpty
+        ? _titleController.text
+        : widget.songTitle;
+    final parsed = LyricsEngine.cleanTitle(raw, defaultArtist: widget.artistName);
+    setState(() {
+      if ((parsed['songTitle'] ?? '').isNotEmpty) {
+        _titleController.text = parsed['songTitle']!;
+      }
+      if ((parsed['artist'] ?? '').isNotEmpty) {
+        _artistController.text = parsed['artist']!;
+      }
+    });
   }
 
   Widget _infoField(TextEditingController ctrl, String label) {

@@ -22,71 +22,102 @@ class LyricsEngine {
     return null;
   }
 
-  // Title cleaner to extract clean song name & artist from Bilibili titles
-  static Map<String, String> cleanTitle(String rawTitle) {
-    var title = rawTitle;
-    var artist = '';
+  // Title cleaner to extract clean song name & artist from Bilibili video titles
+  static Map<String, String> cleanTitle(String rawTitle, {String defaultArtist = ''}) {
+    var title = rawTitle.trim();
+    var artist = defaultArtist.trim();
+    if (artist == '未知UP主' || artist == '未知歌手' || artist == 'UP主') {
+      artist = '';
+    }
 
-    // 1. Extract artist from brackets like 【周深】, [周深], 【歌手：周深】
+    // 1. Remove HTML tags like <em class="keyword">...</em>
+    title = title.replaceAll(RegExp(r'<[^>]+>'), '');
+
+    // 2. Extract artist from prefix/suffix keywords like 歌手：周深 / 演唱：周深 / by Aimer
+    final prefixArtistMatch = RegExp(
+      r'(?:歌手|演唱|原唱|UP主|Singer|Vocal)[：:]\s*([\u4e00-\u9fa5A-Za-z0-9_\s·•.]+)',
+      caseSensitive: false,
+    ).firstMatch(title);
+    if (prefixArtistMatch != null && artist.isEmpty) {
+      artist = prefixArtistMatch.group(1)!.trim();
+    }
+
+    // 3. Extract artist from brackets like 【周深】, [周深]
     final bracketMatch = RegExp(r'[【\[]([^】\]]+)[】\]]').firstMatch(title);
-    if (bracketMatch != null) {
-      final content = bracketMatch.group(1)!;
-      if (!RegExp(r'MV|4K|1080P|Live|官方|高音质|原纯|完整版|字幕|重置|翻唱|Cover|纯享|60帧|超清', caseSensitive: false).hasMatch(content)) {
+    if (bracketMatch != null && artist.isEmpty) {
+      final content = bracketMatch.group(1)!.trim();
+      if (!RegExp(r'MV|4K|1080P|Live|官方|高音质|原纯|完整版|字幕|重置|翻唱|Cover|纯享|60帧|超清|单曲|高清|剪辑', caseSensitive: false).hasMatch(content)) {
         artist = content.replaceAll(RegExp(r'^(歌手|演唱|UP主)[：:]\s*'), '').trim();
       }
     }
 
-    // 2. If title contains book-title brackets 《...》, that inside is the exact song title!
+    // 4. Check for book-title brackets 《...》
     final bookTitleMatch = RegExp(r'《([^》]+)》').firstMatch(title);
+    String? extractedSongFromBook;
     if (bookTitleMatch != null) {
-      final extractedSong = bookTitleMatch.group(1)!.trim();
-      if (extractedSong.isNotEmpty) {
-        return {
-          'songTitle': extractedSong,
-          'artist': artist,
-        };
+      extractedSongFromBook = bookTitleMatch.group(1)!.trim();
+
+      // Look for artist outside the book brackets:
+      // e.g. "买辣椒也用券《起风了》" or "《起风了》- 买辣椒也用券"
+      if (artist.isEmpty) {
+        final beforeBook = title.substring(0, bookTitleMatch.start).trim();
+        final afterBook = title.substring(bookTitleMatch.end).trim();
+
+        final cleanBefore = beforeBook
+            .replaceAll(RegExp(r'【[^】]*】|\[[^\]]*\]'), '')
+            .replaceAll(RegExp(r'^\s*[-–—/︱|丨_]\s*|\s*[-–—/︱|丨_]\s*$'), '')
+            .trim();
+        if (cleanBefore.isNotEmpty &&
+            !RegExp(r'4K|1080P|Live|官方|高音质|完整版|字幕|翻唱|Cover|纯享|60帧|高清', caseSensitive: false).hasMatch(cleanBefore)) {
+          artist = cleanBefore;
+        } else {
+          final cleanAfter = afterBook
+              .replaceAll(RegExp(r'^\s*[-–—/︱|丨_]\s*'), '')
+              .replaceAll(RegExp(r'(4K|1080P|Live|官方|高音质|完整版|字幕|翻唱|Cover|纯享|60帧|高清|MV|演唱会|单曲).*$', caseSensitive: false), '')
+              .trim();
+          if (cleanAfter.isNotEmpty && cleanAfter.length <= 20) {
+            artist = cleanAfter;
+          }
+        }
       }
     }
 
-    // 3. Remove uploader / fan-station prefixes (e.g. ForCharlie_周深图文站, XX_字幕组, YY工作室)
-    title = title.replaceAll(RegExp(r'^[A-Za-z0-9_\-\.\s]*[\u4e00-\u9fa5A-Za-z0-9]+(站|图文站|字幕组|工作室|应援会|后援会|FanClub|粉丝团)[_︱|丨\s_-]*', caseSensitive: false), ' ');
+    // If we got a clean song from 《...》, we return early with it and extracted artist
+    if (extractedSongFromBook != null && extractedSongFromBook.isNotEmpty) {
+      return {
+        'songTitle': extractedSongFromBook,
+        'artist': artist.isNotEmpty ? artist : defaultArtist,
+      };
+    }
 
-    // 4. Remove all bracket blocks
-    title = title.replaceAll(RegExp(r'【[^】]+】'), ' ');
-    title = title.replaceAll(RegExp(r'\[[^\]]+\]'), ' ');
-    title = title.replaceAll(RegExp(r'（[^）]+）'), ' ');
-    title = title.replaceAll(RegExp(r'\([^)]+\)'), ' ');
+    // 5. Clean uploader/fan station noise, dates, brackets, video tags
+    var clean = title;
+    clean = clean.replaceAll(RegExp(r'^[A-Za-z0-9_\-\.\s]*[\u4e00-\u9fa5A-Za-z0-9]+(站|图文站|字幕组|工作室|应援会|后援会|FanClub|粉丝团)[_︱|丨\s_-]*', caseSensitive: false), ' ');
+    clean = clean.replaceAll(RegExp(r'【[^】]+】|\[[^\]]+\]|（[^）]+）|\([^)]+\)'), ' ');
+    clean = clean.replaceAll(RegExp(r'\b\d{4}[.\-_]?\d{2}[.\-_]?\d{2}\b|\b\d{8}\b'), ' ');
+    clean = clean.replaceAll(RegExp(r'(深深的|巡演|演唱会|呼和浩特站|北京站|上海站|广州站|深圳站|成都站|南京站|武汉站|重庆站|杭州站)\b'), ' ');
+    clean = clean.replaceAll(RegExp(r'(4K|1080P|720P|60帧|高音质|无损|纯享|单曲循环|完整版|官方MV|动态歌词|LRC|P\d+|多机位|精剪|直拍|现场|Live|全场|片段|高清|超清|重置|首唱|视频)', caseSensitive: false), ' ');
+    clean = clean.replaceAll(RegExp(r'(Cover|翻唱|原唱|词/曲|混音|演唱|UP主)', caseSensitive: false), ' ');
 
-    // 5. Remove dates (e.g., 20260712, 2024.05.01, 2026-07-12)
-    title = title.replaceAll(RegExp(r'\b\d{4}[.\-_]?\d{2}[.\-_]?\d{2}\b'), ' ');
-    title = title.replaceAll(RegExp(r'\b\d{8}\b'), ' ');
-
-    // 6. Remove concert/venue/tour descriptors & noise keywords
-    title = title.replaceAll(RegExp(r'(深深的|巡演|演唱会|呼和浩特站|北京站|上海站|广州站|深圳站|成都站|南京站|武汉站|重庆站|杭州站)\b'), ' ');
-    title = title.replaceAll(RegExp(r'(4K|1080P|720P|60帧|高音质|无损|纯享|单曲循环|完整版|官方MV|动态歌词|LRC|P\d+|多机位|精剪|直拍|现场|Live|全场|片段|高清|超清|重置|首唱)', caseSensitive: false), ' ');
-    title = title.replaceAll(RegExp(r'(Cover|翻唱|原唱|词/曲|混音|演唱|UP主)', caseSensitive: false), ' ');
-
-    // 7. Split "Artist - Title" before the punctuation strip.
-    //
-    // This used to run *after* step 8 removed every '-', so `title.contains('-')`
-    // was always false and artist extraction from "周深 - 大鱼" never happened.
+    // 6. Split "Artist - SongTitle" or "SongTitle - Artist"
     if (artist.isEmpty) {
-      final parts = title.split(RegExp(r'\s+[-–—]\s+'));
-      if (parts.length >= 2 &&
-          parts[0].trim().isNotEmpty &&
-          parts[1].trim().isNotEmpty) {
-        artist = parts[0].trim();
-        title = parts[1].trim();
+      final parts = clean.split(RegExp(r'\s+[-–—/]\s+'));
+      if (parts.length >= 2) {
+        final p0 = parts[0].trim();
+        final p1 = parts[1].trim();
+        if (p0.isNotEmpty && p1.isNotEmpty) {
+          artist = p0;
+          clean = p1;
+        }
       }
     }
 
-    // 8. Remove common noise punctuation
-    title = title.replaceAll(RegExp(r'[︱|丨~_─—\-]'), ' ');
-    title = title.trim().replaceAll(RegExp(r'\s+'), ' ');
+    clean = clean.replaceAll(RegExp(r'[︱|丨~_─—\-]\s*'), ' ').trim();
+    clean = clean.replaceAll(RegExp(r'\s+'), ' ');
 
     return {
-      'songTitle': title.isEmpty ? rawTitle : title,
-      'artist': artist,
+      'songTitle': clean.isEmpty ? rawTitle : clean,
+      'artist': artist.isNotEmpty ? artist : defaultArtist,
     };
   }
 
