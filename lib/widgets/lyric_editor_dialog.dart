@@ -563,7 +563,7 @@ class _LyricEditorDialogState extends State<LyricEditorDialog>
     );
   }
 
-  void _autoParseTitleAndArtist() {
+  Future<void> _autoParseTitleAndArtist() async {
     Haptics.selection();
     // Always prefer parsing the original raw video title (which contains all
     // brackets like 【周深】《大鱼》) rather than the already-cleaned song title.
@@ -575,19 +575,37 @@ class _LyricEditorDialogState extends State<LyricEditorDialog>
         ? textToParse
         : widget.songTitle;
 
-    final parsed = LyricsEngine.cleanTitle(raw, defaultArtist: widget.artistName);
-    setState(() {
-      if ((parsed['songTitle'] ?? '').isNotEmpty) {
-        _titleController.text = parsed['songTitle']!;
-      }
-      final extractedArtist = parsed['artist'] ?? '';
-      if (extractedArtist.isNotEmpty) {
-        // Only update artist if an artist was actually extracted or artist field is empty
-        if (extractedArtist != widget.artistName || _artistController.text.isEmpty) {
-          _artistController.text = extractedArtist;
+    // Pass 1: Instant rule-based extraction for immediate UI feedback
+    final syncParsed = LyricsEngine.cleanTitle(raw, defaultArtist: widget.artistName);
+    if (mounted) {
+      setState(() {
+        if ((syncParsed['songTitle'] ?? '').isNotEmpty) {
+          _titleController.text = syncParsed['songTitle']!;
         }
-      }
-    });
+        final syncArtist = syncParsed['artist'] ?? '';
+        if (syncArtist.isNotEmpty && syncArtist != widget.artistName) {
+          _artistController.text = syncArtist;
+        }
+      });
+    }
+
+    // Pass 2: Official lyric DB cross-validation to refine song & artist
+    final asyncParsed = await LyricsEngine.cleanTitleWithValidation(
+      raw,
+      defaultArtist: widget.artistName,
+    );
+
+    if (mounted) {
+      setState(() {
+        if ((asyncParsed['songTitle'] ?? '').isNotEmpty) {
+          _titleController.text = asyncParsed['songTitle']!;
+        }
+        final asyncArtist = asyncParsed['artist'] ?? '';
+        if (asyncArtist.isNotEmpty && asyncArtist != widget.artistName) {
+          _artistController.text = asyncArtist;
+        }
+      });
+    }
   }
 
   Widget _infoField(TextEditingController ctrl, String label) {

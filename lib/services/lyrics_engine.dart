@@ -131,6 +131,66 @@ class LyricsEngine {
     };
   }
 
+  /// Advanced title & artist extractor using lyric database cross-validation.
+  ///
+  /// 1. Extracts initial candidate song & artist using rule-based parsing.
+  /// 2. Searches NetEase / LRCLIB lyric databases for official track metadata.
+  /// 3. Cross-validates official metadata against the raw video title:
+  ///    - If both official song & artist appear in raw video title -> applies both.
+  ///    - If only official song matches (e.g. cover song) -> applies song title, preserving cover artist.
+  static Future<Map<String, String>> cleanTitleWithValidation(
+    String rawTitle, {
+    String defaultArtist = '',
+  }) async {
+    final initial = cleanTitle(rawTitle, defaultArtist: defaultArtist);
+    final ruleSong = initial['songTitle'] ?? rawTitle;
+    final ruleArtist = initial['artist'] ?? defaultArtist;
+
+    final query = (ruleArtist.isNotEmpty && ruleArtist != defaultArtist)
+        ? '$ruleArtist $ruleSong'
+        : ruleSong;
+
+    try {
+      final lyricsRes = await fetchFromNetEase(query) ??
+          await fetchFromLRCLIB(query, artist: ruleArtist);
+
+      if (lyricsRes != null) {
+        final officialSong = lyricsRes.songTitle ?? '';
+        final officialArtist = lyricsRes.artistName ?? '';
+
+        final rawNorm = _normalize(rawTitle);
+        final ruleSongNorm = _normalize(ruleSong);
+        final offSongNorm = _normalize(officialSong);
+        final offArtistNorm = _normalize(officialArtist);
+
+        final songMatches = offSongNorm.isNotEmpty &&
+            (rawNorm.contains(offSongNorm) ||
+                ruleSongNorm.contains(offSongNorm) ||
+                offSongNorm.contains(ruleSongNorm));
+
+        final artistMatches = offArtistNorm.isNotEmpty &&
+            (rawNorm.contains(offArtistNorm) ||
+                _normalize(ruleArtist).contains(offArtistNorm));
+
+        if (songMatches) {
+          return {
+            'songTitle': officialSong,
+            'artist': artistMatches
+                ? officialArtist
+                : (ruleArtist.isNotEmpty ? ruleArtist : defaultArtist),
+          };
+        }
+      }
+    } catch (e) {
+      debugPrint('Cross validation error: $e');
+    }
+
+    return {
+      'songTitle': ruleSong,
+      'artist': ruleArtist,
+    };
+  }
+
   // Normalize string for candidate matching verification
   static String _normalize(String input) {
     return input.replaceAll(RegExp(r'[^\u4e00-\u9fa5a-zA-Z0-9]'), '').toLowerCase();
