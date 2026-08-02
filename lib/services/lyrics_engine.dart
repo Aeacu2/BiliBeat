@@ -122,12 +122,31 @@ class LyricsEngine {
         .replaceAll(RegExp(r'^[A-Za-z0-9_\-\.\s]*[\u4e00-\u9fa5A-Za-z0-9]+(站|图文站|字幕组|工作室|应援会|后援会|FanClub|粉丝团)[_︱|丨\s_-]*', caseSensitive: false), ' ')
         .replaceAll(RegExp(r'【[^】]+】|\[[^\]]+\]|（[^）]+）|\([^)]+\)'), ' ')
         .replaceAll(RegExp(r'\b\d{4}[.\-_]?\d{2}[.\-_]?\d{2}\b|\b\d{8}\b'), ' ')
-        .replaceAll(RegExp(r'(巡演|演唱会|呼和浩特站|北京站|上海站|广州站|深圳站|天津站|沈阳站|南京站|武汉站|重庆站|杭州站)\b'), ' ')
-        .replaceAll(noiseKeywords, ' ')
-        .replaceAll(RegExp(r'(Cover|翻唱|原唱|词/曲|混音|演唱|UP主)', caseSensitive: false), ' ');
+        .replaceAll(RegExp(r'(巡演|演唱会|呼和浩特站|北京站|上海站|广州站|深圳站|天津站|沈阳站|南京站|武汉站|重庆站|杭州站)\b'), ' ');
 
-    if (artist.isEmpty) {
-      final parts = clean.split(RegExp(r'\s+[-–—/︱|丨_]\s+'));
+    // Token-level noise filtering: if a space-separated token contains any
+    // noise keyword, the entire token is almost certainly noise (e.g.
+    // "4k最高音质无损纯享" or "重混音修音版本") and is dropped wholesale.
+    // This avoids single-character residue from substring replacement.
+    final tokenNoise = RegExp(
+      noiseKeywords.pattern + r'|(?:Cover|翻唱|原唱|词/曲|混音|演唱|UP主|版本)',
+      caseSensitive: false,
+    );
+    clean = clean
+        .split(RegExp(r'\s+'))
+        .where((t) => t.isNotEmpty && !tokenNoise.hasMatch(t))
+        .join(' ');
+
+    if (artist.isEmpty || artist == defaultArtist) {
+      // Try space-padded separator first: "Artist - Song"
+      var parts = clean.split(RegExp(r'\s+[-–—/︱|丨_]\s+'));
+      // Fallback: bare dash with no spaces: "Artist-Song"
+      if (parts.length < 2) {
+        final dashMatch = RegExp(r'^([\u4e00-\u9fa5A-Za-z0-9·•.]{2,10})\s*[-–—]\s*(.+)$').firstMatch(clean);
+        if (dashMatch != null) {
+          parts = [dashMatch.group(1)!, dashMatch.group(2)!];
+        }
+      }
       if (parts.length >= 2) {
         final p0 = parts[0].trim();
         final p1 = parts[1].trim();
@@ -197,7 +216,11 @@ class LyricsEngine {
                 _normalize(ruleArtist).contains(offArtistNorm));
 
         if (songMatches) {
-          final appliedSong = (cleanOffSongNorm == ruleSongNorm || ruleSongNorm.contains(cleanOffSongNorm))
+          // Only prefer ruleSong when it's essentially the same length as officialSong
+          // (i.e. they represent the same name). If ruleSong is much longer, it likely
+          // contains noise residue and the official name is cleaner.
+          final lengthClose = (ruleSongNorm.length - cleanOffSongNorm.length).abs() <= 3;
+          final appliedSong = (cleanOffSongNorm == ruleSongNorm || (lengthClose && ruleSongNorm.contains(cleanOffSongNorm)))
               ? ruleSong
               : (cleanOfficialSong.isNotEmpty ? cleanOfficialSong : officialSong);
           return {
