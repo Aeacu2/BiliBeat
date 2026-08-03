@@ -80,7 +80,11 @@ class WbiSigner {
       debugPrint('Failed to fetch WBI keys: $e');
     }
 
-    // Fallback static keys if network unavailable
+    // Fallback static keys if network unavailable. B站 rotates these, so a
+    // stale pair signs requests that the API rejects — make that degraded
+    // state visible instead of silently serving bad signatures.
+    debugPrint('WbiSigner: live WBI keys unavailable, using static fallback. '
+        'Signed requests may be rejected until the live keys can be fetched.');
     return {
       'imgKey': '7057082772594611a917024e0f065363',
       'subKey': '0a6e0388df634f1ca668482436d4001c',

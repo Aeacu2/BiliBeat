@@ -219,8 +219,35 @@ class AudioDownloadService {
       req.headers.set('Accept', '*/*');
       req.headers.set('Accept-Encoding', 'identity');
 
+      // Resume an interrupted download when a .part file survived: ask for
+      // the remaining range. A server that ignores Range answers 200 with
+      // the whole file, which is detected below and starts from scratch.
+      final existing = await tmp.exists() ? await tmp.length() : 0;
+      if (existing > 0) {
+        req.headers.set('Range', 'bytes=$existing-');
+      }
+
       final res = await req.close();
-      if (res.statusCode != HttpStatus.ok) {
+      // A .part that already covers the whole file (e.g. a crash between the
+      // rename and the .ready marker) makes the CDN answer 416. The bytes on
+      // disk are complete — finalize them instead of failing the download.
+      if (res.statusCode == HttpStatus.requestedRangeNotSatisfiable &&
+          existing > 0) {
+        await res.drain<void>();
+        final destination = File(path);
+        if (await destination.exists()) {
+          await destination.delete();
+        }
+        await tmp.rename(path);
+        await File(_readyPath(dir, _key(track))).create();
+        await saveTrackMetadata(track);
+        _downloadedMemo[_key(track)] = true;
+        _emit(DownloadProgress(track.id, existing, existing, true, null));
+        await DatabaseService.saveDownloadedTrack(track);
+        return path;
+      }
+      if (res.statusCode != HttpStatus.ok &&
+          res.statusCode != HttpStatus.partialContent) {
         await res.drain<void>();
         throw Exception('CDN HTTP ${res.statusCode}');
       }
@@ -233,9 +260,23 @@ class AudioDownloadService {
         throw Exception('CDN 返回了非音频内容 ($contentType)');
       }
 
-      final total = res.contentLength > 0 ? res.contentLength : null;
-      sink = tmp.openWrite();
+      final int? total;
       var received = 0;
+      if (res.statusCode == HttpStatus.partialContent) {
+        // 206: the server honored the range — append to what is on disk.
+        received = existing;
+        lastEmitted = existing;
+        total = res.contentLength > 0 ? existing + res.contentLength : null;
+        sink = tmp.openWrite(mode: FileMode.append);
+      } else {
+        // 200 after a Range request means the server ignored it; the body is
+        // the entire file, so whatever the .part holds is unusable.
+        if (existing > 0) {
+          await tmp.delete();
+        }
+        total = res.contentLength > 0 ? res.contentLength : null;
+        sink = tmp.openWrite();
+      }
 
       await for (final chunk in res) {
         sink.add(chunk);
@@ -276,9 +317,9 @@ class AudioDownloadService {
       try {
         await sink?.close();
       } catch (_) {}
-      try {
-        if (await tmp.exists()) await tmp.delete();
-      } catch (_) {}
+      // Deliberately keep the .part file: the next attempt resumes it via
+      // Range instead of re-downloading from byte 0. Corrupt or unwanted
+      // partial data is handled there (a 200 answer restarts from scratch).
       _emit(DownloadProgress(track.id, 0, null, false, '$e'));
       rethrow;
     }
