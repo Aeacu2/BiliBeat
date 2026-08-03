@@ -71,7 +71,8 @@ class DatabaseService {
     try {
       final file = File(path);
       if (!await file.exists()) return;
-      final list = jsonDecode(await file.readAsString()) as List<dynamic>? ?? [];
+      final list = _readPayload(jsonDecode(await file.readAsString()))
+          as List<dynamic>? ?? [];
       final tracks = list.map((item) => Track.fromMap(Map<String, dynamic>.from(item))).toList();
       store
         ..clear()
@@ -117,7 +118,8 @@ class DatabaseService {
     try {
       final file = File(path);
       if (!await file.exists()) return;
-      final list = jsonDecode(await file.readAsString()) as List<dynamic>? ?? [];
+      final list = _readPayload(jsonDecode(await file.readAsString()))
+          as List<dynamic>? ?? [];
       final playlists = list.map((item) {
         final map = Map<String, dynamic>.from(item);
         final tracks = (map['tracks'] as List<dynamic>? ?? [])
@@ -140,7 +142,8 @@ class DatabaseService {
     try {
       final file = File(path);
       if (!await file.exists()) return;
-      final list = jsonDecode(await file.readAsString()) as List<dynamic>? ?? [];
+      final list = _readPayload(jsonDecode(await file.readAsString()))
+          as List<dynamic>? ?? [];
       _searchHistory
         ..clear()
         ..addAll(list.map((e) => e.toString()));
@@ -153,7 +156,8 @@ class DatabaseService {
     try {
       final file = File(path);
       if (!await file.exists()) return;
-      final map = jsonDecode(await file.readAsString()) as Map<String, dynamic>? ?? {};
+      final map = _readPayload(jsonDecode(await file.readAsString()))
+          as Map<String, dynamic>? ?? {};
       map.forEach((key, value) {
         try {
           _lyricsCache[key] =
@@ -176,11 +180,38 @@ class DatabaseService {
     await tmp.rename(path);
   }
 
+  /// Envelope version for every file this service writes. Bump when a payload
+  /// shape changes incompatibly and teach the matching loader to migrate the
+  /// old version. Files written before versioning existed hold bare payloads
+  /// (no envelope); every loader accepts both, so the first write after an
+  /// upgrade migrates each file in place.
+  static const int schemaVersion = 1;
+
+  static Map<String, dynamic> _envelope(Object payload) =>
+      {'schema_version': schemaVersion, 'data': payload};
+
+  /// Unwraps a persisted payload, accepting both the versioned envelope and
+  /// the bare legacy shape. Returns null for envelopes written by a NEWER
+  /// schema than this build understands: guessing at unknown future data and
+  /// then re-persisting the guess would destroy it.
+  static dynamic _readPayload(dynamic decoded) {
+    if (decoded is Map && decoded.containsKey('schema_version')) {
+      final version = decoded['schema_version'];
+      if (version is int && version > schemaVersion) {
+        debugPrint('DatabaseService: file has schema_version $version > '
+            '$schemaVersion; written by a newer build, skipping');
+        return null;
+      }
+      return decoded['data'];
+    }
+    return decoded;
+  }
+
   static Future<void> _persistDownloaded() async {
     try {
       final dir = await _docs();
-      await _writeJsonAtomically(
-          '$dir/bilibeat_downloaded.json', _downloadedTracks.map((t) => t.toMap()).toList());
+      await _writeJsonAtomically('$dir/bilibeat_downloaded.json',
+          _envelope(_downloadedTracks.map((t) => t.toMap()).toList()));
     } catch (e) {
       debugPrint('DatabaseService _persistDownloaded error: $e');
     }
@@ -189,8 +220,8 @@ class DatabaseService {
   static Future<void> _persistRecentlyPlayed() async {
     try {
       final dir = await _docs();
-      await _writeJsonAtomically(
-          '$dir/bilibeat_recently_played.json', _recentlyPlayed.map((t) => t.toMap()).toList());
+      await _writeJsonAtomically('$dir/bilibeat_recently_played.json',
+          _envelope(_recentlyPlayed.map((t) => t.toMap()).toList()));
     } catch (e) {
       debugPrint('DatabaseService _persistRecentlyPlayed error: $e');
     }
@@ -204,7 +235,7 @@ class DatabaseService {
         map['tracks'] = p.tracks.map((t) => t.toMap()).toList();
         return map;
       }).toList();
-      await _writeJsonAtomically('$dir/bilibeat_playlists.json', list);
+      await _writeJsonAtomically('$dir/bilibeat_playlists.json', _envelope(list));
     } catch (e) {
       debugPrint('DatabaseService _persistPlaylists error: $e');
     }
@@ -214,7 +245,8 @@ class DatabaseService {
   static Future<void> _persistSearchHistory() async {
     try {
       final dir = await _docs();
-      await _writeJsonAtomically('$dir/bilibeat_search_history.json', _searchHistory);
+      await _writeJsonAtomically(
+          '$dir/bilibeat_search_history.json', _envelope(_searchHistory));
     } catch (e) {
       debugPrint('DatabaseService _persistSearchHistory error: $e');
     }
@@ -477,7 +509,7 @@ class DatabaseService {
     try {
       final dir = await _docs();
       final map = _lyricsCache.map((k, v) => MapEntry(k, v.toMap()));
-      await _writeJsonAtomically('$dir/bilibeat_lyrics.json', map);
+      await _writeJsonAtomically('$dir/bilibeat_lyrics.json', _envelope(map));
     } catch (e) {
       debugPrint('DatabaseService _persistLyrics error: $e');
     }
