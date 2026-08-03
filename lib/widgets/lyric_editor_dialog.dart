@@ -78,6 +78,14 @@ class _LyricEditorDialogState extends State<LyricEditorDialog>
   /// never overwrite the results of a newer one.
   int _searchToken = 0;
 
+  /// The artist/song pair behind the auto-composed search field. While the
+  /// field still holds exactly "$artist $song" the search is issued with the
+  /// parts separated — NetEase matching fails short song names (岁月, 2
+  /// chars) against a compound query, which made auto-searches for such
+  /// songs come up empty. User-typed text goes through as one free query.
+  String _searchArtist = '';
+  String _searchSong = '';
+
   /// Monotonic guard for 智能识别: only the LAST tap's validated result may
   /// write the fields, no matter which of several in-flight parses completes.
   int _parseToken = 0;
@@ -103,6 +111,8 @@ class _LyricEditorDialogState extends State<LyricEditorDialog>
     });
     _titleController.addListener(() => setState(() {}));
     _artistController.addListener(() => setState(() {}));
+    _searchArtist = widget.artistName;
+    _searchSong = widget.songTitle;
     _searchController.text = '${widget.artistName} ${widget.songTitle}'.trim();
     _searchResults = _pinnedResults();
     _performSearch();
@@ -205,7 +215,11 @@ class _LyricEditorDialogState extends State<LyricEditorDialog>
     final token = ++_searchToken;
 
     // Only the newest search may commit.
-    final netease = await LyricsEngine.fetchFromNetEase(query);
+    final combo = '$_searchArtist $_searchSong'.trim();
+    final netease = (query == combo && _searchSong.isNotEmpty)
+        ? await LyricsEngine.fetchFromNetEase(_searchSong,
+            artist: _searchArtist.isEmpty ? null : _searchArtist)
+        : await LyricsEngine.fetchFromNetEase(query);
 
     if (!mounted || token != _searchToken) return;
     final results = <LyricsResult>[
@@ -445,18 +459,25 @@ class _LyricEditorDialogState extends State<LyricEditorDialog>
     final raw = widget.rawTitle;
     final token = ++_parseToken;
 
-    // Pass 1: Instant rule-based extraction for immediate UI feedback
-    final syncParsed = LyricsEngine.cleanTitle(raw, defaultArtist: widget.artistName);
-    if (mounted) {
-      setState(() {
-        if ((syncParsed['songTitle'] ?? '').isNotEmpty) {
-          _titleController.text = syncParsed['songTitle']!;
-        }
-        final syncArtist = syncParsed['artist'] ?? '';
-        if (syncArtist.isNotEmpty && syncArtist != widget.artistName) {
-          _artistController.text = syncArtist;
-        }
-      });
+    // Pass 1: Instant rule-based extraction for immediate UI feedback.
+    // Skipped when an earlier tap already confirmed a DB-validated result:
+    // replaying guess→correction on every tap reads as the fields flickering
+    // between two values; the memoized result returns instantly anyway.
+    if (LyricsEngine.peekValidated(raw, defaultArtist: widget.artistName) ==
+        null) {
+      final syncParsed =
+          LyricsEngine.cleanTitle(raw, defaultArtist: widget.artistName);
+      if (mounted) {
+        setState(() {
+          if ((syncParsed['songTitle'] ?? '').isNotEmpty) {
+            _titleController.text = syncParsed['songTitle']!;
+          }
+          final syncArtist = syncParsed['artist'] ?? '';
+          if (syncArtist.isNotEmpty && syncArtist != widget.artistName) {
+            _artistController.text = syncArtist;
+          }
+        });
+      }
     }
 
     // Pass 2: Official lyric DB cross-validation to refine song & artist.
@@ -467,6 +488,7 @@ class _LyricEditorDialogState extends State<LyricEditorDialog>
     );
 
     if (mounted && token == _parseToken) {
+      var research = false;
       setState(() {
         if ((asyncParsed['songTitle'] ?? '').isNotEmpty) {
           _titleController.text = asyncParsed['songTitle']!;
@@ -475,7 +497,22 @@ class _LyricEditorDialogState extends State<LyricEditorDialog>
         if (asyncArtist.isNotEmpty && asyncArtist != widget.artistName) {
           _artistController.text = asyncArtist;
         }
+        // Re-aim the auto-composed search at the recognised pair — the
+        // initial query was "UP主名 标题", which is why the first search
+        // found nothing. A query the user typed themselves is left alone.
+        final currentQuery = _searchController.text.trim();
+        final oldCombo = '$_searchArtist $_searchSong'.trim();
+        final newSong = asyncParsed['songTitle'] ?? '';
+        if (newSong.isNotEmpty &&
+            (currentQuery.isEmpty || currentQuery == oldCombo)) {
+          final newArtist = asyncParsed['artist'] ?? '';
+          _searchArtist = newArtist.isNotEmpty ? newArtist : _searchArtist;
+          _searchSong = newSong;
+          _searchController.text = '$_searchArtist $_searchSong'.trim();
+          research = true;
+        }
       });
+      if (research) _performSearch();
     }
   }
 
@@ -560,18 +597,22 @@ class _LyricEditorDialogState extends State<LyricEditorDialog>
       : null;
 
   /// Human-readable provider name. For the pinned current row we surface the
-  /// lyrics' real origin (read from the cache) rather than a redundant label.
+  /// lyrics' real origin (read from the cache). When the origin is unknown
+  /// (no cache entry, or a re-applied 'current' result) the label is empty:
+  /// the row title already says 当前歌词, so a second 当前 is pure repetition —
+  /// the row then shows only the line count.
   String _sourceLabel(LyricsResult res) {
     final raw = res.source == 'current'
-        ? (_currentSourceLabel ?? 'current')
+        ? (_currentSourceLabel ?? '')
         : res.source;
     switch (raw) {
       case 'netease':
         return '网易云';
       case 'user':
         return '自定义';
+      case '':
       case 'current':
-        return '当前';
+        return '';
       default:
         return raw.toUpperCase();
     }

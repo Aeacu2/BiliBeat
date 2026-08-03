@@ -87,7 +87,9 @@ class LyricResultRow extends StatelessWidget {
                         ),
                         const SizedBox(width: 8),
                         Text(
-                          '$sourceLabel · ${result.lines.length} 行',
+                          sourceLabel.isEmpty
+                              ? '${result.lines.length} 行'
+                              : '$sourceLabel · ${result.lines.length} 行',
                           maxLines: 1,
                           style: const TextStyle(
                             color: AppColors.textFaint,

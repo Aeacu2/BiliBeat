@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:bilibeats/services/lyrics_engine.dart';
+import 'package:bilibeat/services/lyrics_engine.dart';
 
 void main() {
   test('cleanTitle: 周深-世界赠予我的 (with noise)', () {
@@ -135,5 +135,29 @@ void main() {
     );
     expect(res['songTitle'], '霸王别姬');
     expect(res['artist'], '刘端端姚晓棠');
+  });
+
+  // Regression: 【show】 plain-artist 《song》. The leading bracket is the
+  // show tag (声生不息3), not the artist — the plain text between the bracket
+  // and the song bracket is. Used to return 声生不息3 as the artist, which
+  // also poisoned the auto lyric search.
+  test('cleanTitle: 【show】 plain artist 《song》 — plain artist wins', () {
+    final res = LyricsEngine.cleanTitle(
+      '【声生不息3】 黄绮珊&周深 《岁月》',
+      defaultArtist: '某UP主',
+    );
+    expect(res['songTitle'], '岁月');
+    expect(res['artist'], '黄绮珊&周深');
+  });
+
+  // The bracket artist must still win when nothing sits between bracket and
+  // song, even with noise tokens in between (dropped by _noisyClean).
+  test('cleanTitle: 【artist】 noise 《song》 keeps bracket artist', () {
+    final res = LyricsEngine.cleanTitle(
+      '【周深】 4K高清 《大鱼》',
+      defaultArtist: '某UP主',
+    );
+    expect(res['songTitle'], '大鱼');
+    expect(res['artist'], '周深');
   });
 }

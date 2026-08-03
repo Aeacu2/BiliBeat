@@ -145,6 +145,40 @@ class LyricsEngine {
       }).toList();
       songPair = unmarked.isNotEmpty ? unmarked.last : pairs.last;
       song = songPair.group(1)!.trim();
+      // A plain-text artist sitting between the last leading 【】/[] bracket
+      // and the song bracket beats the bracket content — but only under the
+      // two shapes where that is reliably true, because on B站 the bracket is
+      // USUALLY the artist ("【周深】《画绢》") and the text between bracket
+      // and song is usually junk (dates, 合集 tags, verb phrases):
+      //   1. the between text is a collab list ("【声生不息3】 黄绮珊&周深
+      //      《岁月》" — &/、 only ever join artists);
+      //   2. the bracket is a show-season tag (CJK name ending in a 1–2 digit
+      //      season: 声生不息3, 我们的歌5 — not SNH48-style ASCII ids) and the
+      //      between text is a single bare name.
+      final leadingBrackets = bracketContent
+          .allMatches(title.substring(0, songPair.start))
+          .toList();
+      if (leadingBrackets.isNotEmpty) {
+        final between = _noisyClean(
+            title.substring(leadingBrackets.last.end, songPair.start));
+        final betweenTokens = between
+            .split(RegExp(r'\s+'))
+            .where((t) => t.isNotEmpty)
+            .toList();
+        if (betweenTokens.isNotEmpty) {
+          final bracketText = leadingBrackets.last.group(1)!.trim();
+          final collabToken = betweenTokens
+              .where((t) => RegExp(r'[&、,，]').hasMatch(t))
+              .toList();
+          if (collabToken.isNotEmpty) {
+            artist = collabToken.first;
+          } else if (_looksLikeShowSeason(bracketText) &&
+              betweenTokens.length == 1 &&
+              _looksLikeBareName(betweenTokens.first)) {
+            artist = betweenTokens.first;
+          }
+        }
+      }
       if (artist.isEmpty || artist == defaultArtist) {
         final beforeTokens = _noisyClean(title.substring(0, songPair.start))
             .split(RegExp(r'\s+'))
@@ -346,6 +380,45 @@ class LyricsEngine {
     return result;
   }
 
+  /// Matches a provider song name against a search title. Provider names
+  /// compare with their parenthesised subtitle stripped ("岁月 (live)" must
+  /// match 《岁月》), and a compound "artist song" title also matches on its
+  /// post-space part — otherwise short song names (2–3 chars, e.g. 岁月)
+  /// could never pass [isTitleMatching]'s length guard against a query like
+  /// "黄绮珊&周深 岁月".
+  static bool _matchesQuery(String songName, String title) {
+    final cleanName = songName.replaceAll(parenSubtitle, '').trim();
+    if (isTitleMatching(cleanName, title)) return true;
+    final sp = title.indexOf(RegExp(r'\s'));
+    if (sp > 0 && sp < title.length - 1) {
+      final tail = title.substring(sp + 1).trim();
+      if (tail.isNotEmpty && isTitleMatching(cleanName, tail)) return true;
+    }
+    return false;
+  }
+
+  /// The memoized validation result for [rawTitle], if a previous 智能识别
+  /// tap already confirmed one. Lets the editor skip replaying the instant
+  /// rule-based guess on repeat taps — guess→correction every tap reads as
+  /// the artist field flickering between two values.
+  static Map<String, String>? peekValidated(String rawTitle,
+          {String defaultArtist = ''}) =>
+      _validationMemo['$rawTitle\x00$defaultArtist'];
+
+  /// CJK-leaning bracket content ending in a 1–2 digit season marker:
+  /// 声生不息3, 我们的歌5. ASCII ids (SNH48) and 4-digit years (歌手2024) are
+  /// deliberately excluded — the former are group names, the latter too
+  /// ambiguous to trust here.
+  static bool _looksLikeShowSeason(String bracketText) =>
+      RegExp(r'^[\u4e00-\u9fa5A-Za-z·]+\d{1,2}$').hasMatch(bracketText) &&
+      RegExp(r'[\u4e00-\u9fa5]').hasMatch(bracketText);
+
+  /// A single token that reads like one artist name: 2–7 name characters,
+  /// nothing else. Descriptors (精选歌单合集, 总选跳, 弹奏…) can still slip
+  /// through, which is why this gate only opens behind [_looksLikeShowSeason].
+  static bool _looksLikeBareName(String t) =>
+      RegExp(r'^[\u4e00-\u9fa5A-Za-z·]{2,7}$').hasMatch(t);
+
   // Normalize string for candidate matching verification
   static String _normalize(String input) {
     return input.replaceAll(RegExp(r'[^\u4e00-\u9fa5a-zA-Z0-9]'), '').toLowerCase();
@@ -453,7 +526,7 @@ class LyricsEngine {
           final songs = json['result']?['songs'] as List? ?? [];
           for (final song in songs) {
             final songName = (song['name'] ?? '') as String;
-            if (isTitleMatching(songName, title)) {
+            if (_matchesQuery(songName, title)) {
               final songId = song['id'];
               if (songId is! int || songId <= 0) continue;
               final lyricUrl = 'https://music.163.com/api/song/lyric?id=$songId&lv=-1&tv=-1';
