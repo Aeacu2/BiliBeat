@@ -1,0 +1,31 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  analyze-and-test:
+    name: Analyze & test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with:
+          # Keep in sync with the local dev SDK (`flutter --version`).
+          flutter-version: 3.44.8
+          channel: stable
+          cache: true
+
+      - name: Fetch dependencies
+        run: flutter pub get
+
+      # analysis_options.yaml promotes unused members and dead code to errors,
+      # so `flutter analyze` failing here means a real regression, not style.
+      - name: Analyze
+        run: flutter analyze
+
+      - name: Test
+        run: flutter test

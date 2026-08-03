@@ -4,17 +4,23 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:bilibeats/services/lyrics_engine.dart';
 
 void main() {
-  test('Test LyricsEngine.cleanTitle on 540 real Bilibili titles', () async {
-    final file = File('/Users/aeacu2/.gemini/antigravity/brain/f2850352-2ae9-4c2e-a7e3-fc6a95ce80a0/scratch/real_bilibili_titles.json');
-    if (!file.existsSync()) return;
+  test('LyricsEngine.cleanTitle survives all 540 fixture Bilibili titles', () async {
+    // The regression corpus is committed with the code, so this test runs on
+    // any machine (including CI) instead of silently skipping when a
+    // machine-local scratch file is missing.
+    final file = File('test/fixtures/real_bilibili_titles.json');
+    final List<dynamic> rawList =
+        jsonDecode(await file.readAsString()) as List<dynamic>;
+    expect(rawList, hasLength(540));
 
-    final List<dynamic> rawList = jsonDecode(await file.readAsString());
-
-    for (int i = 0; i < rawList.length && i < 50; i++) {
-      final title = rawList[i]['title'] as String;
-      final uploader = rawList[i]['uploader'] as String;
+    for (final entry in rawList) {
+      final title = entry['title'] as String;
+      final uploader = entry['uploader'] as String;
       final parsed = LyricsEngine.cleanTitle(title, defaultArtist: uploader);
-      expect(parsed['songTitle'], isNotNull);
+      expect(parsed['songTitle'], isNotNull,
+          reason: 'songTitle was null for: $title');
+      expect(parsed['songTitle'], isNotEmpty,
+          reason: 'songTitle was empty for: $title');
     }
   });
 }
