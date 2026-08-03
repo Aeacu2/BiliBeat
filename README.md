@@ -90,6 +90,33 @@ flutter symbolize -i trace.txt -d symbols/<版本号>/app.android-arm64.symbols
 
 （iOS 崩溃堆栈使用同一目录下的 `app.ios-arm64.symbols`。）
 
+## 开发
+
+日常开发只需标准 Flutter 工具链：
+
+```bash
+flutter analyze   # 静态检查（未使用的成员与死代码在本项目中按错误处理）
+flutter test      # 单元测试与 widget 测试
+```
+
+歌词标题解析（`LyricsEngine.cleanTitle`）的回归语料位于
+`test/fixtures/real_bilibili_titles.json`（540 条真实 B 站标题）。
+调整解析规则前请先补充或核对语料，避免依赖机器本地的临时文件。
+
+每次 push / PR 由 GitHub Actions（`.github/workflows/ci.yml`）自动执行
+`flutter analyze` 与 `flutter test`，Flutter 版本固定为 3.44.8，升级 SDK 时请同步更新。
+
+## 发布流程
+
+```bash
+tool/release.sh patch "修复了某某问题"   # 或 minor / major，可跟多条说明
+```
+
+脚本会一次性完成：提升 `pubspec.yaml` 版本号与构建号、在 `CHANGELOG.md` 顶部插入条目、
+提交并打 `vX.Y.Z` 标签。它**不执行构建**——随后运行 `tool/build_release.sh all`，
+并将产物与对应的 `symbols/` 符号文件一同附加到 GitHub Release。
+脚本要求工作区干净，确保发布提交只包含版本变更本身。
+
 ## 许可证
 
 MIT
