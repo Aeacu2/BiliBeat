@@ -230,6 +230,9 @@ class BiliBeatAudioHandler extends BaseAudioHandler with SeekHandler {
       await _startCurrent(autoplay: true);
       return;
     }
+    // Nothing loaded at all: playing would be a lie the UI then renders as
+    // a paused-state toggle for silence. Stand down instead.
+    if (_queueSource.length == 0) return;
     await _player.play();
     _isPlaying = true;
     _playerStateController.add(true);

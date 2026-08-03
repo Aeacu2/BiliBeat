@@ -33,6 +33,13 @@ class _PageFraction extends Animation<double> with ChangeNotifier {
     _controller.addListener(notifyListeners);
   }
 
+  /// Balances the listener added in the constructor — [MainLayout] owns one
+  /// instance for its lifetime; constructing one per build (the old way)
+  /// leaked a listener on the PageController on every rebuild.
+  void dispose() {
+    _controller.removeListener(notifyListeners);
+  }
+
   final PageController _controller;
   final int _fallbackIndex;
 
@@ -139,6 +146,9 @@ class _MainLayoutState extends State<MainLayout> {
   Playlist? _activePlaylistSheet;
 
   late final PageController _pageController = PageController();
+
+  /// One instance for the widget's lifetime (see [_PageFraction.dispose]).
+  late final _PageFraction _pageFraction = _PageFraction(_pageController, 0);
   final List<StreamSubscription> _subs = [];
 
   @override
@@ -159,6 +169,7 @@ class _MainLayoutState extends State<MainLayout> {
     _positionNotifier.dispose();
     _durationNotifier.dispose();
     _lyricsNotifier.dispose();
+    _pageFraction.dispose();
     _pageController.dispose();
     super.dispose();
   }
@@ -181,9 +192,17 @@ class _MainLayoutState extends State<MainLayout> {
 
         bool isCacheValid = false;
         if (cached != null && cached.lines.isNotEmpty && cached.source != 'none') {
-          final cachedTitle = cached.songTitle ?? '';
-          if (cachedTitle.isNotEmpty && LyricsEngine.isTitleMatching(cachedTitle, cleanSongTitle)) {
+          // 'user' (pasted/edited LRC) and 'current' (re-applied with an
+          // offset) are deliberate user choices. Title-validating them fails
+          // — a paste is cached as 「自定义歌词」 — and the refetch below then
+          // silently overwrote the user's lyrics with the provider's.
+          if (cached.source == 'user' || cached.source == 'current') {
             isCacheValid = true;
+          } else {
+            final cachedTitle = cached.songTitle ?? '';
+            if (cachedTitle.isNotEmpty && LyricsEngine.isTitleMatching(cachedTitle, cleanSongTitle)) {
+              isCacheValid = true;
+            }
           }
         }
 
@@ -382,10 +401,7 @@ class _MainLayoutState extends State<MainLayout> {
                         Expanded(
                           child: SegmentTabs(
                             labels: const ['聆听', '搜索'],
-                            animation: _PageFraction(
-                              _pageController,
-                              _activeTabIndex,
-                            ),
+                            animation: _pageFraction,
                             onTap: _onTabTap,
                           ),
                         ),

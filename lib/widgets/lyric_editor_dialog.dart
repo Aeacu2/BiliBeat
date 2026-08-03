@@ -478,7 +478,13 @@ class _LyricEditorDialogState extends State<LyricEditorDialog>
       defaultArtist: widget.artistName,
     );
 
-    if (!mounted || token != _parseToken) return;
+    if (!mounted) return;
+    if (token != _parseToken) {
+      // Unreachable while the busy-guard holds, but a superseded parse must
+      // never leave the button disabled with a stuck spinner.
+      setState(() => _parsing = false);
+      return;
+    }
     var research = false;
     setState(() {
       _parsing = false;
