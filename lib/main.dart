@@ -36,8 +36,10 @@ class _PageFraction extends Animation<double> with ChangeNotifier {
   /// Balances the listener added in the constructor — [MainLayout] owns one
   /// instance for its lifetime; constructing one per build (the old way)
   /// leaked a listener on the PageController on every rebuild.
+  @override
   void dispose() {
     _controller.removeListener(notifyListeners);
+    super.dispose();
   }
 
   final PageController _controller;
