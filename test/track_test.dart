@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:bilibeats/models/track.dart';
+import 'package:bilibeat/models/track.dart';
 
 void main() {
   test('rawTitle survives serialization round-trip', () {

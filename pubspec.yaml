@@ -1,4 +1,4 @@
-name: bilibeats
+name: bilibeat
 description: "A premium Apple Music-inspired Bilibili audio player for Android & iOS."
 publish_to: 'none'
 version: 3.10.2+44

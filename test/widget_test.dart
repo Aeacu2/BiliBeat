@@ -2,16 +2,16 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:bilibeats/models/lyric_line.dart';
-import 'package:bilibeats/services/lyrics_engine.dart';
-import 'package:bilibeats/services/recommendation_engine.dart';
-import 'package:bilibeats/models/playlist.dart';
-import 'package:bilibeats/models/track.dart';
-import 'package:bilibeats/widgets/marquee_text.dart';
-import 'package:bilibeats/widgets/expand_from_card.dart';
-import 'package:bilibeats/widgets/mini_player.dart';
-import 'package:bilibeats/widgets/synced_lyrics_view.dart';
-import 'package:bilibeats/widgets/playlist_detail_sheet.dart';
+import 'package:bilibeat/models/lyric_line.dart';
+import 'package:bilibeat/services/lyrics_engine.dart';
+import 'package:bilibeat/services/recommendation_engine.dart';
+import 'package:bilibeat/models/playlist.dart';
+import 'package:bilibeat/models/track.dart';
+import 'package:bilibeat/widgets/marquee_text.dart';
+import 'package:bilibeat/widgets/expand_from_card.dart';
+import 'package:bilibeat/widgets/mini_player.dart';
+import 'package:bilibeat/widgets/synced_lyrics_view.dart';
+import 'package:bilibeat/widgets/playlist_detail_sheet.dart';
 
 const _style = TextStyle(fontSize: 14, height: 1.25);
 

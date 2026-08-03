@@ -1,9 +1,9 @@
 import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:bilibeats/models/lyric_line.dart';
-import 'package:bilibeats/models/playlist.dart';
-import 'package:bilibeats/models/track.dart';
+import 'package:bilibeat/models/lyric_line.dart';
+import 'package:bilibeat/models/playlist.dart';
+import 'package:bilibeat/models/track.dart';
 
 /// Round-trips through the same jsonEncode/jsonDecode the database layer
 /// uses, so a field that survives toMap/fromMap but not JSON (e.g. a non-
