@@ -12,6 +12,11 @@ class LyricEditorInfoTab extends StatelessWidget {
   final VoidCallback onPickCover;
   final VoidCallback onAutoParse;
 
+  /// True while the 智能识别 DB lookup is in flight: the button shows a
+  /// spinner and is disabled, because no result is displayed before the
+  /// validation answer arrives.
+  final bool parsing;
+
   const LyricEditorInfoTab({
     super.key,
     required this.titleController,
@@ -19,6 +24,7 @@ class LyricEditorInfoTab extends StatelessWidget {
     required this.coverUrlController,
     required this.onPickCover,
     required this.onAutoParse,
+    this.parsing = false,
   });
 
   @override
@@ -77,8 +83,15 @@ class LyricEditorInfoTab extends StatelessWidget {
                   width: double.infinity,
                   height: 44,
                   child: OutlinedButton.icon(
-                    onPressed: onAutoParse,
-                    icon: const Icon(Icons.auto_awesome, color: AppColors.accent, size: 18),
+                    onPressed: parsing ? null : onAutoParse,
+                    icon: parsing
+                        ? const SizedBox(
+                            width: 18,
+                            height: 18,
+                            child: CircularProgressIndicator(
+                                strokeWidth: 2, color: AppColors.accent),
+                          )
+                        : const Icon(Icons.auto_awesome, color: AppColors.accent, size: 18),
                     label: const Text('智能识别歌名与歌手',
                         style: TextStyle(
                             color: AppColors.accent,

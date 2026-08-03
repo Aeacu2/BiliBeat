@@ -386,7 +386,7 @@ class LyricsEngine {
   /// post-space part — otherwise short song names (2–3 chars, e.g. 岁月)
   /// could never pass [isTitleMatching]'s length guard against a query like
   /// "黄绮珊&周深 岁月".
-  static bool _matchesQuery(String songName, String title) {
+  static bool matchesSongQuery(String songName, String title) {
     final cleanName = songName.replaceAll(parenSubtitle, '').trim();
     if (isTitleMatching(cleanName, title)) return true;
     final sp = title.indexOf(RegExp(r'\s'));
@@ -397,13 +397,6 @@ class LyricsEngine {
     return false;
   }
 
-  /// The memoized validation result for [rawTitle], if a previous 智能识别
-  /// tap already confirmed one. Lets the editor skip replaying the instant
-  /// rule-based guess on repeat taps — guess→correction every tap reads as
-  /// the artist field flickering between two values.
-  static Map<String, String>? peekValidated(String rawTitle,
-          {String defaultArtist = ''}) =>
-      _validationMemo['$rawTitle\x00$defaultArtist'];
 
   /// CJK-leaning bracket content ending in a 1–2 digit season marker:
   /// 声生不息3, 我们的歌5. ASCII ids (SNH48) and 4-digit years (歌手2024) are
@@ -526,7 +519,7 @@ class LyricsEngine {
           final songs = json['result']?['songs'] as List? ?? [];
           for (final song in songs) {
             final songName = (song['name'] ?? '') as String;
-            if (_matchesQuery(songName, title)) {
+            if (matchesSongQuery(songName, title)) {
               final songId = song['id'];
               if (songId is! int || songId <= 0) continue;
               final lyricUrl = 'https://music.163.com/api/song/lyric?id=$songId&lv=-1&tv=-1';

@@ -90,6 +90,10 @@ class _LyricEditorDialogState extends State<LyricEditorDialog>
   /// write the fields, no matter which of several in-flight parses completes.
   int _parseToken = 0;
 
+  /// True while a 智能识别 validation lookup is in flight. The button shows a
+  /// spinner instead of guessing into the fields.
+  bool _parsing = false;
+
   /// Real provider of the active lyrics (read from the cache); shown on the
   /// pinned 当前歌词 row.
   String? _currentSourceLabel;
@@ -447,73 +451,60 @@ class _LyricEditorDialogState extends State<LyricEditorDialog>
       coverUrlController: _coverUrlController,
       onPickCover: _pickLocalCoverImage,
       onAutoParse: _autoParseTitleAndArtist,
+      parsing: _parsing,
     );
   }
 
   Future<void> _autoParseTitleAndArtist() async {
     Haptics.selection();
+    if (_parsing) return;
+
     // Always parse the B站 raw video title, never the display title: metadata
     // edits overwrite the latter (a wrong song name saved earlier would then
     // be re-parsed forever), but the parse must stay deterministic against the
     // original title no matter how many times the user taps.
     final raw = widget.rawTitle;
     final token = ++_parseToken;
+    setState(() => _parsing = true);
 
-    // Pass 1: Instant rule-based extraction for immediate UI feedback.
-    // Skipped when an earlier tap already confirmed a DB-validated result:
-    // replaying guess→correction on every tap reads as the fields flickering
-    // between two values; the memoized result returns instantly anyway.
-    if (LyricsEngine.peekValidated(raw, defaultArtist: widget.artistName) ==
-        null) {
-      final syncParsed =
-          LyricsEngine.cleanTitle(raw, defaultArtist: widget.artistName);
-      if (mounted) {
-        setState(() {
-          if ((syncParsed['songTitle'] ?? '').isNotEmpty) {
-            _titleController.text = syncParsed['songTitle']!;
-          }
-          final syncArtist = syncParsed['artist'] ?? '';
-          if (syncArtist.isNotEmpty && syncArtist != widget.artistName) {
-            _artistController.text = syncArtist;
-          }
-        });
-      }
-    }
-
-    // Pass 2: Official lyric DB cross-validation to refine song & artist.
-    // Token-guarded: a slow first tap must not overwrite a faster second one.
-    final asyncParsed = await LyricsEngine.cleanTitleWithValidation(
+    // The lyric-DB cross-validation is the ONLY result ever written to the
+    // fields. The rule-based [LyricsEngine.cleanTitle] output is never
+    // displayed: it exists purely as the fallback that validation returns
+    // when the DB lookup fails. Writing the instant guess while validation
+    // was still in flight is what made the fields settle on wrong values
+    // (and read as flickering on repeat taps).
+    final parsed = await LyricsEngine.cleanTitleWithValidation(
       raw,
       defaultArtist: widget.artistName,
     );
 
-    if (mounted && token == _parseToken) {
-      var research = false;
-      setState(() {
-        if ((asyncParsed['songTitle'] ?? '').isNotEmpty) {
-          _titleController.text = asyncParsed['songTitle']!;
-        }
-        final asyncArtist = asyncParsed['artist'] ?? '';
-        if (asyncArtist.isNotEmpty && asyncArtist != widget.artistName) {
-          _artistController.text = asyncArtist;
-        }
-        // Re-aim the auto-composed search at the recognised pair — the
-        // initial query was "UP主名 标题", which is why the first search
-        // found nothing. A query the user typed themselves is left alone.
-        final currentQuery = _searchController.text.trim();
-        final oldCombo = '$_searchArtist $_searchSong'.trim();
-        final newSong = asyncParsed['songTitle'] ?? '';
-        if (newSong.isNotEmpty &&
-            (currentQuery.isEmpty || currentQuery == oldCombo)) {
-          final newArtist = asyncParsed['artist'] ?? '';
-          _searchArtist = newArtist.isNotEmpty ? newArtist : _searchArtist;
-          _searchSong = newSong;
-          _searchController.text = '$_searchArtist $_searchSong'.trim();
-          research = true;
-        }
-      });
-      if (research) _performSearch();
-    }
+    if (!mounted || token != _parseToken) return;
+    var research = false;
+    setState(() {
+      _parsing = false;
+      if ((parsed['songTitle'] ?? '').isNotEmpty) {
+        _titleController.text = parsed['songTitle']!;
+      }
+      final parsedArtist = parsed['artist'] ?? '';
+      if (parsedArtist.isNotEmpty && parsedArtist != widget.artistName) {
+        _artistController.text = parsedArtist;
+      }
+      // Re-aim the auto-composed search at the recognised pair — the
+      // initial query was "UP主名 标题", which is why the first search
+      // found nothing. A query the user typed themselves is left alone.
+      final currentQuery = _searchController.text.trim();
+      final oldCombo = '$_searchArtist $_searchSong'.trim();
+      final newSong = parsed['songTitle'] ?? '';
+      if (newSong.isNotEmpty &&
+          (currentQuery.isEmpty || currentQuery == oldCombo)) {
+        final newArtist = parsed['artist'] ?? '';
+        _searchArtist = newArtist.isNotEmpty ? newArtist : _searchArtist;
+        _searchSong = newSong;
+        _searchController.text = '$_searchArtist $_searchSong'.trim();
+        research = true;
+      }
+    });
+    if (research) _performSearch();
   }
 
 
