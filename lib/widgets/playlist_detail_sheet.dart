@@ -10,6 +10,7 @@ import '../models/playlist.dart';
 import '../models/track.dart';
 import '../services/database_service.dart';
 import '../services/download_manager.dart';
+import 'add_local_tracks_sheet.dart';
 import 'empty_state.dart';
 import 'track_row.dart';
 import 'marquee_text.dart';
@@ -348,111 +349,7 @@ class _PlaylistDetailSheetState extends State<PlaylistDetailSheet> {
                       ),
                       itemBuilder: (context, index) {
                         final track = _currentPlaylist.tracks[index];
-                        final isDownloading =
-                            DownloadManager.instance.isDownloading(track.id);
-                        final isSelected =
-                            _selectedTrackIds.contains(track.id);
-
-                        final rowContent = Padding(
-                          padding:
-                              const EdgeInsets.only(bottom: TrackRow.gap),
-                          child: TrackRow(
-                            onTap: _isEditMode
-                                ? () {
-                                    setState(() {
-                                      if (isSelected) {
-                                        _selectedTrackIds.remove(track.id);
-                                      } else {
-                                        _selectedTrackIds.add(track.id);
-                                      }
-                                    });
-                                  }
-                                : (isDownloading
-                                    ? null
-                                    : () => widget.onSelectTrack(track,
-                                        queue: _playableQueue)),
-                            child: Row(
-                              children: [
-                                if (_isEditMode) ...[
-                                  Icon(
-                                    isSelected
-                                        ? Icons.check_circle_rounded
-                                        : Icons.radio_button_unchecked_rounded,
-                                    color: isSelected
-                                        ? AppColors.accent
-                                        : AppColors.textFaint,
-                                    size: 22,
-                                  ),
-                                  const SizedBox(width: 12),
-                                ],
-                                ClipRRect(
-                                  borderRadius: BorderRadius.circular(8),
-                                  child: CachedCoverImage(
-                                    url: track.coverUrl,
-                                    width: 48,
-                                    height: 48,
-                                  ),
-                                ),
-                                const SizedBox(width: 12),
-                                Expanded(
-                                  child: Column(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.start,
-                                    children: [
-                                      RepaintBoundary(
-                                        child: MarqueeText(
-                                          text: track.title,
-                                          phase: (index % 5) / 5,
-                                          style: const TextStyle(
-                                              color: AppColors.textPrimary,
-                                              fontWeight: FontWeight.w600,
-                                              fontSize: 14,
-                                              height: 1.3),
-                                        ),
-                                      ),
-                                      Text(
-                                        track.uploader,
-                                        style: const TextStyle(
-                                            color: AppColors.textMuted,
-                                            fontSize: 12),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                                if (!_isEditMode) ...[
-                                  const SizedBox(width: 8),
-                                  TrackDownloadButton(
-                                    track: track,
-                                    size: 24,
-                                    onPlay: () {
-                                      if (widget.onPlayOnly != null) {
-                                        widget.onPlayOnly!(track,
-                                            queue: _playableQueue);
-                                      } else {
-                                        widget.onSelectTrack(track,
-                                            queue: _playableQueue);
-                                      }
-                                    },
-                                  ),
-                                  IconButton(
-                                    icon: const Icon(Icons.add,
-                                        color: AppColors.textSecondary,
-                                        size: 22),
-                                    tooltip: '添加至歌单',
-                                    padding: EdgeInsets.zero,
-                                    constraints: const BoxConstraints(
-                                        minWidth: 40, minHeight: 40),
-                                    onPressed: () {
-                                      TrackOptionsMenu.showAddToPlaylist(
-                                          context, track,
-                                          onTrackChanged: _refresh);
-                                    },
-                                  ),
-                                ],
-                              ],
-                            ),
-                          ),
-                        );
+                        final rowContent = _trackRow(track, index);
 
                         if (_isEditMode) {
                           return Container(
@@ -542,6 +439,115 @@ class _PlaylistDetailSheetState extends State<PlaylistDetailSheet> {
                   ],
                 ),
               ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// One track row; selection/download state is read live here so
+  /// edit mode and normal mode share a single definition.
+  Widget _trackRow(Track track, int index) {
+    final isDownloading =
+        DownloadManager.instance.isDownloading(track.id);
+    final isSelected = _selectedTrackIds.contains(track.id);
+
+    return Padding(
+      padding:
+          const EdgeInsets.only(bottom: TrackRow.gap),
+      child: TrackRow(
+        onTap: _isEditMode
+            ? () {
+                setState(() {
+                  if (isSelected) {
+                    _selectedTrackIds.remove(track.id);
+                  } else {
+                    _selectedTrackIds.add(track.id);
+                  }
+                });
+              }
+            : (isDownloading
+                ? null
+                : () => widget.onSelectTrack(track,
+                    queue: _playableQueue)),
+        child: Row(
+          children: [
+            if (_isEditMode) ...[
+              Icon(
+                isSelected
+                    ? Icons.check_circle_rounded
+                    : Icons.radio_button_unchecked_rounded,
+                color: isSelected
+                    ? AppColors.accent
+                    : AppColors.textFaint,
+                size: 22,
+              ),
+              const SizedBox(width: 12),
+            ],
+            ClipRRect(
+              borderRadius: BorderRadius.circular(8),
+              child: CachedCoverImage(
+                url: track.coverUrl,
+                width: 48,
+                height: 48,
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment:
+                    CrossAxisAlignment.start,
+                children: [
+                  RepaintBoundary(
+                    child: MarqueeText(
+                      text: track.title,
+                      phase: (index % 5) / 5,
+                      style: const TextStyle(
+                          color: AppColors.textPrimary,
+                          fontWeight: FontWeight.w600,
+                          fontSize: 14,
+                          height: 1.3),
+                    ),
+                  ),
+                  Text(
+                    track.uploader,
+                    style: const TextStyle(
+                        color: AppColors.textMuted,
+                        fontSize: 12),
+                  ),
+                ],
+              ),
+            ),
+            if (!_isEditMode) ...[
+              const SizedBox(width: 8),
+              TrackDownloadButton(
+                track: track,
+                size: 24,
+                onPlay: () {
+                  if (widget.onPlayOnly != null) {
+                    widget.onPlayOnly!(track,
+                        queue: _playableQueue);
+                  } else {
+                    widget.onSelectTrack(track,
+                        queue: _playableQueue);
+                  }
+                },
+              ),
+              IconButton(
+                icon: const Icon(Icons.add,
+                    color: AppColors.textSecondary,
+                    size: 22),
+                tooltip: '添加至歌单',
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints(
+                    minWidth: 40, minHeight: 40),
+                onPressed: () {
+                  TrackOptionsMenu.showAddToPlaylist(
+                      context, track,
+                      onTrackChanged: _refresh);
+                },
+              ),
+            ],
           ],
         ),
       ),
@@ -641,116 +647,12 @@ class _PlaylistDetailSheetState extends State<PlaylistDetailSheet> {
       return;
     }
 
-    final selectedIds = <String>{};
-    final existingIds = _currentPlaylist.tracks.map((t) => t.id).toSet();
-
-    await showModalBottomSheet(
-      context: context,
-      backgroundColor: AppColors.backgroundElevated,
-      isScrollControlled: true,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      builder: (ctx) {
-        return StatefulBuilder(
-          builder: (dialogCtx, setDialogState) {
-            return Container(
-              height: MediaQuery.of(context).size.height * 0.7,
-              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
-              child: Column(
-                children: [
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      const Text('添加本地曲目',
-                          style: TextStyle(
-                              color: AppColors.textPrimary,
-                              fontSize: 18,
-                              fontWeight: FontWeight.bold)),
-                      TextButton(
-                        onPressed: selectedIds.isEmpty
-                            ? null
-                            : () async {
-                                final tracksToAdd = downloaded
-                                    .where((t) => selectedIds.contains(t.id))
-                                    .toList();
-                                for (final t in tracksToAdd) {
-                                  await DatabaseService.addTrackToPlaylist(
-                                      _currentPlaylist.id, t);
-                                }
-                                if (ctx.mounted) Navigator.pop(ctx);
-                                await _refresh();
-                              },
-                        child: Text('添加 (${selectedIds.length})',
-                            style: TextStyle(
-                                color: selectedIds.isEmpty
-                                    ? AppColors.textFaint
-                                    : AppColors.accent,
-                                fontWeight: FontWeight.bold)),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 12),
-                  Expanded(
-                    child: ListView.builder(
-                      itemCount: downloaded.length,
-                      itemBuilder: (c, idx) {
-                        final t = downloaded[idx];
-                        final isAlreadyInPlaylist = existingIds.contains(t.id);
-                        final isChecked = selectedIds.contains(t.id);
-
-                        return ListTile(
-                          enabled: !isAlreadyInPlaylist,
-                          leading: ClipRRect(
-                            borderRadius: BorderRadius.circular(6),
-                            child: CachedCoverImage(
-                                url: t.coverUrl, width: 40, height: 40),
-                          ),
-                          title: Text(t.title,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: TextStyle(
-                                  color: isAlreadyInPlaylist
-                                      ? AppColors.textMuted
-                                      : AppColors.textPrimary)),
-                          subtitle: Text(t.uploader,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(
-                                  color: AppColors.textMuted, fontSize: 12)),
-                          trailing: isAlreadyInPlaylist
-                              ? const Text('已在歌单',
-                                  style: TextStyle(
-                                      color: AppColors.textFaint, fontSize: 12))
-                              : Icon(
-                                  isChecked
-                                      ? Icons.check_circle_rounded
-                                      : Icons.radio_button_unchecked_rounded,
-                                  color: isChecked
-                                      ? AppColors.accent
-                                      : AppColors.textFaint,
-                                ),
-                          onTap: isAlreadyInPlaylist
-                              ? null
-                              : () {
-                                  setDialogState(() {
-                                    if (isChecked) {
-                                      selectedIds.remove(t.id);
-                                    } else {
-                                      selectedIds.add(t.id);
-                                    }
-                                  });
-                                },
-                        );
-                      },
-                    ),
-                  ),
-                ],
-              ),
-            );
-          },
-        );
-      },
+    await AddLocalTracksSheet.show(
+      context,
+      downloaded: downloaded,
+      existingIds: _currentPlaylist.tracks.map((t) => t.id).toSet(),
+      playlistId: _currentPlaylist.id,
+      onAdded: _refresh,
     );
   }
 

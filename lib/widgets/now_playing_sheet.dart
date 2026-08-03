@@ -15,9 +15,9 @@ import 'ambient_background.dart';
 import 'cached_cover_image.dart';
 import 'marquee_text.dart';
 import 'progress_ring.dart';
+import 'player_seek_bar.dart';
 import 'synced_lyrics_view.dart';
 import 'lyric_editor_dialog.dart';
-import '../utils/format.dart';
 
 /// Full-screen "now playing" surface.
 class NowPlayingSheet extends StatefulWidget {
@@ -59,7 +59,6 @@ class _NowPlayingSheetState extends State<NowPlayingSheet> {
   bool _isFavorite = false;
   bool _isDownloaded = false;
   DownloadTask? _downloadTask;
-  double? _dragValue;
   bool _showEditor = false;
   bool _editorLyricsTab = false;
   VoidCallback? _editorRelease;
@@ -486,75 +485,14 @@ class _NowPlayingSheetState extends State<NowPlayingSheet> {
   }
 
   Widget _seekBar() {
-    const timeStyle = TextStyle(
-      color: AppColors.textMuted,
-      fontSize: 12,
-      fontFeatures: [FontFeature.tabularFigures()],
-    );
-    return AnimatedBuilder(
-      animation:
-          Listenable.merge([widget.durationNotifier, widget.positionNotifier]),
-      builder: (context, _) {
-        final fallback =
-            _displayTrack.duration > 0 ? _displayTrack.duration.toDouble() : 1.0;
-        final streamed = widget.durationNotifier.value.inSeconds.toDouble();
-        final double maxSec =
-            _isActive && streamed > 0 ? streamed : fallback;
-        final double posSec = _isActive
-            ? (_dragValue ??
-                    widget.positionNotifier.value.inSeconds.toDouble())
-                .clamp(0.0, maxSec)
-            : 0.0;
-        var remaining = Duration(seconds: (maxSec - posSec).round());
-        if (remaining < Duration.zero) remaining = Duration.zero;
-
-        return Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            SliderTheme(
-              data: SliderTheme.of(context).copyWith(
-                trackHeight: 4,
-                activeTrackColor: AppColors.accent,
-                thumbColor: AppColors.accent,
-                overlayColor: AppColors.accent22,
-                thumbShape:
-                    const RoundSliderThumbShape(enabledThumbRadius: 6),
-                overlayShape:
-                    const RoundSliderOverlayShape(overlayRadius: 14),
-                disabledActiveTrackColor: AppColors.hairlineStrong,
-                disabledInactiveTrackColor: AppColors.hairline,
-                disabledThumbColor: AppColors.textFaint,
-              ),
-              child: Slider(
-                value: posSec,
-                max: maxSec,
-                label: formatDuration(Duration(seconds: posSec.round())),
-                // Seeking a track that is not the one playing is meaningless.
-                onChanged: _isActive
-                    ? (v) => setState(() => _dragValue = v)
-                    : null,
-                onChangeStart: (v) => setState(() => _dragValue = v),
-                onChangeEnd: (v) {
-                  Haptics.light();
-                  widget.handler.seek(Duration(seconds: v.toInt()));
-                  setState(() => _dragValue = null);
-                },
-              ),
-            ),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 6),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Text(formatDuration(Duration(seconds: posSec.round())),
-                      style: timeStyle),
-                  Text('-${formatDuration(remaining)}', style: timeStyle),
-                ],
-              ),
-            ),
-          ],
-        );
-      },
+    return PlayerSeekBar(
+      positionNotifier: widget.positionNotifier,
+      durationNotifier: widget.durationNotifier,
+      fallbackSeconds: _displayTrack.duration > 0
+          ? _displayTrack.duration.toDouble()
+          : 1.0,
+      isActive: _isActive,
+      onSeek: widget.handler.seek,
     );
   }
 

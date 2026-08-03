@@ -7,9 +7,11 @@ import '../services/database_service.dart';
 import '../services/lyrics_engine.dart';
 import '../theme/app_theme.dart';
 import '../theme/haptics.dart';
-import 'cached_cover_image.dart';
+import 'lrc_text_editor_pane.dart';
+import 'lyric_editor_info_tab.dart';
+import 'lyric_preview_pane.dart';
+import 'lyric_result_row.dart';
 import 'segment_tabs.dart';
-import 'synced_lyrics_view.dart';
 
 class LyricEditorDialog extends StatefulWidget {
   final String songTitle;
@@ -425,82 +427,12 @@ class _LyricEditorDialogState extends State<LyricEditorDialog>
   // ---------------------------------------------------------------------------
 
   Widget _buildInfoTab() {
-    return Column(
-      children: [
-        Expanded(
-          child: SingleChildScrollView(
-            child: Column(
-              children: [
-                const SizedBox(height: 8),
-                // Cover art — tap to change, sized to match player page
-                LayoutBuilder(
-                  builder: (context, constraints) {
-                    final availableWidth = constraints.maxWidth;
-                    final coverSize = (availableWidth * 0.62).clamp(140.0, 320.0);
-                    return Center(
-                      child: Stack(
-                        alignment: Alignment.bottomRight,
-                        children: [
-                          GestureDetector(
-                            onTap: _pickLocalCoverImage,
-                            child: ClipRRect(
-                              borderRadius: BorderRadius.circular(AppRadius.xl),
-                              child: CachedCoverImage(
-                                url: _coverUrlController.text.trim(),
-                                width: coverSize,
-                                height: coverSize,
-                              ),
-                            ),
-                          ),
-                          GestureDetector(
-                            onTap: _pickLocalCoverImage,
-                            child: Container(
-                              padding: const EdgeInsets.all(6),
-                              decoration: BoxDecoration(
-                                color: AppColors.backgroundElevated,
-                                shape: BoxShape.circle,
-                                border: Border.all(color: AppColors.hairlineStrong),
-                              ),
-                              child: const Icon(Icons.image_outlined,
-                                  color: AppColors.textSecondary, size: 18),
-                            ),
-                          ),
-                        ],
-                      ),
-                    );
-                  },
-                ),
-                const SizedBox(height: 24),
-                _infoField(_titleController, '歌名'),
-                const SizedBox(height: 12),
-                _infoField(_artistController, '歌手 / UP主'),
-                const SizedBox(height: 16),
-                SizedBox(
-                  width: double.infinity,
-                  height: 44,
-                  child: OutlinedButton.icon(
-                    onPressed: _autoParseTitleAndArtist,
-                    icon: const Icon(Icons.auto_awesome, color: AppColors.accent, size: 18),
-                    label: const Text('智能识别歌名与歌手',
-                        style: TextStyle(
-                            color: AppColors.accent,
-                            fontSize: 14,
-                            fontWeight: FontWeight.w600)),
-                    style: OutlinedButton.styleFrom(
-                      side: const BorderSide(color: AppColors.accent30),
-                      backgroundColor: AppColors.accent14,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(AppRadius.md),
-                      ),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-        const SizedBox(height: 12),
-      ],
+    return LyricEditorInfoTab(
+      titleController: _titleController,
+      artistController: _artistController,
+      coverUrlController: _coverUrlController,
+      onPickCover: _pickLocalCoverImage,
+      onAutoParse: _autoParseTitleAndArtist,
     );
   }
 
@@ -547,32 +479,6 @@ class _LyricEditorDialogState extends State<LyricEditorDialog>
     }
   }
 
-  Widget _infoField(TextEditingController ctrl, String label) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(label,
-            style: const TextStyle(
-                color: AppColors.textSecondary,
-                fontSize: 12,
-                fontWeight: FontWeight.w600)),
-        const SizedBox(height: 6),
-        TextField(
-          controller: ctrl,
-          style: const TextStyle(color: AppColors.textPrimary, fontSize: 14),
-          decoration: InputDecoration(
-            filled: true,
-            fillColor: AppColors.white06,
-            border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(12),
-                borderSide: BorderSide.none),
-            contentPadding:
-                const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
-          ),
-        ),
-      ],
-    );
-  }
 
   // ---------------------------------------------------------------------------
   // Tab 2: Lyrics (three states: list → LRC editor → preview)
@@ -672,125 +578,23 @@ class _LyricEditorDialogState extends State<LyricEditorDialog>
   }
 
   Widget _resultRow(LyricsResult res, int index) {
-    final isSelected = _selectedIndex == index;
-    final isUserPasted = res.source == 'user';
-    final isCurrent = res.source == 'current';
-
-    return Container(
-      margin: const EdgeInsets.only(bottom: 8),
-      decoration: BoxDecoration(
-        color: isCurrent
-            ? AppColors.success12
-            : (isUserPasted ? AppColors.accent12 : AppColors.white06),
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(
-          color: isSelected
-              ? AppColors.accent
-              : (isCurrent
-                  ? AppColors.success50
-                  : (isUserPasted ? AppColors.accent50 : AppColors.white12)),
-          width: isSelected || isUserPasted || isCurrent ? 1.5 : 1.0,
-        ),
-      ),
-      child: Row(
-        children: [
-          // Body → preview / calibration. Editing lives on the preview page's
-          // top-right button, so the row carries no edit affordance of its own.
-          Expanded(
-            child: InkWell(
-              borderRadius:
-                  const BorderRadius.horizontal(left: Radius.circular(16)),
-              onTap: () {
-                setState(() {
-                  _selectedIndex = index;
-                  _previewingResult = res;
-                  _previewOffset = 0.0;
-                  _calibrating = false;
-                });
-              },
-              child: Padding(
-                padding: const EdgeInsets.all(12),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    // Title with source + line count inline on the same line —
-                    // they used to take a third line of their own.
-                    Row(
-                      children: [
-                        Expanded(
-                          child: Text(
-                            isCurrent
-                                ? '当前歌词'
-                                : (isUserPasted
-                                    ? '粘贴歌词'
-                                    : (res.songTitle ?? '未知歌曲')),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: TextStyle(
-                              color: isCurrent
-                                  ? AppColors.success
-                                  : (isUserPasted
-                                      ? AppColors.pinkStart
-                                      : AppColors.textPrimary),
-                              fontWeight: FontWeight.bold,
-                              fontSize: 14,
-                            ),
-                          ),
-                        ),
-                        const SizedBox(width: 8),
-                        Text(
-                          '${_sourceLabel(res)} · ${res.lines.length} 行',
-                          maxLines: 1,
-                          style: const TextStyle(
-                            color: AppColors.textFaint,
-                            fontSize: 11,
-                            fontWeight: FontWeight.w600,
-                            letterSpacing: 0.3,
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 5),
-                    Text(
-                      _snippet(res),
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        color: AppColors.textSecondary,
-                        fontSize: 12.5,
-                        height: 1.35,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ),
-
-          // Apply — the only per-row action; calibrate/edit happen in preview.
-          IconButton(
-            icon: Icon(
-              isCurrent
-                  ? Icons.check_circle
-                  : (isSelected
-                      ? Icons.check_circle
-                      : Icons.radio_button_unchecked),
-              color: isCurrent
-                  ? AppColors.success
-                  : (isSelected ? AppColors.accent : AppColors.textFaint),
-              size: 24,
-            ),
-            onPressed: isCurrent
-                ? null
-                : () {
-                    setState(() => _selectedIndex = index);
-                    _applyLyricResult(res);
-                  },
-            tooltip: isCurrent ? '当前歌词' : '应用',
-          ),
-          const SizedBox(width: 4),
-        ],
-      ),
+    return LyricResultRow(
+      result: res,
+      isSelected: _selectedIndex == index,
+      sourceLabel: _sourceLabel(res),
+      snippet: _snippet(res),
+      onPreview: () {
+        setState(() {
+          _selectedIndex = index;
+          _previewingResult = res;
+          _previewOffset = 0.0;
+          _calibrating = false;
+        });
+      },
+      onApply: () {
+        setState(() => _selectedIndex = index);
+        _applyLyricResult(res);
+      },
     );
   }
 
@@ -830,183 +634,30 @@ class _LyricEditorDialogState extends State<LyricEditorDialog>
   // --- State B: LRC text editor ---
 
   Widget _buildLrcEditor() {
-    return Column(
-      children: [
-        Expanded(
-          child: TextField(
-            controller: _lrcController,
-            maxLines: null,
-            expands: true,
-            autofocus: true,
-            style: const TextStyle(
-              color: AppColors.textPrimary,
-              fontSize: 13,
-              fontFamily: 'monospace',
-              height: 1.5,
-            ),
-            decoration: InputDecoration(
-              hintText: '[00:12.34]歌词内容\n[00:16.00]下一行\n\n粘贴或编辑 LRC 文本',
-              hintStyle: const TextStyle(color: AppColors.textFaint, fontSize: 13),
-              filled: true,
-              fillColor: AppColors.white12,
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(12),
-                borderSide: BorderSide.none,
-              ),
-              contentPadding: const EdgeInsets.all(14),
-              alignLabelWithHint: true,
-            ),
-          ),
-        ),
-        const SizedBox(height: 12),
-        Row(
-          children: [
-            Expanded(
-              child: SizedBox(
-                height: 44,
-                child: OutlinedButton(
-                  onPressed: () => setState(() => _inLrcEditor = false),
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: AppColors.textMuted,
-                    side: const BorderSide(color: AppColors.white24),
-                    shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12)),
-                  ),
-                  child: const Text('取消',
-                      style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600)),
-                ),
-              ),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              flex: 2,
-              child: SizedBox(
-                height: 44,
-                child: ElevatedButton(
-                  onPressed: _confirmLrcEdit,
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: AppColors.accent,
-                    shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12)),
-                  ),
-                  child: const Text('保存',
-                      style: TextStyle(
-                          color: AppColors.textPrimary,
-                          fontWeight: FontWeight.bold,
-                          fontSize: 15)),
-                ),
-              ),
-            ),
-          ],
-        ),
-      ],
+    return LrcTextEditorPane(
+      controller: _lrcController,
+      onCancel: () => setState(() => _inLrcEditor = false),
+      onSave: _confirmLrcEdit,
     );
   }
   // --- State C: preview + calibration ---
 
   Widget _buildPreview() {
-    return Column(
-      children: [
-        // Header
-        Row(
-          children: [
-            IconButton(
-              icon: const Icon(Icons.arrow_back, color: AppColors.textPrimary),
-              onPressed: () => setState(() {
-                _previewingResult = null;
-                _calibrating = false;
-              }),
-            ),
-            Expanded(
-              child: Text(
-                _previewingResult!.songTitle ?? widget.songTitle,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(
-                    color: AppColors.textPrimary,
-                    fontSize: 14,
-                    fontWeight: FontWeight.bold),
-              ),
-            ),
-            IconButton(
-              icon: const Icon(Icons.edit_outlined,
-                  color: AppColors.textMuted, size: 20),
-              tooltip: '编辑 LRC',
-              onPressed: () => _openLrcEditor(_previewingResult),
-            ),
-          ],
-        ),
-        const SizedBox(height: 6),
-
-        // Synced preview
-        Expanded(
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(16),
-            child: Container(
-              color: Colors.black26,
-              padding: const EdgeInsets.symmetric(horizontal: 12),
-              child: SyncedLyricsView(
-                lines: _previewingResult!.lines,
-                positionNotifier: widget.positionNotifier ?? _idlePosition,
-                offset: _previewOffset,
-                calibrating: _calibrating,
-                onCalibrateTap: _applyTapCalibration,
-                autoFollow: false,
-              ),
-            ),
-          ),
-        ),
-        const SizedBox(height: 10),
-
-        // 校准 / 应用 — calibrating: single 完成 button that applies;
-        // otherwise: 校准 + 应用.
-        Row(
-          children: [
-            Expanded(
-              child: SizedBox(
-                height: 44,
-                child: OutlinedButton(
-                  onPressed: _calibrating
-                      ? () => _applyLyricResult(_previewingResult!,
-                          offset: _previewOffset)
-                      : () => setState(() => _calibrating = true),
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: _calibrating ? AppColors.accent : AppColors.textMuted,
-                    side: BorderSide(color: _calibrating ? AppColors.accent30 : AppColors.white24),
-                    shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12)),
-                  ),
-                  child: Text(_calibrating ? '完成' : '校准',
-                      style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600)),
-                ),
-              ),
-            ),
-            if (!_calibrating) ...[
-              const SizedBox(width: 12),
-              Expanded(
-                flex: 2,
-                child: SizedBox(
-                  height: 44,
-                  child: ElevatedButton(
-                    onPressed: () =>
-                        _applyLyricResult(_previewingResult!, offset: _previewOffset),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: AppColors.accent,
-                      shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12)),
-                    ),
-                    child: const Text('应用',
-                        style: TextStyle(
-                            color: AppColors.textPrimary,
-                            fontWeight: FontWeight.bold,
-                            fontSize: 15)),
-                  ),
-                ),
-              ),
-            ],
-          ],
-        ),
-      ],
+    return LyricPreviewPane(
+      result: _previewingResult!,
+      fallbackTitle: widget.songTitle,
+      positionNotifier: widget.positionNotifier ?? _idlePosition,
+      offset: _previewOffset,
+      calibrating: _calibrating,
+      onBack: () => setState(() {
+        _previewingResult = null;
+        _calibrating = false;
+      }),
+      onEditLrc: () => _openLrcEditor(_previewingResult),
+      onCalibrateTap: _applyTapCalibration,
+      onStartCalibrating: () => setState(() => _calibrating = true),
+      onApply: () =>
+          _applyLyricResult(_previewingResult!, offset: _previewOffset),
     );
   }
 }
