@@ -59,9 +59,9 @@ class _AddLocalTracksSheetState extends State<AddLocalTracksSheet> {
     final tracksToAdd = widget.downloaded
         .where((t) => _selectedIds.contains(t.id))
         .toList();
-    for (final t in tracksToAdd) {
-      await DatabaseService.addTrackToPlaylist(widget.playlistId, t);
-    }
+    // One persist for the whole batch — the per-track call rewrote the
+    // entire playlists file once per selected song.
+    await DatabaseService.addTracksToPlaylist(widget.playlistId, tracksToAdd);
     if (mounted) Navigator.pop(context);
     await widget.onAdded();
   }

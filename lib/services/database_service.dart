@@ -412,6 +412,42 @@ class DatabaseService {
     await _persistPlaylists();
   }
 
+  /// Batch variant of [addTrackToPlaylist]: one persist for the whole batch
+  /// instead of a full-file rewrite per track. Order matches calling the
+  /// single-track version repeatedly (each insert goes to the front, so the
+  /// batch's last item ends up first).
+  static Future<void> addTracksToPlaylist(
+      String playlistId, List<Track> tracks) async {
+    await _ensureLoaded();
+    final idx = _playlists.indexWhere((p) => p.id == playlistId);
+    if (idx == -1 || tracks.isEmpty) return;
+    final playlist = _playlists[idx];
+    final existingIds = playlist.tracks.map((t) => t.id).toSet();
+    final toAdd = <Track>[];
+    for (final track in tracks) {
+      if (!existingIds.contains(track.id)) {
+        existingIds.add(track.id);
+        toAdd.add(track);
+      }
+    }
+    if (toAdd.isEmpty) return;
+    playlist.tracks.insertAll(0, toAdd.reversed.toList());
+    await _persistPlaylists();
+  }
+
+  /// Batch variant of [removeTrackFromPlaylist] — one persist per operation.
+  static Future<void> removeTracksFromPlaylist(
+      String playlistId, List<String> trackIds) async {
+    await _ensureLoaded();
+    final idx = _playlists.indexWhere((p) => p.id == playlistId);
+    if (idx == -1 || trackIds.isEmpty) return;
+    final idSet = trackIds.toSet();
+    final playlist = _playlists[idx];
+    final before = playlist.tracks.length;
+    playlist.tracks.removeWhere((t) => idSet.contains(t.id));
+    if (playlist.tracks.length != before) await _persistPlaylists();
+  }
+
   static Future<bool> isFavorite(String trackId) async {
     await _ensureLoaded();
     final favorites = await getFavoritesPlaylist();
@@ -467,7 +503,9 @@ class DatabaseService {
     if (!_libraryUpdateController.isClosed) _libraryUpdateController.add(null);
   }
 
-  /// Deletes the local audio for [track] and forgets it from the library & playlists.
+  /// Deletes the local audio for [track] and forgets it from the library,
+  /// playlists and the recently-played rail. (Leaving it in history meant a
+  /// tap on the stale entry silently re-downloaded the song.)
   static Future<void> removeDownloadedTrack(Track track) async {
     await _ensureLoaded();
     await AudioDownloadService.delete(track);
@@ -477,7 +515,14 @@ class DatabaseService {
       pl.tracks.removeWhere((t) => t.id == track.id);
     }
     await _persistPlaylists();
+    final removedFromHistory =
+        _recentlyPlayed.where((t) => t.id == track.id).isNotEmpty;
+    _recentlyPlayed.removeWhere((t) => t.id == track.id);
+    if (removedFromHistory) await _persistRecentlyPlayed();
     if (!_libraryUpdateController.isClosed) _libraryUpdateController.add(null);
+    if (removedFromHistory && !_historyUpdateController.isClosed) {
+      _historyUpdateController.add(null);
+    }
   }
 
   static Future<List<Track>> getDownloadedTracks() async {

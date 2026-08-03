@@ -697,9 +697,8 @@ class _PlaylistDetailSheetState extends State<PlaylistDetailSheet> {
         await DatabaseService.removeDownloadedTrack(track);
       }
     } else {
-      for (final track in selected) {
-        await DatabaseService.removeTrackFromPlaylist(_currentPlaylist.id, track.id);
-      }
+      await DatabaseService.removeTracksFromPlaylist(
+          _currentPlaylist.id, selected.map((t) => t.id).toList());
     }
 
     // The sheet may have been dismissed while the confirm dialog or the
