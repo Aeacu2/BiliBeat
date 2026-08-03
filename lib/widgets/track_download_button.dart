@@ -30,8 +30,7 @@ class TrackDownloadButton extends StatefulWidget {
 }
 
 class _TrackDownloadButtonState extends State<TrackDownloadButton> {
-  StreamSubscription<void>? _sub;
-  StreamSubscription<DownloadProgress>? _finishedSub;
+  StreamSubscription<String>? _sub;
   bool _isDownloaded = false;
   bool _wasDownloading = false;
   double _fraction = 0.0;
@@ -40,25 +39,27 @@ class _TrackDownloadButtonState extends State<TrackDownloadButton> {
   void initState() {
     super.initState();
     _refresh();
-    _sub = DownloadManager.instance.updates.listen((_) {
-      if (!mounted) return;
+    // One targeted subscription per row. Events carry the changed track id,
+    // so a row wakes only for its own track, and the manager's relay of
+    // playback-path completions (see DownloadManager._onProgress) covers the
+    // downloads that never pass through startDownload — previously this
+    // needed a second, chunk-frequency subscription to the raw progress
+    // stream on every row.
+    _sub = DownloadManager.instance.updates.listen((changedId) {
+      if (!mounted || changedId != widget.track.id) return;
       final task = DownloadManager.instance.taskFor(widget.track.id);
       final downloading = task != null;
       final fraction = task?.fraction ?? 0.0;
-      // The manager broadcasts for *every* download in flight; a row that is
-      // not involved must not rebuild.
-      if (downloading == _wasDownloading && fraction == _fraction) return;
+      if (downloading == _wasDownloading && fraction == _fraction) {
+        // Same state — but an untracked (playback-path) download's
+        // completion event is the only signal its file reached disk.
+        if (!downloading && !_isDownloaded) _refresh();
+        return;
+      }
       if (_wasDownloading && !downloading) _refresh();
       _wasDownloading = downloading;
       _fraction = fraction;
       setState(() {});
-    });
-    // The playback path downloads outside DownloadManager (starting a track
-    // fetches it), so a row whose track was never *explicitly* downloaded kept
-    // offering a download button for a file that was already on disk.
-    _finishedSub = AudioDownloadService.progressStream.listen((p) {
-      if (!mounted || !p.done || p.trackId != widget.track.id) return;
-      if (!_isDownloaded) setState(() => _isDownloaded = true);
     });
   }
 
@@ -78,7 +79,6 @@ class _TrackDownloadButtonState extends State<TrackDownloadButton> {
   @override
   void dispose() {
     _sub?.cancel();
-    _finishedSub?.cancel();
     super.dispose();
   }
 

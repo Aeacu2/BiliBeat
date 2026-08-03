@@ -35,11 +35,14 @@ class DownloadManager {
   static final DownloadManager instance = DownloadManager._();
 
   final Map<String, DownloadTask> _tasks = {};
-  final StreamController<void> _controller = StreamController<void>.broadcast();
+  final StreamController<String> _controller = StreamController<String>.broadcast();
   final StreamController<String> _errorController = StreamController<String>.broadcast();
 
-  /// Emits whenever the task set or any task's progress changes.
-  Stream<void> get updates => _controller.stream;
+  /// Emits the id of the track whose download state changed, so listeners
+  /// can compare against their own id and sleep through everyone else's
+  /// downloads. (Previously every listener ran on every progress tick of
+  /// every download; N visible rows meant N wake-ups per 64 KiB chunk.)
+  Stream<String> get updates => _controller.stream;
 
   /// Emits a human-readable message when a user-initiated download fails —
   /// without this a failure was indistinguishable from a success (the ring
@@ -60,7 +63,7 @@ class DownloadManager {
     // and start the same download twice.
     if (_tasks.containsKey(track.id)) return;
     _tasks[track.id] = DownloadTask(track: track);
-    _notify();
+    _notify(track.id);
     try {
       // ensureDownloaded is itself a no-op when the file is already on disk.
       await AudioDownloadService.ensureDownloaded(track);
@@ -69,20 +72,27 @@ class DownloadManager {
       if (!_errorController.isClosed) _errorController.add('$e');
     } finally {
       _tasks.remove(track.id);
-      _notify();
+      _notify(track.id);
     }
   }
 
   void _onProgress(DownloadProgress p) {
     final task = _tasks[p.trackId];
-    if (task == null) return;
+    if (task == null) {
+      // Playback-path downloads are deliberately untracked, but their
+      // completion still matters to the row showing that track. Relaying the
+      // id here is what lets buttons drop their own subscription to the raw
+      // chunk-frequency progress stream.
+      if (p.done) _notify(p.trackId);
+      return;
+    }
     // Error events are preludes to startDownload's catch, which reports them.
     if (p.done || p.error != null) return;
     _tasks[p.trackId] = task.copyWith(fraction: p.fraction);
-    _notify();
+    _notify(p.trackId);
   }
 
-  void _notify() {
-    if (!_controller.isClosed) _controller.add(null);
+  void _notify(String trackId) {
+    if (!_controller.isClosed) _controller.add(trackId);
   }
 }
