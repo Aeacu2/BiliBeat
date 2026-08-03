@@ -166,16 +166,23 @@ class RecommendationEngine {
     if (seeds.isEmpty) return const [];
 
     final candidates = <String, Track>{};
-    for (final seed in seeds) {
+    // Seeds are independent searches; run them concurrently so a refresh
+    // costs one network round-trip instead of one per seed. Each seed keeps
+    // its own error handling so one failure never sinks the batch.
+    final batches = await Future.wait(seeds.map((seed) async {
       try {
-        for (final track in await BilibiliSdk.search(seed, page: page)) {
-          if (!isSongLength(track)) continue;
-          if (profile.knownIds.contains(track.id)) continue; // already theirs
-          if (excludeIds.contains(track.id)) continue; // already shown
-          candidates.putIfAbsent(track.id, () => track);
-        }
+        return await BilibiliSdk.search(seed, page: page);
       } catch (e) {
         debugPrint('Recommendation seed "$seed" failed: $e');
+        return const <Track>[];
+      }
+    }));
+    for (final tracks in batches) {
+      for (final track in tracks) {
+        if (!isSongLength(track)) continue;
+        if (profile.knownIds.contains(track.id)) continue; // already theirs
+        if (excludeIds.contains(track.id)) continue; // already shown
+        candidates.putIfAbsent(track.id, () => track);
       }
     }
 

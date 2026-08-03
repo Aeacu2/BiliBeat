@@ -144,7 +144,13 @@ class _CachedCoverImageState extends State<CachedCoverImage> {
       final fetchUrl =
           CachedCoverImage.sizedUrl(widget.url, _targetW, _targetH);
 
-      final cacheDir = await getTemporaryDirectory();
+      // Application Support, not the temp dir: iOS/Android may purge temp
+      // under storage pressure, which silently re-downloaded every cover.
+      final supportDir = await getApplicationSupportDirectory();
+      final cacheDir = Directory('${supportDir.path}/bilibeat_covers');
+      if (!await cacheDir.exists()) {
+        await cacheDir.create(recursive: true);
+      }
       final md5Key = md5.convert(utf8.encode(fetchUrl)).toString();
       final file = File('${cacheDir.path}/img_$md5Key.img');
 
