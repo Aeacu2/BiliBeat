@@ -160,4 +160,17 @@ void main() {
     expect(res['songTitle'], '大鱼');
     expect(res['artist'], '周深');
   });
+
+  // Regression (3.11.0 report): space-separated collab after a show bracket
+  // with NO season digit. The & marker rule and the season-digit rule both
+  // missed it, so the bracket show name survived as the artist and
+  // validation laundered it (孙燕姿's 逆光 isn't by anyone in the title).
+  test('cleanTitle: 【show】 space-separated collab 《song》', () {
+    final res = LyricsEngine.cleanTitle(
+      '【声生不息】陈楚生 周深 合作舞台《逆光》 爱在“逆光”中前行',
+      defaultArtist: '某UP主',
+    );
+    expect(res['songTitle'], '逆光');
+    expect(res['artist'], '陈楚生 周深');
+  });
 }

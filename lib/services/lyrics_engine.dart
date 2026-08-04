@@ -172,6 +172,18 @@ class LyricsEngine {
               .toList();
           if (collabToken.isNotEmpty) {
             artist = collabToken.first;
+          } else if (betweenTokens.length >= 2 &&
+              betweenTokens.every((t) =>
+                  _looksLikeBareName(t) && !_betweenJunk.contains(t))) {
+            // "【声生不息】陈楚生 周深 合作舞台《逆光》": several bare names
+            // between a tag bracket and the song bracket are collaborating
+            // artists — space-separated collabs carry no & marker. Noise
+            // tokens (舞台, 主题曲…) are already filtered by _noisyClean, and
+            // the every() gate keeps dates/cities/junk out (verified against
+            // the 540-title corpus with zero unintended changes). Exact
+            // matches only: substring noise filtering would eat tokens glued
+            // to a real name ("陈奕迅新歌" must not drop 陈奕迅).
+            artist = betweenTokens.join(' ');
           } else if (_looksLikeShowSeason(bracketText) &&
               betweenTokens.length == 1 &&
               _looksLikeBareName(betweenTokens.first)) {
@@ -306,6 +318,20 @@ class LyricsEngine {
     final normRaw = _normalize(rawTitle);
 
     final candidates = _generateCandidates(rawTitle);
+    // A bare song name like 《逆光》 alone finds the most popular 逆光 (e.g.
+    // 孙燕姿's), whose artist is not in the title — validation then kept the
+    // rule pass's artist, laundering it. Hinting each book candidate with the
+    // rule pass's artist makes fetchFromNetEase try "artist song" first, so
+    // the live duet (逆光 (live), 陈楚生/周深) outranks the studio original.
+    // fetchFromNetEase still falls back to the bare song query internally.
+    final fallbackArtist = (fallback['artist'] ?? '').trim();
+    if (fallbackArtist.isNotEmpty && fallbackArtist != defaultArtist) {
+      for (final c in candidates) {
+        if (c.containsKey('bookIdx') && (c['artistHint'] ?? '').isEmpty) {
+          c['artistHint'] = fallbackArtist;
+        }
+      }
+    }
     // When at least one 《…》 pair survives as a plausible song, pairs that
     // are structurally show names (followed by 第二季/EP09/主题曲…) are skipped
     // entirely: searching them wastes a request and lets a wrong-but-matching
@@ -405,6 +431,14 @@ class LyricsEngine {
   static bool _looksLikeShowSeason(String bracketText) =>
       RegExp(r'^[\u4e00-\u9fa5A-Za-z·]+\d{1,2}$').hasMatch(bracketText) &&
       RegExp(r'[\u4e00-\u9fa5]').hasMatch(bracketText);
+
+  /// Tokens that read like names but never are: descriptors that sit between
+  /// a tag bracket and the song bracket ("【tag】周深 新歌《X》"). Kept as an
+  /// exact-match set — see the multi-name gate in [cleanTitle].
+  static const Set<String> _betweenJunk = {
+    '新歌', '新歌首发', '演唱会', '全程', '直播', '预告', '花絮',
+    '采访', '幕后', '排练', '首唱', 'reaction',
+  };
 
   /// A single token that reads like one artist name: 2–7 name characters,
   /// nothing else. Descriptors (精选歌单合集, 总选跳, 弹奏…) can still slip
